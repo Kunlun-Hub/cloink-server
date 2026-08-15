@@ -110,7 +110,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.37.0
-	github.com/things-go/go-socks5 v0.0.4
+	github.com/things-go/go-socks5 v0.1.1
 	github.com/ti-mo/conntrack v0.5.1
 	github.com/ti-mo/netfilter v0.5.2
 	github.com/vmihailenco/msgpack/v5 v5.4.1
