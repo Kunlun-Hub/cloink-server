@@ -12,10 +12,11 @@
     "bindings": "cd .. && wails3 generate bindings -clean=true -ts",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,json,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css,json,md}\"",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
-    "check": "pnpm lint && pnpm typecheck && pnpm format:check",
-    "check:fix": "pnpm lint:fix && pnpm format && pnpm typecheck"
+    "check": "pnpm i18n:check && pnpm lint && pnpm typecheck && pnpm format:check",
+    "check:fix": "pnpm i18n:check && pnpm lint:fix && pnpm format && pnpm typecheck"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

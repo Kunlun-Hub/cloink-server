@@ -766,6 +766,18 @@
     "settings.troubleshooting.anonymize.help": {
         "message": "从日志中隐藏公共 IP 地址和非 NetBird 域名。"
     },
+    "settings.troubleshooting.anonymize.info": {
+        "message": "默认模式会保留内部 IPv4 地址和设备名称，便于支持人员排查。严格模式还会匿名化私有地址（RFC 1918）、CGNAT 和链路本地 IP 地址、设备名称以及 WireGuard 公钥。重复出现的值会映射到相同占位符，因此仍可区分不同设备。将调试包分享给组织外部人员时，请使用严格模式。"
+    },
+    "settings.troubleshooting.anonymize.none": {
+        "message": "无"
+    },
+    "settings.troubleshooting.anonymize.default": {
+        "message": "默认"
+    },
+    "settings.troubleshooting.anonymize.strict": {
+        "message": "严格"
+    },
     "settings.troubleshooting.systemInfo.label": {
         "message": "包含系统信息"
     },
@@ -1338,5 +1350,14 @@
     },
     "error.unknown": {
         "message": "操作失败。"
+    },
+    "settings.ssh.privilege.hint": {
+        "message": "需要 {actor} 权限。请改为运行："
+    },
+    "settings.ssh.privilege.oneWay": {
+        "message": "你可以关闭此项，但重新开启需要 {actor} 权限："
+    },
+    "settings.ssh.privilege.oneWayInverted": {
+        "message": "你可以开启此项，但重新关闭需要 {actor} 权限："
     }
 }
