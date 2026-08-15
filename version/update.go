@@ -3,6 +3,8 @@ package version
 import (
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,10 +14,14 @@ import (
 
 const (
 	fetchPeriod = 30 * time.Minute
+
+	// EnvVersionCheckURL enables version checks against an explicitly managed
+	// endpoint. An empty value disables checks and prevents public fallbacks.
+	EnvVersionCheckURL = "NB_VERSION_CHECK_URL"
 )
 
 var (
-	versionURL = "https://pkgs.netbird.io/releases/latest/version"
+	versionURL = strings.TrimSpace(os.Getenv(EnvVersionCheckURL))
 )
 
 // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
@@ -109,6 +115,10 @@ func (u *Update) LatestVersion() *goversion.Version {
 
 func (u *Update) StartFetcher() {
 	if u.fetchTicker != nil {
+		return
+	}
+	if versionURL == "" {
+		log.Debugf("version check disabled: %s is not configured", EnvVersionCheckURL)
 		return
 	}
 	u.fetchTicker = time.NewTicker(fetchPeriod)

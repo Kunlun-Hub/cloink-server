@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/mail"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,9 +24,10 @@ import (
 )
 
 const (
-	// Version endpoints
-	managementVersionURL = "https://pkgs.netbird.io/releases/latest/version"
-	dashboardReleasesURL = "https://api.github.com/repos/netbirdio/dashboard/releases/latest"
+	// Version checks are opt-in. Cloink deployments can point these variables
+	// at private endpoints without falling back to NetBird public services.
+	managementVersionURLEnv = "NB_MANAGEMENT_VERSION_URL"
+	dashboardReleasesURLEnv = "NB_DASHBOARD_VERSION_URL"
 
 	// Cache TTL for version information
 	versionCacheTTL = 60 * time.Minute
@@ -310,21 +312,23 @@ func (m *DefaultManager) fetchVersionInfo(ctx context.Context) (*VersionInfo, er
 		CurrentVersion: version.NetbirdVersion(),
 	}
 
-	// Fetch management version from pkgs.netbird.io (plain text)
-	mgmtVersion, err := m.fetchPlainTextVersion(ctx, managementVersionURL)
-	if err != nil {
-		log.WithContext(ctx).Warnf("failed to fetch management version: %v", err)
-	} else {
-		info.ManagementVersion = mgmtVersion
-		info.ManagementUpdateAvailable = isNewerVersion(info.CurrentVersion, mgmtVersion)
+	if managementVersionURL := strings.TrimSpace(os.Getenv(managementVersionURLEnv)); managementVersionURL != "" {
+		mgmtVersion, err := m.fetchPlainTextVersion(ctx, managementVersionURL)
+		if err != nil {
+			log.WithContext(ctx).Warnf("failed to fetch management version: %v", err)
+		} else {
+			info.ManagementVersion = mgmtVersion
+			info.ManagementUpdateAvailable = isNewerVersion(info.CurrentVersion, mgmtVersion)
+		}
 	}
 
-	// Fetch dashboard version from GitHub
-	dashVersion, err := m.fetchGitHubRelease(ctx, dashboardReleasesURL)
-	if err != nil {
-		log.WithContext(ctx).Warnf("failed to fetch dashboard version from GitHub: %v", err)
-	} else {
-		info.DashboardVersion = dashVersion
+	if dashboardReleasesURL := strings.TrimSpace(os.Getenv(dashboardReleasesURLEnv)); dashboardReleasesURL != "" {
+		dashVersion, err := m.fetchGitHubRelease(ctx, dashboardReleasesURL)
+		if err != nil {
+			log.WithContext(ctx).Warnf("failed to fetch dashboard version: %v", err)
+		} else {
+			info.DashboardVersion = dashVersion
+		}
 	}
 
 	// Update cache

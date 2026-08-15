@@ -36,6 +36,20 @@ func TestNewUpdate(t *testing.T) {
 	}
 }
 
+func TestVersionCheckDisabledWithoutEndpoint(t *testing.T) {
+	previousURL := versionURL
+	versionURL = ""
+	t.Cleanup(func() { versionURL = previousURL })
+
+	u := NewUpdate(httpAgent)
+	t.Cleanup(u.StopWatch)
+	u.StartFetcher()
+
+	if u.fetchTicker != nil {
+		t.Fatal("version fetcher started without an endpoint")
+	}
+}
+
 func TestDoNotUpdate(t *testing.T) {
 	version = "11.0.0"
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

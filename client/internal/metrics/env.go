@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -30,8 +31,6 @@ const (
 	// and version range checks are still respected.
 	// Format: duration string like "1h", "30m", "4h"
 	EnvMetricsInterval = "NB_METRICS_INTERVAL"
-
-	defaultMetricsConfigURL = "https://ingest.netbird.io/config"
 )
 
 // IsMetricsPushEnabled returns true if metrics push is enabled via NB_METRICS_PUSH_ENABLED env var.
@@ -60,13 +59,6 @@ func getMetricsInterval() time.Duration {
 	return interval
 }
 
-// isMetricsPushEnvSet returns true if NB_METRICS_PUSH_ENABLED is explicitly set (to any value).
-// When set, the env var takes full precedence over management server configuration.
-func isMetricsPushEnvSet() bool {
-	_, set := os.LookupEnv(EnvMetricsPushEnabled)
-	return set
-}
-
 func isForceSending() bool {
 	force, _ := strconv.ParseBool(os.Getenv(EnvMetricsForceSending))
 	return force
@@ -74,10 +66,7 @@ func isForceSending() bool {
 
 // getMetricsConfigURL returns the URL to fetch push configuration from
 func getMetricsConfigURL() string {
-	if envURL := os.Getenv(EnvMetricsConfigURL); envURL != "" {
-		return envURL
-	}
-	return defaultMetricsConfigURL
+	return strings.TrimSpace(os.Getenv(EnvMetricsConfigURL))
 }
 
 // getMetricsServerURL returns the metrics server URL from NB_METRICS_SERVER_URL env var.

@@ -211,16 +211,18 @@ func (c *ClientMetrics) StopPush() {
 	c.stopPushLocked()
 }
 
-// UpdatePushFromMgm updates metrics push based on management server configuration.
-// If NB_METRICS_PUSH_ENABLED is explicitly set (true or false), management config is ignored.
-// When unset, management controls whether push is enabled.
+// UpdatePushFromMgm only permits management to update a push that the local
+// administrator explicitly enabled. A management response cannot opt a client
+// into telemetry on its own.
 func (c *ClientMetrics) UpdatePushFromMgm(ctx context.Context, enabled bool) {
 	if c == nil {
 		return
 	}
 
-	if isMetricsPushEnvSet() {
-		log.Debugf("ignoring management config, env var is explicitly set: %s", EnvMetricsPushEnabled)
+	if !IsMetricsPushEnabled() {
+		if c.push.Load() != nil {
+			c.StopPush()
+		}
 		return
 	}
 

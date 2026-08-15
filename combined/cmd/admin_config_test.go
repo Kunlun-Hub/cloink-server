@@ -45,3 +45,10 @@ func TestApplyServerStoreEnv(t *testing.T) {
 	applyServerStoreEnv(StoreConfig{Engine: "mysql", DSN: "mysql-dsn"})
 	require.Equal(t, "mysql-dsn", os.Getenv("NB_STORE_ENGINE_MYSQL_DSN"))
 }
+
+func TestDefaultConfigDisablesAnonymousMetrics(t *testing.T) {
+	cfg := DefaultConfig()
+
+	require.True(t, cfg.Server.DisableAnonymousMetrics)
+	require.True(t, cfg.Management.DisableAnonymousMetrics)
+}

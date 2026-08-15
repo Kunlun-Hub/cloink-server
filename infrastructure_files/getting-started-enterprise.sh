@@ -690,7 +690,7 @@ server:
   authSecret: "${NETBIRD_RELAY_AUTH_SECRET}"
   dataDir: "/var/lib/netbird/"
 
-  disableAnonymousMetrics: false
+  disableAnonymousMetrics: true
   disableGeoliteUpdate: false
 
   auth:

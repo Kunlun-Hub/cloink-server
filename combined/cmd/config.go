@@ -205,13 +205,14 @@ type ReverseProxyConfig struct {
 func DefaultConfig() *CombinedConfig {
 	return &CombinedConfig{
 		Server: ServerConfig{
-			ListenAddress:      ":443",
-			MetricsPort:        9090,
-			HealthcheckAddress: ":9000",
-			LogLevel:           "info",
-			LogFile:            "console",
-			StunPorts:          []int{3478},
-			DataDir:            "/var/lib/netbird/",
+			ListenAddress:           ":443",
+			MetricsPort:             9090,
+			HealthcheckAddress:      ":9000",
+			LogLevel:                "info",
+			LogFile:                 "console",
+			StunPorts:               []int{3478},
+			DataDir:                 "/var/lib/netbird/",
+			DisableAnonymousMetrics: true,
 			Auth: AuthConfig{
 				Storage: AuthStorageConfig{
 					Type: "sqlite3",
@@ -233,7 +234,8 @@ func DefaultConfig() *CombinedConfig {
 			// LogLevel inherited from Server.LogLevel via ApplySimplifiedDefaults
 		},
 		Management: ManagementConfig{
-			DataDir: "/var/lib/netbird/",
+			DataDir:                 "/var/lib/netbird/",
+			DisableAnonymousMetrics: true,
 			Auth: AuthConfig{
 				Storage: AuthStorageConfig{
 					Type: "sqlite3",

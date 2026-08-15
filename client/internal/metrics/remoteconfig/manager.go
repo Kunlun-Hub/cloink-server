@@ -60,6 +60,9 @@ func NewManager(configURL string, minRefreshInterval time.Duration) *Manager {
 func (m *Manager) RefreshIfNeeded(ctx context.Context) *Config {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.configURL == "" {
+		return nil
+	}
 
 	if m.isConfigFresh() {
 		return m.lastConfig

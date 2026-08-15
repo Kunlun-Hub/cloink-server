@@ -25,8 +25,10 @@ import (
 const (
 	// PayloadEvent identifies an event type
 	PayloadEvent = "self-hosted stats"
-	// payloadEndpoint metrics defaultEndpoint to send anonymous data
-	payloadEndpoint = "https://metrics.netbird.io"
+	// EnvAnonymousMetricsEndpoint is intentionally empty by default. Metrics
+	// cannot leave the deployment unless an administrator configures an
+	// endpoint and also enables the worker.
+	EnvAnonymousMetricsEndpoint = "NB_ANONYMOUS_METRICS_ENDPOINT"
 	// defaultPushInterval default interval to push metrics
 	defaultPushInterval = 12 * time.Hour
 	// requestTimeout http request timeout
@@ -72,6 +74,7 @@ type Worker struct {
 	connManager ConnManager
 	startupTime time.Time
 	lastRun     time.Time
+	endpoint    string
 }
 
 // NewWorker returns a metrics worker
@@ -85,11 +88,16 @@ func NewWorker(ctx context.Context, id string, dataSource DataSource, connManage
 		connManager: connManager,
 		startupTime: currentTime,
 		lastRun:     currentTime,
+		endpoint:    strings.TrimRight(strings.TrimSpace(os.Getenv(EnvAnonymousMetricsEndpoint)), "/"),
 	}
 }
 
 // Run runs the metrics worker
 func (w *Worker) Run(ctx context.Context) {
+	if w.endpoint == "" {
+		log.WithContext(ctx).Infof("anonymous metrics disabled: %s is not configured", EnvAnonymousMetricsEndpoint)
+		return
+	}
 	interval := getMetricsInterval(ctx)
 
 	pushTicker := time.NewTicker(interval)
@@ -122,7 +130,7 @@ func getMetricsInterval(ctx context.Context) time.Duration {
 }
 
 func (w *Worker) sendMetrics(ctx context.Context) error {
-	apiKey, err := getAPIKey(w.ctx)
+	apiKey, err := getAPIKey(w.ctx, w.endpoint)
 	if err != nil {
 		return err
 	}
@@ -136,7 +144,7 @@ func (w *Worker) sendMetrics(ctx context.Context) error {
 
 	httpClient := http.Client{}
 
-	exportJobReq, cancelCTX, err := createPostRequest(w.ctx, payloadEndpoint+"/capture/", payloadString)
+	exportJobReq, cancelCTX, err := createPostRequest(w.ctx, w.endpoint+"/capture/", payloadString)
 	if err != nil {
 		return fmt.Errorf("unable to create metrics post request %v", err)
 	}
@@ -517,13 +525,13 @@ func (w *Worker) generateProperties(ctx context.Context) properties {
 	return metricsProperties
 }
 
-func getAPIKey(ctx context.Context) (string, error) {
+func getAPIKey(ctx context.Context, endpoint string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	httpClient := http.Client{}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, payloadEndpoint+"/GetToken", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/GetToken", nil)
 	if err != nil {
 		return "", fmt.Errorf("unable to create request for metrics public api token %v", err)
 	}

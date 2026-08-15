@@ -21,13 +21,6 @@ const (
 	defaultPushInterval = 5 * time.Minute
 )
 
-// defaultMetricsServerURL is used as fallback when NB_METRICS_FORCE_SENDING is true
-var defaultMetricsServerURL *url.URL
-
-func init() {
-	defaultMetricsServerURL, _ = url.Parse("https://ingest.netbird.io")
-}
-
 // PushConfig holds configuration for metrics push
 type PushConfig struct {
 	// ServerAddress is the metrics server URL. If nil, uses remote config server_url.
@@ -82,7 +75,7 @@ func NewPush(metrics metricsImplementation, configManager remoteConfigProvider, 
 
 		cfgAddress = config.ServerAddress
 		if cfgAddress == nil {
-			cfgAddress = defaultMetricsServerURL
+			return nil, fmt.Errorf("%s is required when %s is enabled", EnvMetricsServerURL, EnvMetricsForceSending)
 		}
 	} else {
 		cfgAddress = config.ServerAddress
