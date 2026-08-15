@@ -76,7 +76,7 @@ require (
 	github.com/libp2p/go-nat v0.2.0
 	github.com/libp2p/go-netroute v0.4.0
 	github.com/lrh3321/ipset-go v0.0.0-20250619021614-54a0a98ace81
-	github.com/mdlayher/socket v0.5.1
+	github.com/mdlayher/socket v0.6.1
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/miekg/dns v1.1.72
 	github.com/mitchellh/hashstructure/v2 v2.0.2
