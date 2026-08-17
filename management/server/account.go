@@ -36,6 +36,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/affectedpeers"
 	nbcache "github.com/netbirdio/netbird/management/server/cache"
 	nbcontext "github.com/netbirdio/netbird/management/server/context"
+	emailmanager "github.com/netbirdio/netbird/management/server/email"
 	"github.com/netbirdio/netbird/management/server/geolocation"
 	"github.com/netbirdio/netbird/management/server/idp"
 	"github.com/netbirdio/netbird/management/server/integrations/integrated_validator"
@@ -113,12 +114,20 @@ type DefaultAccountManager struct {
 	permissionsManager permissions.Manager
 
 	disableDefaultPolicy bool
+
+	emailService emailmanager.Service
 }
 
 var _ account.Manager = (*DefaultAccountManager)(nil)
 
 func (am *DefaultAccountManager) SetServiceManager(serviceManager service.Manager) {
 	am.serviceManager = serviceManager
+}
+
+// SetEmailService allows the HTTP bootstrap and tests to replace the SMTP
+// notification service used by account lifecycle events.
+func (am *DefaultAccountManager) SetEmailService(service emailmanager.Service) {
+	am.emailService = service
 }
 
 func isUniqueConstraintError(err error) bool {
@@ -229,6 +238,7 @@ func BuildManager(
 		settingsManager:          settingsManager,
 		permissionsManager:       permissionsManager,
 		disableDefaultPolicy:     disableDefaultPolicy,
+		emailService:             emailmanager.NewManager(store, permissionsManager, ""),
 	}
 
 	am.networkMapController.StartWarmup(ctx)
@@ -1444,6 +1454,7 @@ func (am *DefaultAccountManager) addNewUserToDomainAccount(ctx context.Context, 
 
 	if newUser.PendingApproval {
 		am.StoreEvent(ctx, userAuth.UserId, userAuth.UserId, domainAccountID, activity.UserJoined, map[string]any{"pending_approval": true})
+		am.notifyUserPendingApproval(ctx, domainAccountID, newUser)
 	} else {
 		am.StoreEvent(ctx, userAuth.UserId, userAuth.UserId, domainAccountID, activity.UserJoined, nil)
 	}

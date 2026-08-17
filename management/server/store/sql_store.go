@@ -145,6 +145,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&agentNetworkTypes.AgentNetworkAccessLog{}, &agentNetworkTypes.AgentNetworkAccessLogGroup{},
 		&agentNetworkTypes.AgentNetworkUsage{}, &agentNetworkTypes.AgentNetworkUsageGroup{},
 		&networktraffic.Event{},
+		&types.EmailSettings{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("auto migratePreAuto: %w", err)
@@ -407,6 +408,17 @@ func (s *SqlStore) DeleteAccount(ctx context.Context, account *types.Account) er
 		}
 
 		result = tx.Select(clause.Associations).Delete(account.Services, "account_id = ?", account.Id)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		// These account-scoped tables are not GORM associations on Account, so
+		// remove them explicitly in the same transaction as the account.
+		result = tx.Delete(&types.EmailSettings{}, "account_id = ?", account.Id)
+		if result.Error != nil {
+			return result.Error
+		}
+		result = tx.Delete(&types.UserInviteRecord{}, "account_id = ?", account.Id)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -940,6 +952,29 @@ func (s *SqlStore) SaveUserInvite(ctx context.Context, invite *types.UserInviteR
 	return nil
 }
 
+// UpdateUserInviteTokenIfMatches updates token metadata only when the
+// persisted invite still contains expectedHashedToken. The compare-and-swap
+// is used both to claim a resend and to restore a token after a failed send.
+func (s *SqlStore) UpdateUserInviteTokenIfMatches(ctx context.Context, invite *types.UserInviteRecord, expectedHashedToken string) (bool, error) {
+	if invite == nil || invite.ID == "" || invite.AccountID == "" || expectedHashedToken == "" {
+		return false, status.Errorf(status.InvalidArgument, "invite and expected token are required")
+	}
+
+	result := s.db.WithContext(ctx).
+		Model(&types.UserInviteRecord{}).
+		Where("id = ? AND account_id = ? AND hashed_token = ?", invite.ID, invite.AccountID, expectedHashedToken).
+		Updates(map[string]any{
+			"hashed_token": invite.HashedToken,
+			"expires_at":   invite.ExpiresAt,
+			"created_by":   invite.CreatedBy,
+		})
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to conditionally update user invite token")
+		return false, status.Errorf(status.Internal, "failed to update user invite token")
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // GetUserInviteByID retrieves a user invite by its ID and account ID
 func (s *SqlStore) GetUserInviteByID(ctx context.Context, lockStrength LockingStrength, accountID, inviteID string) (*types.UserInviteRecord, error) {
 	tx := s.db
@@ -1045,6 +1080,57 @@ func (s *SqlStore) DeleteUserInvite(ctx context.Context, inviteID string) error 
 	if result.Error != nil {
 		log.WithContext(ctx).Errorf("failed to delete user invite from store: %s", result.Error)
 		return status.Errorf(status.Internal, "failed to delete user invite from store")
+	}
+	return nil
+}
+
+// GetEmailSettings loads account-scoped SMTP settings. Missing settings are
+// represented by normalized defaults so callers can render a first-run form.
+func (s *SqlStore) GetEmailSettings(ctx context.Context, lockStrength LockingStrength, accountID string) (*types.EmailSettings, error) {
+	tx := s.db
+	if lockStrength != LockingStrengthNone {
+		tx = tx.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+
+	var settings types.EmailSettings
+	result := tx.Take(&settings, "account_id = ?", accountID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			settings = types.EmailSettings{AccountID: accountID}
+			settings.Normalize()
+			return &settings, nil
+		}
+		log.WithContext(ctx).WithError(result.Error).Error("failed to get email settings from store")
+		return nil, status.Errorf(status.Internal, "failed to get email settings from store")
+	}
+
+	if err := settings.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+		return nil, fmt.Errorf("decrypt email settings: %w", err)
+	}
+	settings.Normalize()
+	settings.PasswordConfigured = settings.Password != "" || settings.PasswordEncrypted != ""
+	return &settings, nil
+}
+
+// SaveEmailSettings persists SMTP settings while encrypting the password at
+// rest. The caller may pass a copy containing the clear password for updates.
+func (s *SqlStore) SaveEmailSettings(ctx context.Context, settings *types.EmailSettings) error {
+	if settings == nil {
+		return status.Errorf(status.InvalidArgument, "email settings are required")
+	}
+	settingsCopy := settings.Copy()
+	settingsCopy.Normalize()
+	settingsCopy.PasswordConfigured = false
+	if settingsCopy.Password != "" {
+		if err := settingsCopy.EncryptSensitiveData(s.fieldEncrypt); err != nil {
+			return fmt.Errorf("encrypt email settings: %w", err)
+		}
+	}
+
+	result := s.db.Save(settingsCopy)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to save email settings to store")
+		return status.Errorf(status.Internal, "failed to save email settings to store")
 	}
 	return nil
 }

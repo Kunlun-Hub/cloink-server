@@ -40,6 +40,8 @@ tags:
     description: Interact with and view information about reverse proxy services.
   - name: Instance
     description: Instance setup and status endpoints for initial configuration.
+  - name: Settings
+    description: Account-level settings and notification configuration.
   - name: Jobs
     description: Interact with and view information about remote jobs.
     x-experimental: true
@@ -778,6 +780,102 @@ components:
       required:
         - invite_token
         - invite_expires_at
+    EmailTemplate:
+      type: object
+      description: An account email notification template.
+      properties:
+        enabled:
+          type: boolean
+        subject:
+          type: string
+        body_html:
+          type: string
+        body_text:
+          type: string
+      required: [ enabled, subject, body_html, body_text ]
+    EmailSettings:
+      type: object
+      description: Account SMTP and notification settings.
+      properties:
+        account_id:
+          type: string
+        enabled:
+          type: boolean
+        host:
+          type: string
+        port:
+          type: integer
+          format: int32
+        username:
+          type: string
+        password_configured:
+          type: boolean
+          readOnly: true
+        from_name:
+          type: string
+        from_email:
+          type: string
+        reply_to:
+          type: string
+        encryption:
+          type: string
+          enum: [ none, starttls, tls ]
+        insecure_skip_verify:
+          type: boolean
+        admin_recipients:
+          type: array
+          items:
+            type: string
+            format: email
+        templates:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/EmailTemplate'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [ enabled, host, port, username, password_configured, from_name, from_email, reply_to, encryption, insecure_skip_verify, admin_recipients, templates ]
+    EmailSettingsUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/EmailSettings'
+        - type: object
+          properties:
+            account_id:
+              readOnly: true
+            password:
+              type: string
+              format: password
+              writeOnly: true
+            clear_password:
+              type: boolean
+          required: [ enabled, host, port, username, from_name, from_email, reply_to, encryption, insecure_skip_verify, admin_recipients, templates ]
+    EmailTestRequest:
+      type: object
+      properties:
+        recipient:
+          type: string
+          format: email
+      required: [ recipient ]
+    EmailTemplatePreviewRequest:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+      required: [ data ]
+    EmailTemplatePreview:
+      type: object
+      properties:
+        subject:
+          type: string
+        body_html:
+          type: string
+        body_text:
+          type: string
+      required: [ subject, body_html, body_text ]
     PeerMinimum:
       type: object
       properties:
@@ -9108,6 +9206,156 @@ paths:
           "$ref": "#/components/responses/requires_authentication"
         '403':
           "$ref": "#/components/responses/forbidden"
+        '500':
+          "$ref": "#/components/responses/internal_error"
+  /api/settings/email:
+    get:
+      summary: Retrieve email notification settings
+      tags: [ Settings ]
+      security:
+        - BearerAuth: [ ]
+        - TokenAuth: [ ]
+      responses:
+        '200':
+          description: Account SMTP settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailSettings'
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+        '500':
+          "$ref": "#/components/responses/internal_error"
+    put:
+      summary: Update email notification settings
+      tags: [ Settings ]
+      security:
+        - BearerAuth: [ ]
+        - TokenAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailSettingsUpdateRequest'
+      responses:
+        '200':
+          description: Updated account SMTP settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailSettings'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+        '500':
+          "$ref": "#/components/responses/internal_error"
+  /api/settings/email/test:
+    post:
+      summary: Send a test email
+      tags: [ Settings ]
+      security:
+        - BearerAuth: [ ]
+        - TokenAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailTestRequest'
+      responses:
+        '200':
+          description: Test email sent
+          content: { }
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+        '412':
+          description: Email notifications are disabled
+          content: { }
+        '500':
+          "$ref": "#/components/responses/internal_error"
+  /api/settings/email/templates/{kind}/preview:
+    post:
+      summary: Preview an email template
+      tags: [ Settings ]
+      security:
+        - BearerAuth: [ ]
+        - TokenAuth: [ ]
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailTemplatePreviewRequest'
+      responses:
+        '200':
+          description: Rendered email template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailTemplatePreview'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+        '500':
+          "$ref": "#/components/responses/internal_error"
+  /api/users/invites/{inviteId}/resend:
+    post:
+      summary: Resend a user invite by email
+      description: Regenerates the invite token and sends the invitation through the account SMTP service.
+      tags: [ Users ]
+      security:
+        - BearerAuth: [ ]
+        - TokenAuth: [ ]
+      parameters:
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Optional invite expiration override
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInviteRegenerateRequest'
+      responses:
+        '200':
+          description: Invite resent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInviteRegenerateResponse'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+        '404':
+          description: Invite not found
+          content: { }
+        '412':
+          description: Embedded IdP or SMTP is not enabled
+          content: { }
         '500':
           "$ref": "#/components/responses/internal_error"
   /api/dns/settings:

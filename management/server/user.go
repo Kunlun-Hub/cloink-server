@@ -19,6 +19,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/account"
 	"github.com/netbirdio/netbird/management/server/activity"
 	"github.com/netbirdio/netbird/management/server/affectedpeers"
+	emailmanager "github.com/netbirdio/netbird/management/server/email"
 	"github.com/netbirdio/netbird/management/server/idp"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/permissions/modules"
@@ -147,6 +148,7 @@ func (am *DefaultAccountManager) inviteNewUser(ctx context.Context, accountID, u
 		eventType = activity.UserCreated
 	}
 	am.StoreEvent(ctx, userID, newUser.Id, accountID, eventType, nil)
+	am.notifyUserCreated(ctx, accountID, newUser)
 
 	return newUser.ToUserInfo(idpUser)
 }
@@ -392,6 +394,15 @@ func (am *DefaultAccountManager) InviteUser(ctx context.Context, accountID strin
 	}
 
 	am.StoreEvent(ctx, initiatorUserID, user.ID, accountID, activity.UserInvited, nil)
+	// The external IdP may send its own invitation, but Cloink's SMTP
+	// notifications should still notify the account recipient when configured.
+	am.notifyUserCreated(ctx, accountID, &types.User{
+		Id:        user.ID,
+		AccountID: accountID,
+		Email:     user.Email,
+		Name:      user.Name,
+		Role:      types.UserRoleUser,
+	})
 
 	return nil
 }
@@ -1647,6 +1658,7 @@ func (am *DefaultAccountManager) CreateUserInvite(ctx context.Context, accountID
 	}
 
 	am.StoreEvent(ctx, initiatorUserID, inviteID, accountID, activity.UserInviteLinkCreated, map[string]any{"email": invite.Email})
+	am.notifyInviteCreated(ctx, accountID, userInvite, plainToken)
 
 	return &types.UserInvite{
 		UserInfo: &types.UserInfo{
@@ -1803,6 +1815,7 @@ func (am *DefaultAccountManager) AcceptUserInvite(ctx context.Context, token, pa
 	}
 
 	am.StoreEvent(ctx, newUser.Id, newUser.Id, invite.AccountID, activity.UserInviteLinkAccepted, map[string]any{"email": invite.Email})
+	am.notifyInviteAccepted(ctx, invite, newUser)
 
 	return nil
 }
@@ -1821,10 +1834,22 @@ func (am *DefaultAccountManager) RegenerateUserInvite(ctx context.Context, accou
 		return nil, status.NewPermissionDeniedError()
 	}
 
-	// Get existing invite
+	// Load the current invite and rotate it through the link-only regeneration
+	// helper. The SMTP resend path uses a separate compare-and-swap flow because
+	// it must keep the previous link valid when delivery fails.
 	existingInvite, err := am.Store.GetUserInviteByID(ctx, store.LockingStrengthUpdate, accountID, inviteID)
 	if err != nil {
 		return nil, err
+	}
+	return am.regenerateUserInviteRecord(ctx, accountID, initiatorUserID, existingInvite, expiresIn, true)
+}
+
+// prepareRegeneratedUserInvite creates a new token without persisting it.
+// Resend uses the returned record for a compare-and-swap update so concurrent
+// requests cannot claim the same previous token.
+func prepareRegeneratedUserInvite(initiatorUserID string, existingInvite *types.UserInviteRecord, expiresIn int) (*types.UserInviteRecord, *types.UserInvite, error) {
+	if existingInvite == nil {
+		return nil, nil, status.Errorf(status.NotFound, "user invite not found")
 	}
 
 	// Calculate expiration time
@@ -1832,29 +1857,21 @@ func (am *DefaultAccountManager) RegenerateUserInvite(ctx context.Context, accou
 		expiresIn = types.DefaultInviteExpirationSeconds
 	}
 	if expiresIn < types.MinInviteExpirationSeconds {
-		return nil, status.Errorf(status.InvalidArgument, "invite expiration must be at least 1 hour")
+		return nil, nil, status.Errorf(status.InvalidArgument, "invite expiration must be at least 1 hour")
 	}
 	expiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
 
 	// Generate new invite token
 	hashedToken, plainToken, err := types.GenerateInviteToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate invite token: %w", err)
+		return nil, nil, fmt.Errorf("failed to generate invite token: %w", err)
 	}
 
 	// Update existing invite with new token and expiration
 	existingInvite.HashedToken = hashedToken
 	existingInvite.ExpiresAt = expiresAt
 	existingInvite.CreatedBy = initiatorUserID
-
-	err = am.Store.SaveUserInvite(ctx, existingInvite)
-	if err != nil {
-		return nil, err
-	}
-
-	am.StoreEvent(ctx, initiatorUserID, existingInvite.ID, accountID, activity.UserInviteLinkRegenerated, map[string]any{"email": existingInvite.Email})
-
-	return &types.UserInvite{
+	invite := &types.UserInvite{
 		UserInfo: &types.UserInfo{
 			ID:         existingInvite.ID,
 			Email:      existingInvite.Email,
@@ -1866,7 +1883,94 @@ func (am *DefaultAccountManager) RegenerateUserInvite(ctx context.Context, accou
 		},
 		InviteToken:     plainToken,
 		InviteExpiresAt: expiresAt,
-	}, nil
+	}
+	return existingInvite, invite, nil
+}
+
+// regenerateUserInviteRecord rotates an invite record that has already passed
+// the account and permission checks. Keeping the event emission here preserves
+// the existing link-only regeneration behavior.
+func (am *DefaultAccountManager) regenerateUserInviteRecord(ctx context.Context, accountID, initiatorUserID string, existingInvite *types.UserInviteRecord, expiresIn int, recordEvent bool) (*types.UserInvite, error) {
+	updatedInvite, invite, err := prepareRegeneratedUserInvite(initiatorUserID, existingInvite, expiresIn)
+	if err != nil {
+		return nil, err
+	}
+	if err := am.Store.SaveUserInvite(ctx, updatedInvite); err != nil {
+		return nil, err
+	}
+	if recordEvent {
+		am.StoreEvent(ctx, initiatorUserID, updatedInvite.ID, accountID, activity.UserInviteLinkRegenerated, map[string]any{"email": updatedInvite.Email})
+	}
+	return invite, nil
+}
+
+// ResendUserInvite regenerates an invite token and sends the resulting link by
+// email. RegenerateUserInvite remains available separately for clients that
+// only need a link and do not have SMTP configured.
+func (am *DefaultAccountManager) ResendUserInvite(ctx context.Context, accountID, initiatorUserID, inviteID string, expiresIn int) (*types.UserInvite, error) {
+	if !IsEmbeddedIdp(am.idpManager) {
+		return nil, status.Errorf(status.PreconditionFailed, "invite links are only available with embedded identity provider")
+	}
+	allowed, validatedCtx, err := am.permissionsManager.ValidateUserPermissions(ctx, accountID, initiatorUserID, modules.Users, operations.Update)
+	if err != nil {
+		return nil, status.NewPermissionValidationError(err)
+	}
+	if !allowed {
+		return nil, status.NewPermissionDeniedError()
+	}
+	notifier, strict := am.emailService.(emailmanager.StrictNotifier)
+	if !strict || notifier == nil {
+		return nil, status.Errorf(status.PreconditionFailed, "SMTP email notifications are not configured")
+	}
+
+	// Keep a copy so a failed resend can restore the old link. The subsequent
+	// token update is a compare-and-swap, so concurrent resends cannot claim the
+	// same previous token.
+	previousInvite, err := am.Store.GetUserInviteByID(validatedCtx, store.LockingStrengthUpdate, accountID, inviteID)
+	if err != nil {
+		return nil, err
+	}
+	if previousInvite == nil {
+		return nil, status.Errorf(status.NotFound, "user invite not found")
+	}
+	previousInvite = previousInvite.Copy()
+
+	updatedInvite, invite, err := prepareRegeneratedUserInvite(initiatorUserID, previousInvite.Copy(), expiresIn)
+	if err != nil {
+		return nil, err
+	}
+	claimed, err := am.Store.UpdateUserInviteTokenIfMatches(validatedCtx, updatedInvite, previousInvite.HashedToken)
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, status.Errorf(status.PreconditionFailed, "invite changed concurrently; retry the resend")
+	}
+
+	if err := am.notifyInviteCreatedStrict(validatedCtx, accountID, &types.UserInviteRecord{
+		ID:         invite.UserInfo.ID,
+		AccountID:  accountID,
+		Email:      invite.UserInfo.Email,
+		Name:       invite.UserInfo.Name,
+		Role:       invite.UserInfo.Role,
+		AutoGroups: invite.UserInfo.AutoGroups,
+		ExpiresAt:  invite.InviteExpiresAt,
+		CreatedBy:  initiatorUserID,
+	}, invite.InviteToken); err != nil {
+		newHashedToken := types.HashInviteToken(invite.InviteToken)
+		restored, restoreErr := am.Store.UpdateUserInviteTokenIfMatches(validatedCtx, previousInvite, newHashedToken)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("send invitation email: %w (also failed to restore previous invite: %v)", err, restoreErr)
+		}
+		if !restored {
+			return nil, fmt.Errorf("send invitation email: %w (invite changed concurrently; previous token was not restored)", err)
+		}
+		return nil, fmt.Errorf("send invitation email: %w", err)
+	}
+	// Record the regeneration only after the new token has been delivered. If
+	// SMTP fails, the old invite is restored and no misleading event is stored.
+	am.StoreEvent(validatedCtx, initiatorUserID, inviteID, accountID, activity.UserInviteLinkRegenerated, map[string]any{"email": invite.UserInfo.Email})
+	return invite, nil
 }
 
 // DeleteUserInvite deletes an existing invite by ID.

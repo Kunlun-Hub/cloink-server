@@ -2012,6 +2012,21 @@ func (mr *MockStoreMockRecorder) GetDNSRecordByID(ctx, lockStrength, accountID, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDNSRecordByID", reflect.TypeOf((*MockStore)(nil).GetDNSRecordByID), ctx, lockStrength, accountID, zoneID, recordID)
 }
 
+// GetEmailSettings mocks base method.
+func (m *MockStore) GetEmailSettings(ctx context.Context, lockStrength LockingStrength, accountID string) (*types3.EmailSettings, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailSettings", ctx, lockStrength, accountID)
+	ret0, _ := ret[0].(*types3.EmailSettings)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailSettings indicates an expected call of GetEmailSettings.
+func (mr *MockStoreMockRecorder) GetEmailSettings(ctx, lockStrength, accountID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailSettings", reflect.TypeOf((*MockStore)(nil).GetEmailSettings), ctx, lockStrength, accountID)
+}
+
 // GetEmbeddedProxyPeerIDsByCluster mocks base method.
 func (m *MockStore) GetEmbeddedProxyPeerIDsByCluster(ctx context.Context, accountID string) (map[string][]string, error) {
 	m.ctrl.T.Helper()
@@ -3533,6 +3548,20 @@ func (mr *MockStoreMockRecorder) SaveDNSSettings(ctx, accountID, settings interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveDNSSettings", reflect.TypeOf((*MockStore)(nil).SaveDNSSettings), ctx, accountID, settings)
 }
 
+// SaveEmailSettings mocks base method.
+func (m *MockStore) SaveEmailSettings(ctx context.Context, settings *types3.EmailSettings) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveEmailSettings", ctx, settings)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveEmailSettings indicates an expected call of SaveEmailSettings.
+func (mr *MockStoreMockRecorder) SaveEmailSettings(ctx, settings interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveEmailSettings", reflect.TypeOf((*MockStore)(nil).SaveEmailSettings), ctx, settings)
+}
+
 // SaveInstallationID mocks base method.
 func (m *MockStore) SaveInstallationID(ctx context.Context, ID string) error {
 	m.ctrl.T.Helper()
@@ -3922,6 +3951,21 @@ func (m *MockStore) UpdateService(ctx context.Context, service *service.Service)
 func (mr *MockStoreMockRecorder) UpdateService(ctx, service interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateService", reflect.TypeOf((*MockStore)(nil).UpdateService), ctx, service)
+}
+
+// UpdateUserInviteTokenIfMatches mocks base method.
+func (m *MockStore) UpdateUserInviteTokenIfMatches(ctx context.Context, invite *types3.UserInviteRecord, expectedHashedToken string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateUserInviteTokenIfMatches", ctx, invite, expectedHashedToken)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateUserInviteTokenIfMatches indicates an expected call of UpdateUserInviteTokenIfMatches.
+func (mr *MockStoreMockRecorder) UpdateUserInviteTokenIfMatches(ctx, invite, expectedHashedToken interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUserInviteTokenIfMatches", reflect.TypeOf((*MockStore)(nil).UpdateUserInviteTokenIfMatches), ctx, invite, expectedHashedToken)
 }
 
 // UpdateZone mocks base method.

@@ -179,6 +179,24 @@ func TestCreateUserInvite_PermissionDenied(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestResendUserInviteRequiresSMTP(t *testing.T) {
+	am, cleanup := setupInviteTestManagerWithEmbeddedIdP(t)
+	defer cleanup()
+
+	_, err := am.ResendUserInvite(
+		context.Background(),
+		testAccountID,
+		testAdminUserID,
+		"missing-invite",
+		0,
+	)
+	require.Error(t, err)
+	sErr, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, status.PreconditionFailed, sErr.Type())
+	assert.Contains(t, err.Error(), "SMTP email notifications")
+}
+
 func TestCreateUserInvite_InvalidEmail(t *testing.T) {
 	am, cleanup := setupInviteTestManagerWithEmbeddedIdP(t)
 	defer cleanup()

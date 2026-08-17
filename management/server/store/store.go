@@ -87,6 +87,8 @@ type Store interface {
 	SaveAccountSettings(ctx context.Context, accountID string, settings *types.Settings) error
 	CountAccountsByPrivateDomain(ctx context.Context, domain string) (int64, error)
 	SaveAccountOnboarding(ctx context.Context, onboarding *types.AccountOnboarding) error
+	GetEmailSettings(ctx context.Context, lockStrength LockingStrength, accountID string) (*types.EmailSettings, error)
+	SaveEmailSettings(ctx context.Context, settings *types.EmailSettings) error
 
 	GetUserByPATID(ctx context.Context, lockStrength LockingStrength, patID string) (*types.User, error)
 	GetUserByUserID(ctx context.Context, lockStrength LockingStrength, userID string) (*types.User, error)
@@ -101,6 +103,7 @@ type Store interface {
 	DeleteTokenID2UserIDIndex(tokenID string) error
 
 	SaveUserInvite(ctx context.Context, invite *types.UserInviteRecord) error
+	UpdateUserInviteTokenIfMatches(ctx context.Context, invite *types.UserInviteRecord, expectedHashedToken string) (bool, error)
 	GetUserInviteByID(ctx context.Context, lockStrength LockingStrength, accountID, inviteID string) (*types.UserInviteRecord, error)
 	GetUserInviteByHashedToken(ctx context.Context, lockStrength LockingStrength, hashedToken string) (*types.UserInviteRecord, error)
 	GetUserInviteByEmail(ctx context.Context, lockStrength LockingStrength, accountID, email string) (*types.UserInviteRecord, error)

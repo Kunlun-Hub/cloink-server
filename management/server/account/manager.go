@@ -37,6 +37,7 @@ type Manager interface {
 	CreateUserInvite(ctx context.Context, accountID, initiatorUserID string, invite *types.UserInfo, expiresIn int) (*types.UserInvite, error)
 	AcceptUserInvite(ctx context.Context, token, password string) error
 	RegenerateUserInvite(ctx context.Context, accountID, initiatorUserID, inviteID string, expiresIn int) (*types.UserInvite, error)
+	ResendUserInvite(ctx context.Context, accountID, initiatorUserID, inviteID string, expiresIn int) (*types.UserInvite, error)
 	GetUserInviteInfo(ctx context.Context, token string) (*types.UserInviteInfo, error)
 	ListUserInvites(ctx context.Context, accountID, initiatorUserID string) ([]*types.UserInvite, error)
 	DeleteUserInvite(ctx context.Context, accountID, initiatorUserID, inviteID string) error

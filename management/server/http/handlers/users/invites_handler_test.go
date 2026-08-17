@@ -587,6 +587,43 @@ func TestRegenerateInvite(t *testing.T) {
 	}
 }
 
+func TestResendInvite(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(72 * time.Hour)
+	am := &mock_server.MockAccountManager{
+		ResendUserInviteFunc: func(_ context.Context, accountID, initiatorUserID, inviteID string, expiresIn int) (*types.UserInvite, error) {
+			assert.Equal(t, testAccountID, accountID)
+			assert.Equal(t, testUserID, initiatorUserID)
+			assert.Equal(t, testInviteID, inviteID)
+			assert.Equal(t, 7200, expiresIn)
+			return &types.UserInvite{
+				UserInfo:        &types.UserInfo{ID: inviteID, Email: testEmail},
+				InviteToken:     "nbi_newtoken12345678901234567890",
+				InviteExpiresAt: expiresAt,
+			}, nil
+		},
+	}
+	handler := setupInvitesTestHandler(am)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/users/invites/"+testInviteID+"/resend",
+		bytes.NewBufferString(`{"expires_in":7200}`),
+	)
+	req = nbcontext.SetUserAuthInRequest(req, auth.UserAuth{
+		UserId:    testUserID,
+		AccountId: testAccountID,
+	})
+	req = mux.SetURLVars(req, map[string]string{"inviteId": testInviteID})
+
+	recorder := httptest.NewRecorder()
+	handler.resendInvite(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var response api.UserInviteRegenerateResponse
+	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
+	assert.Equal(t, "nbi_newtoken12345678901234567890", response.InviteToken)
+	assert.WithinDuration(t, expiresAt, response.InviteExpiresAt, time.Second)
+}
+
 func TestDeleteInvite(t *testing.T) {
 	tt := []struct {
 		name           string

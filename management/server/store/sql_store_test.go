@@ -437,6 +437,28 @@ func TestSqlite_DeleteAccount(t *testing.T) {
 	err = store.SaveAccount(context.Background(), account)
 	require.NoError(t, err)
 
+	// Account-scoped SMTP settings and embedded-IDP invites are not GORM
+	// associations on Account, so verify DeleteAccount removes both records.
+	require.NoError(t, store.SaveEmailSettings(context.Background(), &types.EmailSettings{
+		AccountID:  account.Id,
+		Enabled:    true,
+		Host:       "smtp.example.com",
+		Port:       587,
+		FromEmail:  "notice@example.com",
+		Encryption: types.EmailEncryptionStartTLS,
+	}))
+	require.NoError(t, store.SaveUserInvite(context.Background(), &types.UserInviteRecord{
+		ID:          "delete-account-invite",
+		AccountID:   account.Id,
+		Email:       "invite@example.com",
+		Name:        "Invite User",
+		Role:        string(types.UserRoleUser),
+		HashedToken: "delete-account-token",
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+		CreatedAt:   time.Now().UTC(),
+		CreatedBy:   testUserID,
+	}))
+
 	if len(store.GetAllAccounts(context.Background())) != 1 {
 		t.Errorf("expecting 1 Accounts to be stored after SaveAccount()")
 	}
@@ -447,6 +469,17 @@ func TestSqlite_DeleteAccount(t *testing.T) {
 
 	err = store.DeleteAccount(context.Background(), account)
 	require.NoError(t, err)
+
+	sqlStore, ok := store.(*SqlStore)
+	require.True(t, ok)
+	var remainingEmailSettings int64
+	require.NoError(t, sqlStore.db.Model(&types.EmailSettings{}).Where("account_id = ?", account.Id).Count(&remainingEmailSettings).Error)
+	require.Zero(t, remainingEmailSettings, "account SMTP settings must be removed with the account")
+	_, err = store.GetEmailSettings(context.Background(), LockingStrengthNone, account.Id)
+	require.NoError(t, err, "missing email settings should be represented by defaults")
+	var remainingInvites int64
+	require.NoError(t, sqlStore.db.Model(&types.UserInviteRecord{}).Where("account_id = ?", account.Id).Count(&remainingInvites).Error)
+	require.Zero(t, remainingInvites, "account invites must be removed with the account")
 
 	_, err = store.GetAccountOnboarding(context.Background(), account.Id)
 	require.Error(t, err, "expecting error after removing DeleteAccount when getting onboarding")

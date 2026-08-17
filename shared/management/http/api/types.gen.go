@@ -161,6 +161,48 @@ func (e DNSRecordType) Valid() bool {
 	}
 }
 
+// Defines values for EmailSettingsEncryption.
+const (
+	EmailSettingsEncryptionNone     EmailSettingsEncryption = "none"
+	EmailSettingsEncryptionStarttls EmailSettingsEncryption = "starttls"
+	EmailSettingsEncryptionTls      EmailSettingsEncryption = "tls"
+)
+
+// Valid indicates whether the value is a known member of the EmailSettingsEncryption enum.
+func (e EmailSettingsEncryption) Valid() bool {
+	switch e {
+	case EmailSettingsEncryptionNone:
+		return true
+	case EmailSettingsEncryptionStarttls:
+		return true
+	case EmailSettingsEncryptionTls:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EmailSettingsUpdateRequestEncryption.
+const (
+	EmailSettingsUpdateRequestEncryptionNone     EmailSettingsUpdateRequestEncryption = "none"
+	EmailSettingsUpdateRequestEncryptionStarttls EmailSettingsUpdateRequestEncryption = "starttls"
+	EmailSettingsUpdateRequestEncryptionTls      EmailSettingsUpdateRequestEncryption = "tls"
+)
+
+// Valid indicates whether the value is a known member of the EmailSettingsUpdateRequestEncryption enum.
+func (e EmailSettingsUpdateRequestEncryption) Valid() bool {
+	switch e {
+	case EmailSettingsUpdateRequestEncryptionNone:
+		return true
+	case EmailSettingsUpdateRequestEncryptionStarttls:
+		return true
+	case EmailSettingsUpdateRequestEncryptionTls:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EventActivityCode.
 const (
 	EventActivityCodeAccountCreate                                 EventActivityCode = "account.create"
@@ -3114,10 +3156,81 @@ type EDRSentinelOneResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// EmailSettings Account SMTP and notification settings.
+type EmailSettings struct {
+	AccountId          *string                  `json:"account_id,omitempty"`
+	AdminRecipients    []openapi_types.Email    `json:"admin_recipients"`
+	CreatedAt          *time.Time               `json:"created_at,omitempty"`
+	Enabled            bool                     `json:"enabled"`
+	Encryption         EmailSettingsEncryption  `json:"encryption"`
+	FromEmail          string                   `json:"from_email"`
+	FromName           string                   `json:"from_name"`
+	Host               string                   `json:"host"`
+	InsecureSkipVerify bool                     `json:"insecure_skip_verify"`
+	PasswordConfigured *bool                    `json:"password_configured,omitempty"`
+	Port               int32                    `json:"port"`
+	ReplyTo            string                   `json:"reply_to"`
+	Templates          map[string]EmailTemplate `json:"templates"`
+	UpdatedAt          *time.Time               `json:"updated_at,omitempty"`
+	Username           string                   `json:"username"`
+}
+
+// EmailSettingsEncryption defines model for EmailSettings.Encryption.
+type EmailSettingsEncryption string
+
+// EmailSettingsUpdateRequest defines model for EmailSettingsUpdateRequest.
+type EmailSettingsUpdateRequest struct {
+	AccountId          interface{}                          `json:"account_id,omitempty"`
+	AdminRecipients    []openapi_types.Email                `json:"admin_recipients"`
+	ClearPassword      *bool                                `json:"clear_password,omitempty"`
+	CreatedAt          *time.Time                           `json:"created_at,omitempty"`
+	Enabled            bool                                 `json:"enabled"`
+	Encryption         EmailSettingsUpdateRequestEncryption `json:"encryption"`
+	FromEmail          string                               `json:"from_email"`
+	FromName           string                               `json:"from_name"`
+	Host               string                               `json:"host"`
+	InsecureSkipVerify bool                                 `json:"insecure_skip_verify"`
+	Password           *string                              `json:"password,omitempty"`
+	PasswordConfigured *bool                                `json:"password_configured,omitempty"`
+	Port               int32                                `json:"port"`
+	ReplyTo            string                               `json:"reply_to"`
+	Templates          map[string]EmailTemplate             `json:"templates"`
+	UpdatedAt          *time.Time                           `json:"updated_at,omitempty"`
+	Username           string                               `json:"username"`
+}
+
+// EmailSettingsUpdateRequestEncryption defines model for EmailSettingsUpdateRequest.Encryption.
+type EmailSettingsUpdateRequestEncryption string
+
 // EmailTarget Target configuration for email notification channels.
 type EmailTarget struct {
 	// Emails List of email addresses to send notifications to.
 	Emails []openapi_types.Email `json:"emails"`
+}
+
+// EmailTemplate An account email notification template.
+type EmailTemplate struct {
+	BodyHtml string `json:"body_html"`
+	BodyText string `json:"body_text"`
+	Enabled  bool   `json:"enabled"`
+	Subject  string `json:"subject"`
+}
+
+// EmailTemplatePreview defines model for EmailTemplatePreview.
+type EmailTemplatePreview struct {
+	BodyHtml string `json:"body_html"`
+	BodyText string `json:"body_text"`
+	Subject  string `json:"subject"`
+}
+
+// EmailTemplatePreviewRequest defines model for EmailTemplatePreviewRequest.
+type EmailTemplatePreviewRequest struct {
+	Data map[string]interface{} `json:"data"`
+}
+
+// EmailTestRequest defines model for EmailTestRequest.
+type EmailTestRequest struct {
+	Recipient openapi_types.Email `json:"recipient"`
 }
 
 // ErrorResponse Standard error response. Note: The exact structure of this error response is inferred from `util.WriteErrorResponse` and `util.WriteError` usage in the provided Go code, as a specific Go struct for errors was not provided.
@@ -6434,6 +6547,15 @@ type PostApiRoutesJSONRequestBody = RouteRequest
 // PutApiRoutesRouteIdJSONRequestBody defines body for PutApiRoutesRouteId for application/json ContentType.
 type PutApiRoutesRouteIdJSONRequestBody = RouteRequest
 
+// PutApiSettingsEmailJSONRequestBody defines body for PutApiSettingsEmail for application/json ContentType.
+type PutApiSettingsEmailJSONRequestBody = EmailSettingsUpdateRequest
+
+// PostApiSettingsEmailTemplatesKindPreviewJSONRequestBody defines body for PostApiSettingsEmailTemplatesKindPreview for application/json ContentType.
+type PostApiSettingsEmailTemplatesKindPreviewJSONRequestBody = EmailTemplatePreviewRequest
+
+// PostApiSettingsEmailTestJSONRequestBody defines body for PostApiSettingsEmailTest for application/json ContentType.
+type PostApiSettingsEmailTestJSONRequestBody = EmailTestRequest
+
 // PostApiSetupJSONRequestBody defines body for PostApiSetup for application/json ContentType.
 type PostApiSetupJSONRequestBody = SetupRequest
 
@@ -6451,6 +6573,9 @@ type PostApiUsersInvitesJSONRequestBody = UserInviteCreateRequest
 
 // PostApiUsersInvitesInviteIdRegenerateJSONRequestBody defines body for PostApiUsersInvitesInviteIdRegenerate for application/json ContentType.
 type PostApiUsersInvitesInviteIdRegenerateJSONRequestBody = UserInviteRegenerateRequest
+
+// PostApiUsersInvitesInviteIdResendJSONRequestBody defines body for PostApiUsersInvitesInviteIdResend for application/json ContentType.
+type PostApiUsersInvitesInviteIdResendJSONRequestBody = UserInviteRegenerateRequest
 
 // PostApiUsersInvitesTokenAcceptJSONRequestBody defines body for PostApiUsersInvitesTokenAccept for application/json ContentType.
 type PostApiUsersInvitesTokenAcceptJSONRequestBody = UserInviteAcceptRequest

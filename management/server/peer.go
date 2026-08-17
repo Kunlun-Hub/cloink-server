@@ -970,6 +970,9 @@ func (am *DefaultAccountManager) AddPeer(ctx context.Context, accountID, setupKe
 	if !temporary {
 		am.StoreEvent(ctx, opEvent.InitiatorID, opEvent.TargetID, opEvent.AccountID, opEvent.Activity, opEvent.Meta)
 	}
+	if requiresApproval {
+		am.notifyDevicePendingApproval(ctx, accountID, newPeer)
+	}
 
 	network, postureChecks, enableSSH, err := getPeerLoginInfo(ctx, am.Store, accountID, newPeer, !requiresApproval)
 	if err != nil {
