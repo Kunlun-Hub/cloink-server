@@ -21,10 +21,13 @@
     {{- $nameLower := lower $c.Name -}}
     {{- $idLower := lower $c.ID -}}
     {{- if not (or (contains "email" $nameLower) (contains "email" $idLower) (contains "local" $nameLower) (contains "local" $idLower)) -}}
+    {{- $isWeChatWork := or (contains "wechatwork" $nameLower) (contains "wechatwork" $idLower) (contains "wecom" $nameLower) (contains "wecom" $idLower) (contains "企业微信" $c.Name) -}}
     <a href="{{ $c.URL }}" class="nb-btn-connector">
         {{- $iconClass := "nb-icon-default" -}}
         {{- if or (contains "google" $nameLower) (contains "google" $idLower) -}}
             {{- $iconClass = "nb-icon-google" -}}
+        {{- else if $isWeChatWork -}}
+            {{- $iconClass = "nb-icon-wechatwork" -}}
         {{- else if or (contains "github" $nameLower) (contains "github" $idLower) -}}
             {{- $iconClass = "nb-icon-github" -}}
         {{- else if or (contains "entra" $nameLower) (contains "entra" $idLower) -}}

@@ -383,6 +383,12 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 		if newSettings.Extra == nil {
 			newSettings.Extra = oldSettings.Extra
 		}
+		if newSettings.LoginMethod == "" {
+			newSettings.LoginMethod = oldSettings.LoginMethod
+		}
+		if newSettings.LoginMethod == "" {
+			newSettings.LoginMethod = types.LoginMethodAll
+		}
 
 		if err = transaction.SaveAccountSettings(ctx, accountID, newSettings); err != nil {
 			return err
@@ -530,7 +536,46 @@ func (am *DefaultAccountManager) validateSettingsUpdate(ctx context.Context, tra
 		return err
 	}
 
+	loginMethod := newSettings.LoginMethod
+	if loginMethod == "" {
+		loginMethod = types.LoginMethodAll
+	}
+
+	switch loginMethod {
+	case types.LoginMethodAll:
+	case types.LoginMethodEmail:
+		if IsLocalAuthDisabled(ctx, am.idpManager) {
+			return status.Errorf(status.InvalidArgument, "email login is disabled for this instance")
+		}
+	case types.LoginMethodWeChatWork:
+		if _, err := am.getPreferredWeChatWorkConnectorID(ctx); err != nil {
+			return status.Errorf(status.InvalidArgument, "wechat work login method requires a configured WeChat Work identity provider")
+		}
+	default:
+		return status.Errorf(status.InvalidArgument, "invalid login method %q", loginMethod)
+	}
+
 	return am.integratedPeerValidator.ValidateExtraSettings(ctx, newSettings.Extra, oldSettings.Extra, userID, accountID)
+}
+
+func (am *DefaultAccountManager) getPreferredWeChatWorkConnectorID(ctx context.Context) (string, error) {
+	embeddedIdp, ok := am.idpManager.(*idp.EmbeddedIdPManager)
+	if !ok {
+		return "", fmt.Errorf("embedded idp is not enabled")
+	}
+
+	connectors, err := embeddedIdp.ListConnectors(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	for _, connector := range connectors {
+		if connector != nil && connector.Type == "wechatwork" {
+			return connector.ID, nil
+		}
+	}
+
+	return "", status.Errorf(status.NotFound, "wechat work identity provider not found")
 }
 
 // validateIPv6EnabledGroups checks that all referenced IPv6-enabled group IDs exist in the account.

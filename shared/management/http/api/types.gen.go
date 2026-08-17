@@ -38,6 +38,27 @@ func (e AccessRestrictionsCrowdsecMode) Valid() bool {
 	}
 }
 
+// Defines values for AccountSettingsLoginMethod.
+const (
+	AccountSettingsLoginMethodAll        AccountSettingsLoginMethod = "all"
+	AccountSettingsLoginMethodEmail      AccountSettingsLoginMethod = "email"
+	AccountSettingsLoginMethodWechatwork AccountSettingsLoginMethod = "wechatwork"
+)
+
+// Valid indicates whether the value is a known member of the AccountSettingsLoginMethod enum.
+func (e AccountSettingsLoginMethod) Valid() bool {
+	switch e {
+	case AccountSettingsLoginMethodAll:
+		return true
+	case AccountSettingsLoginMethodEmail:
+		return true
+	case AccountSettingsLoginMethodWechatwork:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentNetworkCatalogProviderKind.
 const (
 	AgentNetworkCatalogProviderKindCustom   AgentNetworkCatalogProviderKind = "custom"
@@ -550,14 +571,15 @@ func (e GroupMinimumIssued) Valid() bool {
 
 // Defines values for IdentityProviderType.
 const (
-	IdentityProviderTypeAdfs      IdentityProviderType = "adfs"
-	IdentityProviderTypeEntra     IdentityProviderType = "entra"
-	IdentityProviderTypeGoogle    IdentityProviderType = "google"
-	IdentityProviderTypeMicrosoft IdentityProviderType = "microsoft"
-	IdentityProviderTypeOidc      IdentityProviderType = "oidc"
-	IdentityProviderTypeOkta      IdentityProviderType = "okta"
-	IdentityProviderTypePocketid  IdentityProviderType = "pocketid"
-	IdentityProviderTypeZitadel   IdentityProviderType = "zitadel"
+	IdentityProviderTypeAdfs       IdentityProviderType = "adfs"
+	IdentityProviderTypeEntra      IdentityProviderType = "entra"
+	IdentityProviderTypeGoogle     IdentityProviderType = "google"
+	IdentityProviderTypeMicrosoft  IdentityProviderType = "microsoft"
+	IdentityProviderTypeOidc       IdentityProviderType = "oidc"
+	IdentityProviderTypeOkta       IdentityProviderType = "okta"
+	IdentityProviderTypePocketid   IdentityProviderType = "pocketid"
+	IdentityProviderTypeWechatwork IdentityProviderType = "wechatwork"
+	IdentityProviderTypeZitadel    IdentityProviderType = "zitadel"
 )
 
 // Valid indicates whether the value is a known member of the IdentityProviderType enum.
@@ -576,6 +598,8 @@ func (e IdentityProviderType) Valid() bool {
 	case IdentityProviderTypeOkta:
 		return true
 	case IdentityProviderTypePocketid:
+		return true
+	case IdentityProviderTypeWechatwork:
 		return true
 	case IdentityProviderTypeZitadel:
 		return true
@@ -1696,6 +1720,9 @@ type AccountSettings struct {
 	// LocalMfaEnabled Enables or disables TOTP multi-factor authentication for local users. Only applicable when the embedded identity provider is enabled.
 	LocalMfaEnabled *bool `json:"local_mfa_enabled,omitempty"`
 
+	// LoginMethod Controls which login method is presented on the embedded identity provider login screen.
+	LoginMethod *AccountSettingsLoginMethod `json:"login_method,omitempty"`
+
 	// MetricsPushEnabled Enables or disables client metrics push for all peers in the account
 	MetricsPushEnabled *bool `json:"metrics_push_enabled,omitempty"`
 
@@ -1729,6 +1756,9 @@ type AccountSettings struct {
 	// RoutingPeerDnsResolutionEnabled Enables or disables DNS resolution on the routing peers
 	RoutingPeerDnsResolutionEnabled *bool `json:"routing_peer_dns_resolution_enabled,omitempty"`
 }
+
+// AccountSettingsLoginMethod Controls which login method is presented on the embedded identity provider login screen.
+type AccountSettingsLoginMethod string
 
 // AgentNetworkAccessLog One per-request agent-network (LLM) access log entry with flattened, queryable LLM dimensions.
 type AgentNetworkAccessLog struct {
@@ -3274,6 +3304,9 @@ type HuntressMatchAttributes struct {
 
 // IdentityProvider defines model for IdentityProvider.
 type IdentityProvider struct {
+	// AgentId WeChat Work application agent ID used by the official login widget
+	AgentId *string `json:"agent_id,omitempty"`
+
 	// ClientId OAuth2 client ID
 	ClientId string `json:"client_id"`
 
@@ -3292,6 +3325,9 @@ type IdentityProvider struct {
 
 // IdentityProviderRequest defines model for IdentityProviderRequest.
 type IdentityProviderRequest struct {
+	// AgentId WeChat Work application agent ID used by the official login widget
+	AgentId *string `json:"agent_id,omitempty"`
+
 	// ClientId OAuth2 client ID
 	ClientId string `json:"client_id"`
 

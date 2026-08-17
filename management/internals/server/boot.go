@@ -38,6 +38,7 @@ import (
 	nbcache "github.com/netbirdio/netbird/management/server/cache"
 	nbContext "github.com/netbirdio/netbird/management/server/context"
 	nbhttp "github.com/netbirdio/netbird/management/server/http"
+	idphandler "github.com/netbirdio/netbird/management/server/http/handlers/idp"
 	"github.com/netbirdio/netbird/management/server/http/middleware"
 	"github.com/netbirdio/netbird/management/server/idp"
 	"github.com/netbirdio/netbird/management/server/store"
@@ -159,7 +160,14 @@ func (s *BaseServer) IDPHandler() http.Handler {
 	if !ok || embeddedIdP == nil {
 		return nil
 	}
-	return cors.AllowAll().Handler(embeddedIdP.Handler())
+
+	router := mux.NewRouter()
+	loginPreferenceHandler := idphandler.NewLoginPreferenceHandler(s.AccountManager(), embeddedIdP)
+	router.Handle("/oauth2/auth", loginPreferenceHandler)
+	router.Handle("/oauth2/auth/{connector}", loginPreferenceHandler)
+	router.Handle("/oauth2/callback/{connector}", idphandler.NewWeChatWorkCallbackHandler(embeddedIdP))
+	router.PathPrefix("/oauth2").Handler(cors.AllowAll().Handler(embeddedIdP.Handler()))
+	return router
 }
 
 func (s *BaseServer) Router() *mux.Router {

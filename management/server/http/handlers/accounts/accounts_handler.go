@@ -294,6 +294,9 @@ func (h *handler) updateAccountRequestSettings(req api.PutApiAccountsAccountIdJS
 			AgentNetwork: req.Settings.DashboardFeatures.AgentNetwork,
 		}
 	}
+	if req.Settings.LoginMethod != nil {
+		returnSettings.LoginMethod = types.LoginMethod(*req.Settings.LoginMethod)
+	}
 
 	if returnSettings.AgentNetworkOnly &&
 		(returnSettings.DashboardFeatures == nil ||
@@ -436,6 +439,10 @@ func toAccountResponse(accountID string, settings *types.Settings, meta *types.A
 		EmbeddedIdpEnabled:              &settings.EmbeddedIdpEnabled,
 		LocalAuthDisabled:               &settings.LocalAuthDisabled,
 		LocalMfaEnabled:                 &settings.LocalMfaEnabled,
+	}
+	if settings.LoginMethod != "" {
+		loginMethod := api.AccountSettingsLoginMethod(settings.LoginMethod)
+		apiSettings.LoginMethod = &loginMethod
 	}
 
 	if settings.NetworkRange.IsValid() {

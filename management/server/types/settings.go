@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+type LoginMethod string
+
+const (
+	LoginMethodAll        LoginMethod = "all"
+	LoginMethodEmail      LoginMethod = "email"
+	LoginMethodWeChatWork LoginMethod = "wechatwork"
+)
+
 // Settings represents Account settings structure that can be modified via API and Dashboard
 type Settings struct {
 	// PeerLoginExpirationEnabled globally enables or disables peer login expiration
@@ -96,10 +104,19 @@ type Settings struct {
 	// LocalMfaEnabled indicates if TOTP MFA is enabled for local users.
 	// Only applicable when the embedded IDP is enabled.
 	LocalMfaEnabled bool
+
+	// LoginMethod controls which login option is presented on the embedded IdP sign-in screen.
+	// "all" shows the login chooser, while provider-specific values can automatically redirect.
+	LoginMethod LoginMethod `gorm:"default:'all'"`
 }
 
 // Copy copies the Settings struct
 func (s *Settings) Copy() *Settings {
+	loginMethod := s.LoginMethod
+	if loginMethod == "" {
+		loginMethod = LoginMethodAll
+	}
+
 	settings := &Settings{
 		PeerLoginExpirationEnabled: s.PeerLoginExpirationEnabled,
 		PeerLoginExpiration:        s.PeerLoginExpiration,
@@ -127,6 +144,7 @@ func (s *Settings) Copy() *Settings {
 		EmbeddedIdpEnabled:              s.EmbeddedIdpEnabled,
 		LocalAuthDisabled:               s.LocalAuthDisabled,
 		LocalMfaEnabled:                 s.LocalMfaEnabled,
+		LoginMethod:                     loginMethod,
 	}
 	if s.Extra != nil {
 		settings.Extra = s.Extra.Copy()

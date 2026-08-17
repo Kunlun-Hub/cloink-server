@@ -126,6 +126,25 @@ func TestIdentityProvider_Validate(t *testing.T) {
 			},
 			expectedErr: nil,
 		},
+		{
+			name: "WeChat Work provider with agent ID is valid",
+			idp: &IdentityProvider{
+				Name:     "WeChat Work SSO",
+				Type:     IdentityProviderTypeWeChatWork,
+				ClientID: "ww1234567890",
+				AgentID:  "1000002",
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "WeChat Work provider without agent ID is invalid",
+			idp: &IdentityProvider{
+				Name:     "WeChat Work SSO",
+				Type:     IdentityProviderTypeWeChatWork,
+				ClientID: "ww1234567890",
+			},
+			expectedErr: ErrIdentityProviderAgentIDRequired,
+		},
 	}
 
 	for _, tt := range tests {

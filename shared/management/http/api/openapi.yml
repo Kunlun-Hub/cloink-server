@@ -395,6 +395,14 @@ components:
           description: Enables or disables TOTP multi-factor authentication for local users. Only applicable when the embedded identity provider is enabled.
           type: boolean
           example: false
+        login_method:
+          description: Controls which login method is presented on the embedded identity provider login screen.
+          type: string
+          enum:
+            - all
+            - email
+            - wechatwork
+          example: all
         ipv6_enabled_groups:
           description: List of group IDs whose peers receive IPv6 overlay addresses. Peers not in any of these groups will not be allocated an IPv6 address. New accounts default to the All group.
           type: array
@@ -2994,6 +3002,7 @@ components:
         - pocketid
         - microsoft
         - adfs
+        - wechatwork
       example: oidc
     IdentityProvider:
       type: object
@@ -3016,6 +3025,10 @@ components:
           description: OAuth2 client ID
           type: string
           example: 123456789.apps.googleusercontent.com
+        agent_id:
+          description: WeChat Work application agent ID used by the official login widget
+          type: string
+          example: "1000002"
       required:
         - type
         - name
@@ -3038,6 +3051,10 @@ components:
           description: OAuth2 client ID
           type: string
           example: 123456789.apps.googleusercontent.com
+        agent_id:
+          description: WeChat Work application agent ID used by the official login widget
+          type: string
+          example: "1000002"
         client_secret:
           description: OAuth2 client secret
           type: string

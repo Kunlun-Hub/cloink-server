@@ -63,6 +63,27 @@ func TestBuildOIDCConnectorConfig_NonEntraDoesNotSetUserIDKey(t *testing.T) {
 	}
 }
 
+func TestBuildWeChatWorkConnectorConfig(t *testing.T) {
+	data, err := buildWeChatWorkConnectorConfig(&ConnectorConfig{
+		Type:         "wechatwork",
+		ClientID:     "corp-id",
+		ClientSecret: "corp-secret",
+		AgentID:      "1000002",
+	})
+	require.NoError(t, err)
+
+	var config map[string]any
+	require.NoError(t, json.Unmarshal(data, &config))
+
+	assert.Equal(t, "corp-id", config["clientID"])
+	assert.Equal(t, "corp-secret", config["clientSecret"])
+	assert.Equal(t, "1000002", config["agentID"])
+	assert.Equal(t, "X-NetBird-WeChatWork-User-Id", config["userIDHeader"])
+	assert.Equal(t, "X-NetBird-WeChatWork-User", config["userHeader"])
+	assert.Equal(t, "X-NetBird-WeChatWork-User-Name", config["userNameHeader"])
+	assert.Equal(t, "X-NetBird-WeChatWork-User-Email", config["emailHeader"])
+}
+
 func TestUpdateConnector_PreservesCreateTimeDefaults(t *testing.T) {
 	ctx := context.Background()
 	p, cleanup := newTestProvider(t)

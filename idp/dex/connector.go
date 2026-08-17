@@ -17,7 +17,7 @@ type ConnectorConfig struct {
 	ID string
 	// Name is a human-readable name for the connector
 	Name string
-	// Type is the connector type (oidc, google, microsoft)
+	// Type is the connector type (oidc, google, microsoft, wechatwork)
 	Type string
 	// Issuer is the OIDC issuer URL (for OIDC-based connectors)
 	Issuer string
@@ -25,6 +25,8 @@ type ConnectorConfig struct {
 	ClientID string
 	// ClientSecret is the OAuth2 client secret
 	ClientSecret string
+	// AgentID is the WeChat Work application agent ID
+	AgentID string
 	// RedirectURI is the OAuth2 redirect URI
 	RedirectURI string
 }
@@ -144,6 +146,9 @@ func overlayConnectorConfig(oldConfig []byte, cfg *ConnectorConfig) ([]byte, err
 	if cfg.RedirectURI != "" {
 		m["redirectURI"] = cfg.RedirectURI
 	}
+	if cfg.AgentID != "" {
+		m["agentID"] = cfg.AgentID
+	}
 	return encodeConnectorConfig(m)
 }
 
@@ -187,6 +192,9 @@ func (p *Provider) buildStorageConnector(cfg *ConnectorConfig) (storage.Connecto
 	case "oidc", "zitadel", "entra", "okta", "pocketid", "authentik", "keycloak", "adfs":
 		dexType = "oidc"
 		configData, err = buildOIDCConnectorConfig(cfg, redirectURI)
+	case "wechatwork":
+		dexType = "authproxy"
+		configData, err = buildWeChatWorkConnectorConfig(cfg)
 	case "google":
 		dexType = "google"
 		configData, err = buildOAuth2ConnectorConfig(cfg, redirectURI)
@@ -255,6 +263,18 @@ func buildOAuth2ConnectorConfig(cfg *ConnectorConfig, redirectURI string) ([]byt
 	})
 }
 
+func buildWeChatWorkConnectorConfig(cfg *ConnectorConfig) ([]byte, error) {
+	return encodeConnectorConfig(map[string]interface{}{
+		"userIDHeader":   "X-NetBird-WeChatWork-User-Id",
+		"userHeader":     "X-NetBird-WeChatWork-User",
+		"userNameHeader": "X-NetBird-WeChatWork-User-Name",
+		"emailHeader":    "X-NetBird-WeChatWork-User-Email",
+		"clientID":       cfg.ClientID,
+		"clientSecret":   cfg.ClientSecret,
+		"agentID":        cfg.AgentID,
+	})
+}
+
 // parseStorageConnector converts a storage.Connector back to ConnectorConfig.
 // It infers the original identity provider type from the Dex connector type and ID.
 func (p *Provider) parseStorageConnector(conn storage.Connector) (*ConnectorConfig, error) {
@@ -280,6 +300,9 @@ func (p *Provider) parseStorageConnector(conn storage.Connector) (*ConnectorConf
 	if v, ok := configMap["clientSecret"].(string); ok {
 		cfg.ClientSecret = v
 	}
+	if v, ok := configMap["agentID"].(string); ok {
+		cfg.AgentID = v
+	}
 	if v, ok := configMap["redirectURI"].(string); ok {
 		cfg.RedirectURI = v
 	}
@@ -296,6 +319,9 @@ func (p *Provider) parseStorageConnector(conn storage.Connector) (*ConnectorConf
 // inferIdentityProviderType determines the original identity provider type
 // based on the Dex connector type, connector ID, and configuration.
 func inferIdentityProviderType(dexType, connectorID string, _ map[string]interface{}) string {
+	if dexType == "authproxy" && strings.Contains(strings.ToLower(connectorID), "wechatwork") {
+		return "wechatwork"
+	}
 	if dexType != "oidc" {
 		return dexType
 	}
