@@ -23,8 +23,10 @@ import (
 	cachestore "github.com/eko/gocache/lib/v4/store"
 
 	"github.com/netbirdio/netbird/encryption"
+	flowProto "github.com/netbirdio/netbird/flow/proto"
 	"github.com/netbirdio/netbird/formatter/hook"
 	"github.com/netbirdio/netbird/management/internals/modules/agentnetwork"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/accesslogs"
 	accesslogsmanager "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/accesslogs/manager"
 	proxyactivity "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/activity"
@@ -79,6 +81,24 @@ func (s *BaseServer) CacheStore() cachestore.StoreInterface {
 			log.Fatalf("failed to create shared cache store: %v", err)
 		}
 		return cs
+	})
+}
+
+// FlowConfigManager returns the shared self-hosted flow configuration manager.
+func (s *BaseServer) FlowConfigManager() *networktraffic.ConfigManager {
+	return Create(s, func() *networktraffic.ConfigManager {
+		manager, err := networktraffic.NewConfigManager(s.Config)
+		if err != nil {
+			log.Fatalf("failed to initialize flow configuration: %v", err)
+		}
+		return manager
+	})
+}
+
+// FlowServer returns the shared self-hosted flow receiver.
+func (s *BaseServer) FlowServer() *nbgrpc.FlowServer {
+	return Create(s, func() *nbgrpc.FlowServer {
+		return nbgrpc.NewFlowServer(s.AccountManager())
 	})
 }
 
@@ -217,6 +237,10 @@ func (s *BaseServer) GRPCServer() *grpc.Server {
 			serviceMgr.StartExposeReaper(context.Background())
 		}
 		mgmtProto.RegisterManagementServiceServer(gRPCAPIHandler, srv)
+		srv.SetFlowConfigManager(s.FlowConfigManager())
+		flowServer := s.FlowServer()
+		flowServer.SetConfigManager(s.FlowConfigManager())
+		flowProto.RegisterFlowServiceServer(gRPCAPIHandler, flowServer)
 
 		mgmtProto.RegisterProxyServiceServer(gRPCAPIHandler, s.ReverseProxyGRPCServer())
 		log.Info("ProxyService registered on gRPC server")

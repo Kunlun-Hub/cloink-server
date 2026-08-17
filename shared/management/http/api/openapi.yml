@@ -9516,7 +9516,6 @@ paths:
       summary: List all Traffic Events
       description: Returns a list of all network traffic events
       tags: [ Events ]
-      x-cloud-only: true
       x-experimental: true
       parameters:
         - name: page

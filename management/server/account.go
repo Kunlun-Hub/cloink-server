@@ -360,7 +360,8 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 			oldSettings.AutoUpdateAlways != newSettings.AutoUpdateAlways ||
 			oldSettings.PeerLoginExpirationEnabled != newSettings.PeerLoginExpirationEnabled ||
 			oldSettings.PeerLoginExpiration != newSettings.PeerLoginExpiration ||
-			oldSettings.MetricsPushEnabled != newSettings.MetricsPushEnabled {
+			oldSettings.MetricsPushEnabled != newSettings.MetricsPushEnabled ||
+			flowSettingsChanged(oldSettings.Extra, newSettings.Extra) {
 			// Session deadline is derived from LastLogin + PeerLoginExpiration
 			// on every Login/Sync response. Without a fan-out push, connected
 			// peers keep the deadline they received at login time and only see
@@ -459,6 +460,17 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 	}
 
 	return newSettings, nil
+}
+
+func flowSettingsChanged(oldSettings, newSettings *types.ExtraSettings) bool {
+	if oldSettings == nil || newSettings == nil {
+		return oldSettings != newSettings
+	}
+	return oldSettings.FlowEnabled != newSettings.FlowEnabled ||
+		!slices.Equal(oldSettings.FlowGroups, newSettings.FlowGroups) ||
+		oldSettings.FlowPacketCounterEnabled != newSettings.FlowPacketCounterEnabled ||
+		oldSettings.FlowENCollectionEnabled != newSettings.FlowENCollectionEnabled ||
+		oldSettings.FlowDnsCollectionEnabled != newSettings.FlowDnsCollectionEnabled
 }
 
 func ipv6SettingsChanged(old, updated *types.Settings) bool {

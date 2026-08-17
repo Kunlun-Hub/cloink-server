@@ -1183,6 +1183,12 @@ func (e *Engine) handleFlowUpdate(config *mgmProto.FlowConfig) error {
 	if err != nil {
 		return err
 	}
+	if flowConfig.URL == "" && e.config != nil && e.config.ProfileConfig != nil && e.config.ProfileConfig.ManagementURL != nil {
+		flowConfig.URL = e.config.ProfileConfig.ManagementURL.String()
+	}
+	if flowConfig.Enabled && flowConfig.URL == "" {
+		return errors.New("flow receiver URL is empty")
+	}
 	return e.flowManager.Update(flowConfig)
 }
 

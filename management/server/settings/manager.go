@@ -68,23 +68,9 @@ func (m *managerImpl) GetSettings(ctx context.Context, accountID, userID string)
 		}
 	}
 
-	extraSettings, err := m.extraSettingsManager.GetExtraSettings(ctx, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("get extra settings: %w", err)
-	}
-
 	settings, err := m.store.GetAccountSettings(ctx, store.LockingStrengthNone, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("get account settings: %w", err)
-	}
-
-	// Once we migrate the peer approval to settings manager this merging is obsolete
-	if settings.Extra != nil {
-		settings.Extra.FlowEnabled = extraSettings.FlowEnabled
-		settings.Extra.FlowGroups = extraSettings.FlowGroups
-		settings.Extra.FlowPacketCounterEnabled = extraSettings.FlowPacketCounterEnabled
-		settings.Extra.FlowENCollectionEnabled = extraSettings.FlowENCollectionEnabled
-		settings.Extra.FlowDnsCollectionEnabled = extraSettings.FlowDnsCollectionEnabled
 	}
 
 	// Fill in IdP-related runtime settings
@@ -95,23 +81,14 @@ func (m *managerImpl) GetSettings(ctx context.Context, accountID, userID string)
 }
 
 func (m *managerImpl) GetExtraSettings(ctx context.Context, accountID string) (*types.ExtraSettings, error) {
-	extraSettings, err := m.extraSettingsManager.GetExtraSettings(ctx, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("get extra settings: %w", err)
-	}
-
 	settings, err := m.store.GetAccountSettings(ctx, store.LockingStrengthNone, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("get account settings: %w", err)
 	}
 
-	// Once we migrate the peer approval to settings manager this merging is obsolete
 	if settings.Extra == nil {
 		settings.Extra = &types.ExtraSettings{}
 	}
-
-	settings.Extra.FlowEnabled = extraSettings.FlowEnabled
-	settings.Extra.FlowGroups = extraSettings.FlowGroups
 
 	return settings.Extra, nil
 }

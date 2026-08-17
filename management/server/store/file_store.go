@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/rs/xid"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/telemetry"
 	"github.com/netbirdio/netbird/management/server/types"
@@ -285,4 +287,24 @@ func (s *FileStore) GetProxyMetrics(_ context.Context) (ProxyMetrics, error) {
 // persisted in the JSON file format.
 func (s *FileStore) GetAgentNetworkMetrics(_ context.Context) (AgentNetworkMetrics, error) {
 	return AgentNetworkMetrics{}, nil
+}
+
+// CreateNetworkTrafficEvent is unsupported by the legacy JSON store.
+func (s *FileStore) CreateNetworkTrafficEvent(context.Context, *networktraffic.Event) error {
+	return errors.New("network traffic events require a SQL store")
+}
+
+// GetNetworkTrafficPolicy is unsupported by the legacy JSON store.
+func (s *FileStore) GetNetworkTrafficPolicy(context.Context, LockingStrength, string, string) (*types.Policy, error) {
+	return nil, errors.New("network traffic events require a SQL store")
+}
+
+// GetAccountNetworkTrafficEvents is unsupported by the legacy JSON store.
+func (s *FileStore) GetAccountNetworkTrafficEvents(context.Context, LockingStrength, string, networktraffic.Filter) ([]*networktraffic.Event, int64, error) {
+	return nil, 0, errors.New("network traffic events require a SQL store")
+}
+
+// CleanupNetworkTrafficEvents is unsupported by the legacy JSON store.
+func (s *FileStore) CleanupNetworkTrafficEvents(context.Context, time.Time, int) (int64, error) {
+	return 0, errors.New("network traffic events require a SQL store")
 }

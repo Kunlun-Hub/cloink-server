@@ -573,6 +573,10 @@ func createCombinedHandler(grpcServer *grpc.Server, httpHandler http.Handler, id
 		case r.URL.Path == wsproxy.ProxyPath+wsproxy.ManagementComponent:
 			wsProxy.Handler().ServeHTTP(w, r)
 
+		// WebSocket proxy for Flow gRPC
+		case r.URL.Path == wsproxy.ProxyPath+wsproxy.FlowComponent:
+			wsProxy.Handler().ServeHTTP(w, r)
+
 		// WebSocket proxy for Signal gRPC
 		case r.URL.Path == wsproxy.ProxyPath+wsproxy.SignalComponent:
 			if cfg.Signal.Enabled {

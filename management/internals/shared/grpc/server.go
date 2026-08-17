@@ -28,6 +28,7 @@ import (
 	"github.com/netbirdio/netbird/shared/management/grpc"
 
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	rpservice "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/service"
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/server/idp"
@@ -87,6 +88,12 @@ type Server struct {
 
 	reverseProxyManager rpservice.Manager
 	reverseProxyMu      sync.RWMutex
+	flowConfigManager   *networktraffic.ConfigManager
+}
+
+// SetFlowConfigManager configures self-hosted flow settings for sync responses.
+func (s *Server) SetFlowConfigManager(manager *networktraffic.ConfigManager) {
+	s.flowConfigManager = manager
 }
 
 // NewServer creates a new Management server
@@ -917,12 +924,21 @@ func (s *Server) prepareLoginResponse(ctx context.Context, peer *nbpeer.Peer, ne
 		log.WithContext(ctx).Warnf("failed getting settings for peer %s: %s", peer.Key, err)
 		return nil, status.Errorf(codes.Internal, "failed getting settings")
 	}
+	peerGroups, err := s.accountManager.GetStore().GetPeerGroupIDs(ctx, store.LockingStrengthNone, peer.AccountID, peer.ID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get peer groups")
+	}
 
 	// if peer has reached this point then it has logged in
 	loginResp := &proto.LoginResponse{
-		NetbirdConfig: toNetbirdConfig(s.config, nil, relayToken, nil, settings),
+		NetbirdConfig: toNetbirdConfig(s.config, nil, relayToken, settings.Extra, settings),
 		PeerConfig:    toPeerConfig(peer, network, s.networkMapController.GetDNSDomain(settings), settings, s.config.HttpConfig, s.config.DeviceAuthorizationFlow, enableSSH, false),
 		Checks:        toProtocolChecks(ctx, postureChecks),
+	}
+	if s.flowConfigManager != nil {
+		flowResponse := &proto.SyncResponse{NetbirdConfig: loginResp.NetbirdConfig}
+		s.flowConfigManager.Apply(flowResponse, peer.AccountID, peer.ID, peerGroups, settings.Extra)
+		loginResp.NetbirdConfig = flowResponse.NetbirdConfig
 	}
 
 	// settings is always non-nil here, so we never emit nil — encoder returns
@@ -1055,6 +1071,9 @@ func (s *Server) sendInitialSync(ctx context.Context, peerKey wgtypes.Key, peer 
 		plainResp = ToComponentSyncResponse(ctx, s.config, s.config.HttpConfig, s.config.DeviceAuthorizationFlow, freshPeer, turnToken, relayToken, components, proxyPatch, dnsName, freshPostureChecks, settings, settings.Extra, peerGroups, freshDnsFwdPort)
 	} else {
 		plainResp = ToSyncResponse(ctx, s.config, s.config.HttpConfig, s.config.DeviceAuthorizationFlow, peer, turnToken, relayToken, networkMap, dnsName, postureChecks, nil, settings, settings.Extra, peerGroups, dnsFwdPort)
+	}
+	if s.flowConfigManager != nil {
+		s.flowConfigManager.Apply(plainResp, peer.AccountID, peer.ID, peerGroups, settings.Extra)
 	}
 
 	key, err := s.secretsManager.GetWGKey()

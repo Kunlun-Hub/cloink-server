@@ -17,6 +17,7 @@ import (
 
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map"
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map/controller/cache"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/internals/modules/peers/ephemeral"
 	"github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/internals/shared/grpc"
@@ -61,6 +62,19 @@ type Controller struct {
 	serverSupportedSyncMessageVersion sharedgrpc.SyncMessageVersion
 
 	perAccountServerSupportedSyncMessageVersions map[string]sharedgrpc.SyncMessageVersion
+	flowConfigManager                            *networktraffic.ConfigManager
+}
+
+// SetFlowConfigManager configures self-hosted flow settings on network updates.
+func (c *Controller) SetFlowConfigManager(manager *networktraffic.ConfigManager) {
+	c.flowConfigManager = manager
+}
+
+func (c *Controller) applyFlowConfig(response *proto.SyncResponse, peer *nbpeer.Peer, peerGroups types.LookupMap, settings *types.ExtraSettings) {
+	if c.flowConfigManager == nil || response == nil || peer == nil {
+		return
+	}
+	c.flowConfigManager.Apply(response, peer.AccountID, peer.ID, maps.Keys(peerGroups), settings)
 }
 
 type bufferUpdate struct {
@@ -256,6 +270,7 @@ func (c *Controller) sendUpdateAccountPeers(ctx context.Context, accountID strin
 				// the client merges it into Calculate()'s output the same
 				// way the legacy server did via NetworkMap.Merge.
 				update = grpc.ToComponentSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, p, nil, nil, components, proxyNetworkMap, dnsDomain, postureChecks, account.Settings, extraSetting, maps.Keys(peerGroups), dnsFwdPort)
+				c.applyFlowConfig(update, p, peerGroups, extraSetting)
 				c.metrics.CountToComponentSyncResponseDuration(time.Since(start))
 
 				c.peersUpdateManager.SendUpdate(ctx, p.ID, &network_map.UpdateMessage{
@@ -277,6 +292,7 @@ func (c *Controller) sendUpdateAccountPeers(ctx context.Context, accountID strin
 
 			start = time.Now()
 			update = grpc.ToSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, p, nil, nil, nmap, dnsDomain, postureChecks, dnsCache, account.Settings, extraSetting, maps.Keys(peerGroups), dnsFwdPort)
+			c.applyFlowConfig(update, p, peerGroups, extraSetting)
 			c.metrics.CountToSyncResponseDuration(time.Since(start))
 
 			c.peersUpdateManager.SendUpdate(ctx, p.ID, &network_map.UpdateMessage{
@@ -429,6 +445,7 @@ func (c *Controller) sendUpdateForAffectedPeers(ctx context.Context, accountID s
 				// the client merges it into Calculate()'s output the same
 				// way the legacy server did via NetworkMap.Merge.
 				update = grpc.ToComponentSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, p, nil, nil, components, proxyNetworkMap, dnsDomain, postureChecks, account.Settings, extraSetting, maps.Keys(peerGroups), dnsFwdPort)
+				c.applyFlowConfig(update, p, peerGroups, extraSetting)
 				c.metrics.CountToComponentSyncResponseDuration(time.Since(start))
 
 				c.peersUpdateManager.SendUpdate(ctx, p.ID, &network_map.UpdateMessage{
@@ -450,6 +467,7 @@ func (c *Controller) sendUpdateForAffectedPeers(ctx context.Context, accountID s
 
 			start = time.Now()
 			update = grpc.ToSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, p, nil, nil, nmap, dnsDomain, postureChecks, dnsCache, account.Settings, extraSetting, maps.Keys(peerGroups), dnsFwdPort)
+			c.applyFlowConfig(update, p, peerGroups, extraSetting)
 			c.metrics.CountToSyncResponseDuration(time.Since(start))
 
 			c.peersUpdateManager.SendUpdate(ctx, p.ID, &network_map.UpdateMessage{
@@ -567,6 +585,7 @@ func (c *Controller) UpdateAccountPeer(ctx context.Context, accountId string, pe
 		// the client merges it into Calculate()'s output the same
 		// way the legacy server did via NetworkMap.Merge.
 		update = grpc.ToComponentSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, peer, nil, nil, components, proxyNetworkMap, dnsDomain, postureChecks, account.Settings, extraSettings, maps.Keys(peerGroups), dnsFwdPort)
+		c.applyFlowConfig(update, peer, peerGroups, extraSettings)
 
 		c.peersUpdateManager.SendUpdate(ctx, peer.ID, &network_map.UpdateMessage{
 			Update:      update,
@@ -584,6 +603,7 @@ func (c *Controller) UpdateAccountPeer(ctx context.Context, accountId string, pe
 	}
 
 	update = grpc.ToSyncResponse(ctx, nil, c.config.HttpConfig, c.config.DeviceAuthorizationFlow, peer, nil, nil, nmap, dnsDomain, postureChecks, dnsCache, account.Settings, extraSettings, maps.Keys(peerGroups), dnsFwdPort)
+	c.applyFlowConfig(update, peer, peerGroups, extraSettings)
 
 	c.peersUpdateManager.SendUpdate(ctx, peer.ID, &network_map.UpdateMessage{
 		Update:      update,

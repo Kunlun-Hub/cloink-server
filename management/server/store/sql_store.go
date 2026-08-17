@@ -31,6 +31,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	nbdns "github.com/netbirdio/netbird/dns"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/accesslogs"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/domain"
 
@@ -143,6 +144,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&agentNetworkTypes.Consumption{}, &agentNetworkTypes.AccountBudgetRule{},
 		&agentNetworkTypes.AgentNetworkAccessLog{}, &agentNetworkTypes.AgentNetworkAccessLogGroup{},
 		&agentNetworkTypes.AgentNetworkUsage{}, &agentNetworkTypes.AgentNetworkUsageGroup{},
+		&networktraffic.Event{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("auto migratePreAuto: %w", err)
@@ -1657,7 +1659,10 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 			settings_peer_expose_enabled, settings_peer_expose_groups,
 			-- Embedded ExtraSettings
 			settings_extra_peer_approval_enabled, settings_extra_user_approval_required,
-			settings_extra_integrated_validator, settings_extra_integrated_validator_groups
+			settings_extra_integrated_validator, settings_extra_integrated_validator_groups,
+			settings_extra_flow_enabled, settings_extra_flow_groups,
+			settings_extra_flow_packet_counter_enabled, settings_extra_flow_en_collection_enabled,
+			settings_extra_flow_dns_collection_enabled
 		FROM accounts WHERE id = $1`
 
 	var (
@@ -1688,6 +1693,11 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 		sExtraUserApprovalRequired       sql.NullBool
 		sExtraIntegratedValidator        sql.NullString
 		sExtraIntegratedValidatorGroups  sql.NullString
+		sExtraFlowEnabled                sql.NullBool
+		sExtraFlowGroups                 sql.NullString
+		sExtraFlowPacketCounterEnabled   sql.NullBool
+		sExtraFlowENCollectionEnabled    sql.NullBool
+		sExtraFlowDNSCollectionEnabled   sql.NullBool
 		networkNet                       sql.NullString
 		networkNetV6                     sql.NullString
 		dnsSettingsDisabledGroups        sql.NullString
@@ -1711,6 +1721,9 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 		&peerExposeEnabled, &peerExposeGroups,
 		&sExtraPeerApprovalEnabled, &sExtraUserApprovalRequired,
 		&sExtraIntegratedValidator, &sExtraIntegratedValidatorGroups,
+		&sExtraFlowEnabled, &sExtraFlowGroups,
+		&sExtraFlowPacketCounterEnabled, &sExtraFlowENCollectionEnabled,
+		&sExtraFlowDNSCollectionEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1824,6 +1837,21 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 	}
 	if sExtraIntegratedValidatorGroups.Valid {
 		_ = json.Unmarshal([]byte(sExtraIntegratedValidatorGroups.String), &account.Settings.Extra.IntegratedValidatorGroups)
+	}
+	if sExtraFlowEnabled.Valid {
+		account.Settings.Extra.FlowEnabled = sExtraFlowEnabled.Bool
+	}
+	if sExtraFlowGroups.Valid {
+		_ = json.Unmarshal([]byte(sExtraFlowGroups.String), &account.Settings.Extra.FlowGroups)
+	}
+	if sExtraFlowPacketCounterEnabled.Valid {
+		account.Settings.Extra.FlowPacketCounterEnabled = sExtraFlowPacketCounterEnabled.Bool
+	}
+	if sExtraFlowENCollectionEnabled.Valid {
+		account.Settings.Extra.FlowENCollectionEnabled = sExtraFlowENCollectionEnabled.Bool
+	}
+	if sExtraFlowDNSCollectionEnabled.Valid {
+		account.Settings.Extra.FlowDnsCollectionEnabled = sExtraFlowDNSCollectionEnabled.Bool
 	}
 	return &account, nil
 }

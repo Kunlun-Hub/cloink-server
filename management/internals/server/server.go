@@ -180,6 +180,7 @@ func (s *BaseServer) Start(ctx context.Context) error {
 	// before we iterate them. Lazy creation after the loop would miss hooks
 	// registered during GRPCServer() construction (e.g., SetServiceManager).
 	s.GRPCServer()
+	s.FlowServer().StartPeriodicCleanup(srvCtx, 48*time.Hour, 50000, time.Hour)
 
 	for _, fn := range s.afterInit {
 		if fn != nil {
@@ -258,6 +259,7 @@ func (s *BaseServer) Stop() error {
 		_ = s.certManager.Listener().Close()
 	}
 	s.GRPCServer().Stop()
+	s.FlowServer().StopCleanup()
 	if s.proxyAuthClose != nil {
 		s.proxyAuthClose()
 		s.proxyAuthClose = nil
@@ -328,6 +330,8 @@ func (s *BaseServer) handlerFunc(_ context.Context, gRPCHandler *grpc.Server, ht
 			strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc+proto")):
 			gRPCHandler.ServeHTTP(writer, request)
 		case request.URL.Path == wsproxy.ProxyPath+wsproxy.ManagementComponent:
+			wsProxy.Handler().ServeHTTP(writer, request)
+		case request.URL.Path == wsproxy.ProxyPath+wsproxy.FlowComponent:
 			wsProxy.Handler().ServeHTTP(writer, request)
 		case idpHandler != nil && strings.HasPrefix(request.URL.Path, "/oauth2"):
 			idpHandler.ServeHTTP(writer, request)

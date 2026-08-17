@@ -168,11 +168,11 @@ type ExtraSettings struct {
 	// IntegratedValidatorGroups list of group IDs to be used with integrated approval configurations
 	IntegratedValidatorGroups []string `gorm:"serializer:json"`
 
-	FlowEnabled              bool     `gorm:"-"`
-	FlowGroups               []string `gorm:"-"`
-	FlowPacketCounterEnabled bool     `gorm:"-"`
-	FlowENCollectionEnabled  bool     `gorm:"-"`
-	FlowDnsCollectionEnabled bool     `gorm:"-"`
+	FlowEnabled              bool     `gorm:"default:false"`
+	FlowGroups               []string `gorm:"serializer:json"`
+	FlowPacketCounterEnabled bool     `gorm:"default:false"`
+	FlowENCollectionEnabled  bool     `gorm:"default:false"`
+	FlowDnsCollectionEnabled bool     `gorm:"default:false"`
 }
 
 // Copy copies the ExtraSettings struct

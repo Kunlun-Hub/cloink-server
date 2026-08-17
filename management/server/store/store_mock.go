@@ -14,6 +14,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	dns "github.com/netbirdio/netbird/dns"
 	types "github.com/netbirdio/netbird/management/internals/modules/agentnetwork/types"
+	networktraffic "github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	accesslogs "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/accesslogs"
 	domain "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/domain"
 	proxy "github.com/netbirdio/netbird/management/internals/modules/reverseproxy/proxy"
@@ -151,6 +152,21 @@ func (m *MockStore) ApproveAccountPeers(ctx context.Context, accountID string) (
 func (mr *MockStoreMockRecorder) ApproveAccountPeers(ctx, accountID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveAccountPeers", reflect.TypeOf((*MockStore)(nil).ApproveAccountPeers), ctx, accountID)
+}
+
+// CleanupNetworkTrafficEvents mocks base method.
+func (m *MockStore) CleanupNetworkTrafficEvents(ctx context.Context, olderThan time.Time, maxPerAccount int) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupNetworkTrafficEvents", ctx, olderThan, maxPerAccount)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupNetworkTrafficEvents indicates an expected call of CleanupNetworkTrafficEvents.
+func (mr *MockStoreMockRecorder) CleanupNetworkTrafficEvents(ctx, olderThan, maxPerAccount interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupNetworkTrafficEvents", reflect.TypeOf((*MockStore)(nil).CleanupNetworkTrafficEvents), ctx, olderThan, maxPerAccount)
 }
 
 // CleanupStaleProxies mocks base method.
@@ -365,6 +381,20 @@ func (m *MockStore) CreateNetworkRouter(ctx context.Context, router *types1.Netw
 func (mr *MockStoreMockRecorder) CreateNetworkRouter(ctx, router interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetworkRouter", reflect.TypeOf((*MockStore)(nil).CreateNetworkRouter), ctx, router)
+}
+
+// CreateNetworkTrafficEvent mocks base method.
+func (m *MockStore) CreateNetworkTrafficEvent(ctx context.Context, event *networktraffic.Event) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNetworkTrafficEvent", ctx, event)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateNetworkTrafficEvent indicates an expected call of CreateNetworkTrafficEvent.
+func (mr *MockStoreMockRecorder) CreateNetworkTrafficEvent(ctx, event interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetworkTrafficEvent", reflect.TypeOf((*MockStore)(nil).CreateNetworkTrafficEvent), ctx, event)
 }
 
 // CreatePeerJob mocks base method.
@@ -1293,6 +1323,22 @@ func (mr *MockStoreMockRecorder) GetAccountNetwork(ctx, lockStrength, accountId 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountNetwork", reflect.TypeOf((*MockStore)(nil).GetAccountNetwork), ctx, lockStrength, accountId)
 }
 
+// GetAccountNetworkTrafficEvents mocks base method.
+func (m *MockStore) GetAccountNetworkTrafficEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Event, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountNetworkTrafficEvents", ctx, lockStrength, accountID, filter)
+	ret0, _ := ret[0].([]*networktraffic.Event)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetAccountNetworkTrafficEvents indicates an expected call of GetAccountNetworkTrafficEvents.
+func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficEvents(ctx, lockStrength, accountID, filter interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountNetworkTrafficEvents", reflect.TypeOf((*MockStore)(nil).GetAccountNetworkTrafficEvents), ctx, lockStrength, accountID, filter)
+}
+
 // GetAccountNetworks mocks base method.
 func (m *MockStore) GetAccountNetworks(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types2.Network, error) {
 	m.ctrl.T.Helper()
@@ -2203,6 +2249,21 @@ func (m *MockStore) GetNetworkRoutersByNetID(ctx context.Context, lockStrength L
 func (mr *MockStoreMockRecorder) GetNetworkRoutersByNetID(ctx, lockStrength, accountID, netID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkRoutersByNetID", reflect.TypeOf((*MockStore)(nil).GetNetworkRoutersByNetID), ctx, lockStrength, accountID, netID)
+}
+
+// GetNetworkTrafficPolicy mocks base method.
+func (m *MockStore) GetNetworkTrafficPolicy(ctx context.Context, lockStrength LockingStrength, accountID, ruleOrPolicyID string) (*types3.Policy, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNetworkTrafficPolicy", ctx, lockStrength, accountID, ruleOrPolicyID)
+	ret0, _ := ret[0].(*types3.Policy)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNetworkTrafficPolicy indicates an expected call of GetNetworkTrafficPolicy.
+func (mr *MockStoreMockRecorder) GetNetworkTrafficPolicy(ctx, lockStrength, accountID, ruleOrPolicyID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkTrafficPolicy", reflect.TypeOf((*MockStore)(nil).GetNetworkTrafficPolicy), ctx, lockStrength, accountID, ruleOrPolicyID)
 }
 
 // GetPATByHashedToken mocks base method.

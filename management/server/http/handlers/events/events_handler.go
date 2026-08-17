@@ -10,19 +10,23 @@ import (
 	"github.com/netbirdio/netbird/management/server/account"
 	"github.com/netbirdio/netbird/management/server/activity"
 	nbcontext "github.com/netbirdio/netbird/management/server/context"
+	"github.com/netbirdio/netbird/management/server/permissions"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 	"github.com/netbirdio/netbird/shared/management/http/util"
 )
 
 // handler HTTP handler
 type handler struct {
-	accountManager account.Manager
+	accountManager     account.Manager
+	permissionsManager permissions.Manager
 }
 
-func AddEndpoints(accountManager account.Manager, router *mux.Router) {
+func AddEndpoints(accountManager account.Manager, permissionsManager permissions.Manager, router *mux.Router) {
 	eventsHandler := newHandler(accountManager)
+	eventsHandler.permissionsManager = permissionsManager
 	router.HandleFunc("/events", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
 	router.HandleFunc("/events/audit", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
+	router.HandleFunc("/events/network-traffic", eventsHandler.getAllNetworkTrafficEvents).Methods("GET", "OPTIONS")
 }
 
 // newHandler creates a new events handler

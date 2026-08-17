@@ -38,6 +38,7 @@ import (
 	"github.com/netbirdio/netbird/util/crypt"
 
 	agentNetworkTypes "github.com/netbirdio/netbird/management/internals/modules/agentnetwork/types"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/server/migration"
 	resourceTypes "github.com/netbirdio/netbird/management/server/networks/resources/types"
 	routerTypes "github.com/netbirdio/netbird/management/server/networks/routers/types"
@@ -257,6 +258,11 @@ type Store interface {
 	UpdateAccountNetwork(ctx context.Context, accountID string, ipNet net.IPNet) error
 	UpdateAccountNetworkV6(ctx context.Context, accountID string, ipNet net.IPNet) error
 	GetPolicyRulesByResourceID(ctx context.Context, lockStrength LockingStrength, accountID string, peerID string) ([]*types.PolicyRule, error)
+
+	CreateNetworkTrafficEvent(ctx context.Context, event *networktraffic.Event) error
+	GetNetworkTrafficPolicy(ctx context.Context, lockStrength LockingStrength, accountID, ruleOrPolicyID string) (*types.Policy, error)
+	GetAccountNetworkTrafficEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Event, int64, error)
+	CleanupNetworkTrafficEvents(ctx context.Context, olderThan time.Time, maxPerAccount int) (int64, error)
 
 	// SetFieldEncrypt sets the field encryptor for encrypting sensitive user data.
 	SetFieldEncrypt(enc *crypt.FieldEncrypt)
