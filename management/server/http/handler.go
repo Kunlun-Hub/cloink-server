@@ -53,6 +53,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/http/handlers/routes"
 	"github.com/netbirdio/netbird/management/server/http/handlers/setup_keys"
 	"github.com/netbirdio/netbird/management/server/http/handlers/users"
+	versionreleases "github.com/netbirdio/netbird/management/server/http/handlers/version_releases"
 	"github.com/netbirdio/netbird/management/server/http/middleware"
 	"github.com/netbirdio/netbird/management/server/http/middleware/bypass"
 	nbinstance "github.com/netbirdio/netbird/management/server/instance"
@@ -81,6 +82,12 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	}
 	// OAuth callback for proxy authentication
 	if err := bypass.AddBypassPath(types.ProxyCallbackEndpointFull); err != nil {
+		return nil, fmt.Errorf("failed to add bypass path: %w", err)
+	}
+	if err := bypass.AddBypassPath("/api/version-releases/public"); err != nil {
+		return nil, fmt.Errorf("failed to add bypass path: %w", err)
+	}
+	if err := bypass.AddBypassPath("/api/version-releases/files/*"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
 
@@ -122,6 +129,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	users.AddEndpoints(accountManager, router)
 	users.AddInvitesEndpoints(accountManager, router)
 	users.AddPublicInvitesEndpoints(accountManager, router)
+	versionreleases.AddEndpoints(accountManager, permissionsManager, router)
 	setup_keys.AddEndpoints(accountManager, router)
 	policies.AddEndpoints(accountManager, LocationManager, router)
 	policies.AddPostureCheckEndpoints(accountManager, LocationManager, router)

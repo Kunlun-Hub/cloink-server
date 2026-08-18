@@ -89,6 +89,13 @@ type Store interface {
 	SaveAccountOnboarding(ctx context.Context, onboarding *types.AccountOnboarding) error
 	GetEmailSettings(ctx context.Context, lockStrength LockingStrength, accountID string) (*types.EmailSettings, error)
 	SaveEmailSettings(ctx context.Context, settings *types.EmailSettings) error
+	SaveVersionRelease(ctx context.Context, release *types.VersionRelease) error
+	GetVersionRelease(ctx context.Context, accountID, releaseID string) (*types.VersionRelease, error)
+	ListVersionReleases(ctx context.Context, accountID string) ([]*types.VersionRelease, error)
+	DeleteVersionRelease(ctx context.Context, accountID, releaseID string) error
+	SaveVersionReleaseArtifact(ctx context.Context, artifact *types.VersionReleaseArtifact) error
+	GetVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) (*types.VersionReleaseArtifact, error)
+	DeleteVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) error
 
 	GetUserByPATID(ctx context.Context, lockStrength LockingStrength, patID string) (*types.User, error)
 	GetUserByUserID(ctx context.Context, lockStrength LockingStrength, userID string) (*types.User, error)

@@ -146,6 +146,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&agentNetworkTypes.AgentNetworkUsage{}, &agentNetworkTypes.AgentNetworkUsageGroup{},
 		&networktraffic.Event{},
 		&types.EmailSettings{},
+		&types.VersionRelease{}, &types.VersionReleaseArtifact{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("auto migratePreAuto: %w", err)
@@ -1300,6 +1301,86 @@ func (s *SqlStore) SaveAccountOnboarding(ctx context.Context, onboarding *types.
 		return status.Errorf(status.Internal, "error when saving account onboarding %s in the store: %s", onboarding.AccountID, result.Error)
 	}
 
+	return nil
+}
+
+func (s *SqlStore) SaveVersionRelease(ctx context.Context, release *types.VersionRelease) error {
+	if release == nil || release.ID == "" || release.AccountID == "" {
+		return fmt.Errorf("version release requires release and account IDs")
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if release.IsLatest {
+			result := tx.Model(&types.VersionRelease{}).
+				Where("account_id = ? AND platform = ? AND architecture = ? AND channel = ? AND id <> ?",
+					release.AccountID, release.Platform, release.Architecture, release.Channel, release.ID).
+				Update("is_latest", false)
+			if result.Error != nil {
+				return result.Error
+			}
+		}
+		return tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(release).Error
+	})
+}
+
+func (s *SqlStore) GetVersionRelease(ctx context.Context, accountID, releaseID string) (*types.VersionRelease, error) {
+	var release types.VersionRelease
+	result := s.db.WithContext(ctx).Where("account_id = ? AND id = ?", accountID, releaseID).First(&release)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, status.Errorf(status.NotFound, "version release not found")
+	}
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &release, nil
+}
+
+func (s *SqlStore) ListVersionReleases(ctx context.Context, accountID string) ([]*types.VersionRelease, error) {
+	var releases []*types.VersionRelease
+	result := s.db.WithContext(ctx).Where("account_id = ?", accountID).
+		Order("created_at DESC").Find(&releases)
+	return releases, result.Error
+}
+
+func (s *SqlStore) DeleteVersionRelease(ctx context.Context, accountID, releaseID string) error {
+	result := s.db.WithContext(ctx).Where("account_id = ? AND id = ?", accountID, releaseID).
+		Delete(&types.VersionRelease{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "version release not found")
+	}
+	return nil
+}
+
+func (s *SqlStore) SaveVersionReleaseArtifact(ctx context.Context, artifact *types.VersionReleaseArtifact) error {
+	if artifact == nil || artifact.ID == "" || artifact.AccountID == "" {
+		return fmt.Errorf("version release artifact requires artifact and account IDs")
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(artifact).Error
+}
+
+func (s *SqlStore) GetVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) (*types.VersionReleaseArtifact, error) {
+	var artifact types.VersionReleaseArtifact
+	result := s.db.WithContext(ctx).Where("account_id = ? AND id = ?", accountID, artifactID).First(&artifact)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, status.Errorf(status.NotFound, "version release artifact not found")
+	}
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &artifact, nil
+}
+
+func (s *SqlStore) DeleteVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) error {
+	result := s.db.WithContext(ctx).Where("account_id = ? AND id = ?", accountID, artifactID).
+		Delete(&types.VersionReleaseArtifact{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "version release artifact not found")
+	}
 	return nil
 }
 

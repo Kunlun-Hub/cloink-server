@@ -427,6 +427,73 @@ components:
           description: Controls the Agent Network menu for the account regardless of the deployment feature flag. When true the menu is shown, when false it is hidden, and when omitted the default behavior applies. Must be true when agent_network_only is enabled.
           type: boolean
           example: true
+    VersionReleasePlatform:
+      type: string
+      enum: [ macos, windows, linux, android ]
+    VersionReleaseArchitecture:
+      type: string
+      enum: [ amd64, arm64, armv7, universal ]
+    VersionReleaseRequest:
+      type: object
+      properties:
+        version:
+          type: string
+          example: 0.77.0
+        platform:
+          $ref: '#/components/schemas/VersionReleasePlatform'
+        architecture:
+          $ref: '#/components/schemas/VersionReleaseArchitecture'
+        channel:
+          type: string
+          default: stable
+          pattern: '^[a-z0-9][a-z0-9._-]{0,31}$'
+        downloadUrl:
+          type: string
+          description: HTTPS URL or the relative URL returned by the upload endpoint.
+        description:
+          type: string
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        signature:
+          type: string
+          description: JSON-encoded detached artifact signature. Required with sha256 when isLatest is true.
+        isLatest:
+          type: boolean
+          default: false
+      required: [ version, platform, architecture, downloadUrl ]
+    VersionRelease:
+      allOf:
+        - $ref: '#/components/schemas/VersionReleaseRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+          required: [ id, channel, createdAt, updatedAt ]
+    VersionReleaseUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        size:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        downloadUrl:
+          type: string
+      required: [ id, filename, size, sha256, downloadUrl ]
     AccountExtraSettings:
       type: object
       properties:
@@ -6604,6 +6671,176 @@ paths:
           "$ref": "#/components/responses/forbidden"
         '500':
           "$ref": "#/components/responses/internal_error"
+  /api/version-releases:
+    get:
+      summary: List Version Releases
+      tags: [ Version Releases ]
+      responses:
+        '200':
+          description: Account version releases, including unsigned drafts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VersionRelease'
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+    post:
+      summary: Create Version Release
+      tags: [ Version Releases ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionReleaseRequest'
+      responses:
+        '200':
+          description: Created version release.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionRelease'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+  /api/version-releases/upload:
+    post:
+      summary: Upload Version Release Artifact
+      tags: [ Version Releases ]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [ file ]
+      responses:
+        '200':
+          description: Uploaded artifact metadata and computed checksum.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionReleaseUpload'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '401':
+          "$ref": "#/components/responses/requires_authentication"
+        '403':
+          "$ref": "#/components/responses/forbidden"
+  /api/version-releases/public:
+    get:
+      summary: List Published Version Releases
+      tags: [ Version Releases ]
+      security: [ ]
+      parameters:
+        - in: query
+          name: platform
+          schema:
+            $ref: '#/components/schemas/VersionReleasePlatform'
+        - in: query
+          name: architecture
+          schema:
+            $ref: '#/components/schemas/VersionReleaseArchitecture'
+        - in: query
+          name: channel
+          schema:
+            type: string
+            default: stable
+        - in: query
+          name: latest
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Signed releases matching the requested target.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VersionRelease'
+  /api/version-releases/files/{artifactId}:
+    get:
+      summary: Download Version Release Artifact
+      tags: [ Version Releases ]
+      security: [ ]
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Installer artifact.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          "$ref": "#/components/responses/not_found"
+  /api/version-releases/{releaseId}:
+    parameters:
+      - in: path
+        name: releaseId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get Version Release
+      tags: [ Version Releases ]
+      responses:
+        '200':
+          description: Version release metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionRelease'
+        '404':
+          "$ref": "#/components/responses/not_found"
+    put:
+      summary: Update Version Release
+      tags: [ Version Releases ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionReleaseRequest'
+      responses:
+        '200':
+          description: Updated version release.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionRelease'
+        '400':
+          "$ref": "#/components/responses/bad_request"
+        '404':
+          "$ref": "#/components/responses/not_found"
+    delete:
+      summary: Delete Version Release
+      tags: [ Version Releases ]
+      responses:
+        '200':
+          description: Version release deleted.
+        '404':
+          "$ref": "#/components/responses/not_found"
   /api/setup:
     post:
       summary: Setup Instance

@@ -875,6 +875,34 @@ func (mr *MockStoreMockRecorder) DeleteUserInvite(ctx, inviteID interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserInvite", reflect.TypeOf((*MockStore)(nil).DeleteUserInvite), ctx, inviteID)
 }
 
+// DeleteVersionRelease mocks base method.
+func (m *MockStore) DeleteVersionRelease(ctx context.Context, accountID, releaseID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVersionRelease", ctx, accountID, releaseID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVersionRelease indicates an expected call of DeleteVersionRelease.
+func (mr *MockStoreMockRecorder) DeleteVersionRelease(ctx, accountID, releaseID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVersionRelease", reflect.TypeOf((*MockStore)(nil).DeleteVersionRelease), ctx, accountID, releaseID)
+}
+
+// DeleteVersionReleaseArtifact mocks base method.
+func (m *MockStore) DeleteVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVersionReleaseArtifact", ctx, accountID, artifactID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVersionReleaseArtifact indicates an expected call of DeleteVersionReleaseArtifact.
+func (mr *MockStoreMockRecorder) DeleteVersionReleaseArtifact(ctx, accountID, artifactID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).DeleteVersionReleaseArtifact), ctx, accountID, artifactID)
+}
+
 // DeleteZone mocks base method.
 func (m *MockStore) DeleteZone(ctx context.Context, accountID, zoneID string) error {
 	m.ctrl.T.Helper()
@@ -3015,6 +3043,36 @@ func (mr *MockStoreMockRecorder) GetUserPeers(ctx, lockStrength, accountID, user
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserPeers", reflect.TypeOf((*MockStore)(nil).GetUserPeers), ctx, lockStrength, accountID, userID)
 }
 
+// GetVersionRelease mocks base method.
+func (m *MockStore) GetVersionRelease(ctx context.Context, accountID, releaseID string) (*types3.VersionRelease, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVersionRelease", ctx, accountID, releaseID)
+	ret0, _ := ret[0].(*types3.VersionRelease)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVersionRelease indicates an expected call of GetVersionRelease.
+func (mr *MockStoreMockRecorder) GetVersionRelease(ctx, accountID, releaseID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVersionRelease", reflect.TypeOf((*MockStore)(nil).GetVersionRelease), ctx, accountID, releaseID)
+}
+
+// GetVersionReleaseArtifact mocks base method.
+func (m *MockStore) GetVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) (*types3.VersionReleaseArtifact, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVersionReleaseArtifact", ctx, accountID, artifactID)
+	ret0, _ := ret[0].(*types3.VersionReleaseArtifact)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVersionReleaseArtifact indicates an expected call of GetVersionReleaseArtifact.
+func (mr *MockStoreMockRecorder) GetVersionReleaseArtifact(ctx, accountID, artifactID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).GetVersionReleaseArtifact), ctx, accountID, artifactID)
+}
+
 // GetZoneByDomain mocks base method.
 func (m *MockStore) GetZoneByDomain(ctx context.Context, accountID, domain string) (*zones.Zone, error) {
 	m.ctrl.T.Helper()
@@ -3235,6 +3293,21 @@ func (m *MockStore) ListFreeDomains(ctx context.Context, accountID string) ([]st
 func (mr *MockStoreMockRecorder) ListFreeDomains(ctx, accountID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFreeDomains", reflect.TypeOf((*MockStore)(nil).ListFreeDomains), ctx, accountID)
+}
+
+// ListVersionReleases mocks base method.
+func (m *MockStore) ListVersionReleases(ctx context.Context, accountID string) ([]*types3.VersionRelease, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListVersionReleases", ctx, accountID)
+	ret0, _ := ret[0].([]*types3.VersionRelease)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListVersionReleases indicates an expected call of ListVersionReleases.
+func (mr *MockStoreMockRecorder) ListVersionReleases(ctx, accountID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVersionReleases", reflect.TypeOf((*MockStore)(nil).ListVersionReleases), ctx, accountID)
 }
 
 // MarkAccountPrimary mocks base method.
@@ -3798,6 +3871,34 @@ func (m *MockStore) SaveUsers(ctx context.Context, users []*types3.User) error {
 func (mr *MockStoreMockRecorder) SaveUsers(ctx, users interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveUsers", reflect.TypeOf((*MockStore)(nil).SaveUsers), ctx, users)
+}
+
+// SaveVersionRelease mocks base method.
+func (m *MockStore) SaveVersionRelease(ctx context.Context, release *types3.VersionRelease) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveVersionRelease", ctx, release)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveVersionRelease indicates an expected call of SaveVersionRelease.
+func (mr *MockStoreMockRecorder) SaveVersionRelease(ctx, release interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveVersionRelease", reflect.TypeOf((*MockStore)(nil).SaveVersionRelease), ctx, release)
+}
+
+// SaveVersionReleaseArtifact mocks base method.
+func (m *MockStore) SaveVersionReleaseArtifact(ctx context.Context, artifact *types3.VersionReleaseArtifact) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveVersionReleaseArtifact", ctx, artifact)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveVersionReleaseArtifact indicates an expected call of SaveVersionReleaseArtifact.
+func (mr *MockStoreMockRecorder) SaveVersionReleaseArtifact(ctx, artifact interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).SaveVersionReleaseArtifact), ctx, artifact)
 }
 
 // SetFieldEncrypt mocks base method.

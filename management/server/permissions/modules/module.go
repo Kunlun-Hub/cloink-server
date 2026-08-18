@@ -21,6 +21,7 @@ const (
 	Pats              Module = "pats"
 	IdentityProviders Module = "identity_providers"
 	Services          Module = "services"
+	VersionReleases   Module = "version_releases"
 	AgentNetwork      Module = "agent_network"
 
 	// Agent Network submodules. A role may grant one of these directly
@@ -52,6 +53,7 @@ var All = map[Module]struct{}{
 	Pats:              {},
 	IdentityProviders: {},
 	Services:          {},
+	VersionReleases:   {},
 	AgentNetwork:      {},
 
 	AgentNetworkProviders:  {},

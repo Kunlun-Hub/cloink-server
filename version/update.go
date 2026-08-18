@@ -1,9 +1,12 @@
 package version
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -32,12 +35,20 @@ type Update struct {
 	daemonVersion   *goversion.Version
 	latestAvailable *goversion.Version
 	versionsLock    sync.Mutex
+	fetchLock       sync.Mutex
 
 	fetchTicker *time.Ticker
 	fetchDone   chan struct{}
 
 	onUpdateListener func()
 	listenerLock     sync.Mutex
+}
+
+type publicRelease struct {
+	Version      string `json:"version"`
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture"`
+	IsLatest     bool   `json:"isLatest"`
 }
 
 // NewUpdate instantiate Update and start to fetch the new version information
@@ -65,11 +76,14 @@ func NewUpdateAndStart(httpAgent string) *Update {
 
 // StopWatch stop the version info fetch loop
 func (u *Update) StopWatch() {
-	if u.fetchTicker == nil {
+	u.fetchLock.Lock()
+	ticker := u.fetchTicker
+	u.fetchLock.Unlock()
+	if ticker == nil {
 		return
 	}
 
-	u.fetchTicker.Stop()
+	ticker.Stop()
 
 	select {
 	case u.fetchDone <- struct{}{}:
@@ -114,14 +128,18 @@ func (u *Update) LatestVersion() *goversion.Version {
 }
 
 func (u *Update) StartFetcher() {
+	u.fetchLock.Lock()
 	if u.fetchTicker != nil {
+		u.fetchLock.Unlock()
 		return
 	}
 	if versionURL == "" {
+		u.fetchLock.Unlock()
 		log.Debugf("version check disabled: %s is not configured", EnvVersionCheckURL)
 		return
 	}
 	u.fetchTicker = time.NewTicker(fetchPeriod)
+	u.fetchLock.Unlock()
 
 	if changed := u.fetchVersion(); changed {
 		u.checkUpdate()
@@ -142,7 +160,20 @@ func (u *Update) StartFetcher() {
 func (u *Update) fetchVersion() bool {
 	log.Debugf("fetching version info from %s", versionURL)
 
-	req, err := http.NewRequest("GET", versionURL, nil)
+	endpoint := versionURL
+	if strings.Contains(endpoint, "/api/version-releases/public") {
+		parsed, err := url.Parse(endpoint)
+		if err == nil {
+			query := parsed.Query()
+			query.Set("platform", releasePlatform())
+			query.Set("architecture", runtime.GOARCH)
+			query.Set("latest", "true")
+			parsed.RawQuery = query.Encode()
+			endpoint = parsed.String()
+		}
+	}
+
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		log.Errorf("failed to create request for version info: %s", err)
 		return false
@@ -162,7 +193,7 @@ func (u *Update) fetchVersion() bool {
 		return false
 	}
 
-	if resp.ContentLength > 100 {
+	if resp.ContentLength > 64*1024 {
 		log.Errorf("too large response: %d", resp.ContentLength)
 		return false
 	}
@@ -173,21 +204,57 @@ func (u *Update) fetchVersion() bool {
 		return false
 	}
 
-	latestAvailable, err := goversion.NewVersion(string(content))
+	latestAvailable, err := parseLatestVersion(content)
 	if err != nil {
-		log.Errorf("failed to parse the version string: %s", err)
+		log.Errorf("failed to parse the version response: %s", err)
 		return false
 	}
 
 	u.versionsLock.Lock()
 	defer u.versionsLock.Unlock()
 
-	if u.latestAvailable.Equal(latestAvailable) {
+	if u.latestAvailable != nil && u.latestAvailable.Equal(latestAvailable) {
 		return false
 	}
 	u.latestAvailable = latestAvailable
 
 	return true
+}
+
+func releasePlatform() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "macos"
+	case "windows":
+		return "windows"
+	default:
+		return "linux"
+	}
+}
+
+func parseLatestVersion(content []byte) (*goversion.Version, error) {
+	if parsed, err := goversion.NewVersion(strings.TrimSpace(string(content))); err == nil {
+		return parsed, nil
+	}
+
+	var releases []publicRelease
+	if err := json.Unmarshal(content, &releases); err != nil {
+		return nil, err
+	}
+	var latest *goversion.Version
+	for _, release := range releases {
+		candidate, err := goversion.NewVersion(strings.TrimPrefix(strings.TrimSpace(release.Version), "v"))
+		if err != nil {
+			continue
+		}
+		if latest == nil || candidate.GreaterThan(latest) {
+			latest = candidate
+		}
+	}
+	if latest == nil {
+		return nil, io.ErrUnexpectedEOF
+	}
+	return latest, nil
 }
 
 func (u *Update) checkUpdate() bool {

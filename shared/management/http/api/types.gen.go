@@ -1253,6 +1253,54 @@ func (e UserStatus) Valid() bool {
 	}
 }
 
+// Defines values for VersionReleaseArchitecture.
+const (
+	VersionReleaseArchitectureAmd64     VersionReleaseArchitecture = "amd64"
+	VersionReleaseArchitectureArm64     VersionReleaseArchitecture = "arm64"
+	VersionReleaseArchitectureArmv7     VersionReleaseArchitecture = "armv7"
+	VersionReleaseArchitectureUniversal VersionReleaseArchitecture = "universal"
+)
+
+// Valid indicates whether the value is a known member of the VersionReleaseArchitecture enum.
+func (e VersionReleaseArchitecture) Valid() bool {
+	switch e {
+	case VersionReleaseArchitectureAmd64:
+		return true
+	case VersionReleaseArchitectureArm64:
+		return true
+	case VersionReleaseArchitectureArmv7:
+		return true
+	case VersionReleaseArchitectureUniversal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VersionReleasePlatform.
+const (
+	VersionReleasePlatformAndroid VersionReleasePlatform = "android"
+	VersionReleasePlatformLinux   VersionReleasePlatform = "linux"
+	VersionReleasePlatformMacos   VersionReleasePlatform = "macos"
+	VersionReleasePlatformWindows VersionReleasePlatform = "windows"
+)
+
+// Valid indicates whether the value is a known member of the VersionReleasePlatform enum.
+func (e VersionReleasePlatform) Valid() bool {
+	switch e {
+	case VersionReleasePlatformAndroid:
+		return true
+	case VersionReleasePlatformLinux:
+		return true
+	case VersionReleasePlatformMacos:
+		return true
+	case VersionReleasePlatformWindows:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkloadType.
 const (
 	WorkloadTypeBundle WorkloadType = "bundle"
@@ -5911,6 +5959,58 @@ type UserRequest struct {
 	Role string `json:"role"`
 }
 
+// VersionRelease defines model for VersionRelease.
+type VersionRelease struct {
+	Architecture VersionReleaseArchitecture `json:"architecture"`
+	Channel      string                     `json:"channel"`
+	CreatedAt    time.Time                  `json:"createdAt"`
+	Description  *string                    `json:"description,omitempty"`
+
+	// DownloadUrl HTTPS URL or the relative URL returned by the upload endpoint.
+	DownloadUrl string                 `json:"downloadUrl"`
+	Id          openapi_types.UUID     `json:"id"`
+	IsLatest    *bool                  `json:"isLatest,omitempty"`
+	Platform    VersionReleasePlatform `json:"platform"`
+	Sha256      *string                `json:"sha256,omitempty"`
+
+	// Signature JSON-encoded detached artifact signature. Required with sha256 when isLatest is true.
+	Signature *string   `json:"signature,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Version   string    `json:"version"`
+}
+
+// VersionReleaseArchitecture defines model for VersionReleaseArchitecture.
+type VersionReleaseArchitecture string
+
+// VersionReleasePlatform defines model for VersionReleasePlatform.
+type VersionReleasePlatform string
+
+// VersionReleaseRequest defines model for VersionReleaseRequest.
+type VersionReleaseRequest struct {
+	Architecture VersionReleaseArchitecture `json:"architecture"`
+	Channel      *string                    `json:"channel,omitempty"`
+	Description  *string                    `json:"description,omitempty"`
+
+	// DownloadUrl HTTPS URL or the relative URL returned by the upload endpoint.
+	DownloadUrl string                 `json:"downloadUrl"`
+	IsLatest    *bool                  `json:"isLatest,omitempty"`
+	Platform    VersionReleasePlatform `json:"platform"`
+	Sha256      *string                `json:"sha256,omitempty"`
+
+	// Signature JSON-encoded detached artifact signature. Required with sha256 when isLatest is true.
+	Signature *string `json:"signature,omitempty"`
+	Version   string  `json:"version"`
+}
+
+// VersionReleaseUpload defines model for VersionReleaseUpload.
+type VersionReleaseUpload struct {
+	DownloadUrl string             `json:"downloadUrl"`
+	Filename    string             `json:"filename"`
+	Id          openapi_types.UUID `json:"id"`
+	Sha256      string             `json:"sha256"`
+	Size        int64              `json:"size"`
+}
+
 // WebhookTarget Target configuration for webhook notification channels.
 type WebhookTarget struct {
 	// Headers Custom HTTP headers sent with each webhook request.
@@ -6319,6 +6419,19 @@ type GetApiUsersParams struct {
 	ServiceUser *bool `form:"service_user,omitempty" json:"service_user,omitempty"`
 }
 
+// GetApiVersionReleasesPublicParams defines parameters for GetApiVersionReleasesPublic.
+type GetApiVersionReleasesPublicParams struct {
+	Platform     *VersionReleasePlatform     `form:"platform,omitempty" json:"platform,omitempty"`
+	Architecture *VersionReleaseArchitecture `form:"architecture,omitempty" json:"architecture,omitempty"`
+	Channel      *string                     `form:"channel,omitempty" json:"channel,omitempty"`
+	Latest       *bool                       `form:"latest,omitempty" json:"latest,omitempty"`
+}
+
+// PostApiVersionReleasesUploadMultipartBody defines parameters for PostApiVersionReleasesUpload.
+type PostApiVersionReleasesUploadMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
 // PutApiAccountsAccountIdJSONRequestBody defines body for PutApiAccountsAccountId for application/json ContentType.
 type PutApiAccountsAccountIdJSONRequestBody = AccountRequest
 
@@ -6588,6 +6701,15 @@ type PutApiUsersUserIdPasswordJSONRequestBody = PasswordChangeRequest
 
 // PostApiUsersUserIdTokensJSONRequestBody defines body for PostApiUsersUserIdTokens for application/json ContentType.
 type PostApiUsersUserIdTokensJSONRequestBody = PersonalAccessTokenRequest
+
+// PostApiVersionReleasesJSONRequestBody defines body for PostApiVersionReleases for application/json ContentType.
+type PostApiVersionReleasesJSONRequestBody = VersionReleaseRequest
+
+// PostApiVersionReleasesUploadMultipartRequestBody defines body for PostApiVersionReleasesUpload for multipart/form-data ContentType.
+type PostApiVersionReleasesUploadMultipartRequestBody PostApiVersionReleasesUploadMultipartBody
+
+// PutApiVersionReleasesReleaseIdJSONRequestBody defines body for PutApiVersionReleasesReleaseId for application/json ContentType.
+type PutApiVersionReleasesReleaseIdJSONRequestBody = VersionReleaseRequest
 
 // AsEmailTarget returns the union data inside the NotificationChannelRequest_Target as a EmailTarget
 func (t NotificationChannelRequest_Target) AsEmailTarget() (EmailTarget, error) {
