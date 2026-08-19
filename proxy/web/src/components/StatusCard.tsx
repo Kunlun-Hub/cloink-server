@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { ConnectionLine } from "./ConnectionLine";
+import { useI18n } from "@/i18n/I18nProvider";
 
 interface StatusCardProps {
   icon: LucideIcon;
@@ -16,6 +17,8 @@ export function StatusCard({
   success = true,
   line = true,
 }: Readonly<StatusCardProps>) {
+  const { t } = useI18n();
+
   return (
     <>
       {line && <ConnectionLine success={success} />}
@@ -25,7 +28,7 @@ export function StatusCard({
         </div>
         <span className="text-sm text-nb-gray-200 font-normal mt-1">{label}</span>
         <span className={`text-xs font-medium uppercase ${success ? "text-green-500" : "text-netbird"}`}>
-          {success ? "Connected" : "Unreachable"}
+          {success ? t("error.connected") : t("error.unreachable")}
         </span>
         {detail && (
           <span className="text-xs text-nb-gray-400 truncate text-center">

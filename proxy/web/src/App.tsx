@@ -12,6 +12,7 @@ import { Description } from "@/components/Description";
 import { Separator } from "@/components/Separator";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Label } from "@/components/Label";
+import { useI18n } from "@/i18n/I18nProvider";
 
 const data = getData();
 
@@ -22,9 +23,11 @@ const methods: NonNullable<Data["methods"]> =
     : {  password:"password", pin: "pin", oidc: "/auth/oidc" };
 
 function App() {
+  const { t } = useI18n();
+
   useEffect(() => {
-    document.title = "Authentication Required - NetBird Service";
-  }, []);
+    document.title = t("auth.pageTitle");
+  }, [t]);
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<string | null>(null);
@@ -69,11 +72,11 @@ function App() {
           setSubmitting("redirect");
           globalThis.location.reload();
         } else {
-          handleAuthError(method, "Authentication failed. Please try again.");
+          handleAuthError(method, t("auth.failed"));
         }
       })
       .catch(() => {
-        handleAuthError(method, "An error occurred. Please try again.");
+        handleAuthError(method, t("auth.error"));
       });
   };
 
@@ -92,14 +95,14 @@ function App() {
 
   const hasCredentialAuth = methods.password || methods.pin;
   const hasBothCredentials = methods.password && methods.pin;
-  const buttonLabel = activeTab === "password" ? "Sign in" : "Submit";
+  const buttonLabel = activeTab === "password" ? t("auth.signIn") : t("auth.submit");
 
   if (submitting === "redirect") {
     return (
       <main className="mt-20">
         <Card className="max-w-105 mx-auto">
-          <Title>Authenticated</Title>
-          <Description>Loading service...</Description>
+          <Title>{t("auth.authenticated")}</Title>
+          <Description>{t("auth.loadingService")}</Description>
           <div className="flex justify-center mt-7">
             <Loader2 className="animate-spin" size={24} />
           </div>
@@ -112,9 +115,9 @@ function App() {
   return (
     <main className="mt-20">
       <Card className="max-w-105 mx-auto">
-        <Title>Authentication Required</Title>
+        <Title>{t("auth.title")}</Title>
         <Description>
-          The service you are trying to access is protected. Please authenticate to continue.
+          {t("auth.description")}
         </Description>
 
           <div className="flex flex-col gap-4 mt-7 z-10 relative">
@@ -128,7 +131,7 @@ function App() {
                 onClick={() => { globalThis.location.href = methods.oidc!; }}
               >
                 <LogIn size={16} />
-                Sign in with SSO
+                {t("auth.signInWithSso")}
               </Button>
             )}
 
@@ -158,11 +161,11 @@ function App() {
                     <SegmentedTabs.List className="rounded-lg border mb-4">
                       <SegmentedTabs.Trigger value="password">
                         <Lock size={14} />
-                        Password
+                        {t("auth.password")}
                       </SegmentedTabs.Trigger>
                       <SegmentedTabs.Trigger value="pin">
                         <Binary size={14} />
-                        PIN
+                        {t("auth.pin")}
                       </SegmentedTabs.Trigger>
                     </SegmentedTabs.List>
                   </SegmentedTabs>
@@ -171,12 +174,12 @@ function App() {
                 <div className="mb-4">
                   {methods.password && (activeTab === "password" || !methods.pin) && (
                     <>
-                      {!hasBothCredentials && <Label htmlFor="password">Password</Label>}
+                      {!hasBothCredentials && <Label htmlFor="password">{t("auth.password")}</Label>}
                       <Input
                         ref={passwordRef}
                         type="password"
                         id="password"
-                        placeholder="Enter password"
+                        placeholder={t("auth.enterPassword")}
                         disabled={submitting !== null}
                         showPasswordToggle
                         autoFocus
@@ -187,7 +190,7 @@ function App() {
                   )}
                   {methods.pin && (activeTab === "pin" || !methods.password) && (
                     <>
-                      {!hasBothCredentials && <Label htmlFor="pin-0">Enter PIN Code</Label>}
+                      {!hasBothCredentials && <Label htmlFor="pin-0">{t("auth.enterPinCode")}</Label>}
                       <PinCodeInput
                         ref={pinRef}
                         value={pin}
@@ -210,7 +213,7 @@ function App() {
                   ) : (
                     <>
                       <Loader2 className="animate-spin" size={16} />
-                      Verifying...
+                      {t("auth.verifying")}
                     </>
                   )}
                 </Button>
