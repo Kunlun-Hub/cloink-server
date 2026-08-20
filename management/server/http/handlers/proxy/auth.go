@@ -19,6 +19,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/http/middleware"
 	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/proxy/auth"
+	"github.com/netbirdio/netbird/shared/i18n"
 )
 
 // AuthCallbackHandler handles OAuth callbacks for proxy authentication.
@@ -50,10 +51,11 @@ func (h *AuthCallbackHandler) RegisterEndpoints(router *mux.Router) {
 }
 
 func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
+	lang := i18n.DetectLanguage(r.Header.Get("Accept-Language"))
 	clientIP := h.resolveClientIP(r)
 	if !h.rateLimiter.Allow(clientIP) {
 		log.WithField("client_ip", clientIP).Warn("OAuth callback rate limit exceeded")
-		http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
+		http.Error(w, i18n.T(lang, "error.tooManyRequests"), http.StatusTooManyRequests)
 		return
 	}
 
@@ -62,14 +64,14 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 	codeVerifier, originalURL, err := h.proxyService.ValidateState(state)
 	if err != nil {
 		log.WithError(err).Error("OAuth callback state validation failed")
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		http.Error(w, i18n.T(lang, "error.invalidStateParameter"), http.StatusBadRequest)
 		return
 	}
 
 	redirectURL, err := url.Parse(originalURL)
 	if err != nil {
 		log.WithError(err).Error("Failed to parse redirect URL")
-		http.Error(w, "Invalid redirect URL", http.StatusBadRequest)
+		http.Error(w, i18n.T(lang, "error.invalidRedirectUrl"), http.StatusBadRequest)
 		return
 	}
 
@@ -78,7 +80,7 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 	provider, err := oidc.NewProvider(r.Context(), oidcConfig.Issuer)
 	if err != nil {
 		log.WithError(err).Error("Failed to create OIDC provider")
-		http.Error(w, "Failed to create OIDC provider", http.StatusInternalServerError)
+		http.Error(w, i18n.T(lang, "error.failedCreateOidcProvider"), http.StatusInternalServerError)
 		return
 	}
 
@@ -89,14 +91,14 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 	}).Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(codeVerifier))
 	if err != nil {
 		log.WithError(err).Error("Failed to exchange code for token")
-		http.Error(w, "Failed to exchange code for token", http.StatusInternalServerError)
+		http.Error(w, i18n.T(lang, "error.failedExchangeCode"), http.StatusInternalServerError)
 		return
 	}
 
 	userID := extractUserIDFromToken(r.Context(), provider, oidcConfig, token)
 	if userID == "" {
 		log.Error("Failed to extract user ID from OIDC token")
-		http.Error(w, "Failed to validate token", http.StatusUnauthorized)
+		http.Error(w, i18n.T(lang, "error.failedValidateToken"), http.StatusUnauthorized)
 		return
 	}
 
@@ -125,18 +127,19 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
-// sessionTokenErrorDescription maps a session token failure to the text the
+// sessionTokenErrorDescription maps a session token failure to the i18n key the
 // proxy renders on its access denied page. Account status denials get a message
 // the user can act on, while everything else stays generic so a lookup or
 // signing failure does not describe management internals to the browser.
+// These keys are resolved by the proxy web frontend's i18n system.
 func sessionTokenErrorDescription(err error) string {
 	if errors.Is(err, nbgrpc.ErrUserPendingApproval) {
-		return "Your account is pending approval by an administrator"
+		return "proxyError.accountPendingApproval"
 	}
 	if errors.Is(err, nbgrpc.ErrUserBlocked) {
-		return "Your account is blocked"
+		return "proxyError.accountBlocked"
 	}
-	return "Service configuration error"
+	return "proxyError.serviceConfigError"
 }
 
 func extractUserIDFromToken(ctx context.Context, provider *oidc.Provider, config nbgrpc.ProxyOIDCConfig, token *oauth2.Token) string {

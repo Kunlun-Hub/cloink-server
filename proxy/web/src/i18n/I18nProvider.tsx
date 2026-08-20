@@ -35,7 +35,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t: TranslateFn = useMemo(() => {
     return (key: TranslationKey, params?: Record<string, string | number>) => {
-      let text = messages[locale][key];
+      let text = messages[locale][key] ?? messages["en"][key] ?? (key as string);
       if (params) {
         for (const [k, v] of Object.entries(params)) {
           text = text.replace(`{${k}}`, String(v));

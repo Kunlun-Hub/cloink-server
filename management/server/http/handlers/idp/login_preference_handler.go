@@ -12,6 +12,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/account"
 	idpmanager "github.com/netbirdio/netbird/management/server/idp"
 	"github.com/netbirdio/netbird/management/server/types"
+	"github.com/netbirdio/netbird/shared/i18n"
 )
 
 type loginPreferenceHandler struct {
@@ -31,7 +32,8 @@ func NewLoginPreferenceHandler(accountManager account.Manager, embeddedIDP *idpm
 func (h *loginPreferenceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	loginMethod, preferredConnectorID, err := h.resolveLoginPreference(r.Context())
 	if err != nil {
-		http.Error(w, "configured login method is temporarily unavailable", http.StatusServiceUnavailable)
+		lang := i18n.DetectLanguage(r.Header.Get("Accept-Language"))
+		http.Error(w, i18n.T(lang, "error.loginMethodUnavailable"), http.StatusServiceUnavailable)
 		return
 	}
 	if loginMethod == types.LoginMethodAll {

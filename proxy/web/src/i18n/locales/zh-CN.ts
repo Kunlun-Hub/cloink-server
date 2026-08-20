@@ -35,6 +35,38 @@ const zhCN: Translations = {
 
   // Common
   "common.poweredBy": "由",
+
+  // Proxy error messages (sent as i18n keys from Go backend)
+  "proxyError.serviceNotFound": "服务未找到",
+  "proxyError.serviceNotFoundMessage": "无法找到请求的服务。请检查 URL、尝试刷新，或检查对等节点是否正在运行。如仍有问题，请参阅我们的文档。",
+  "proxyError.loopDetected": "检测到环路",
+  "proxyError.loopDetectedMessage": "此节点是请求服务的目标。请直接访问后端，而不是从同一台机器访问公共服务 URL。",
+  "proxyError.requestTimeout": "请求超时",
+  "proxyError.requestTimeoutMessage": "尝试访问服务时请求超时。请刷新页面重试。",
+  "proxyError.requestCanceled": "请求已取消",
+  "proxyError.requestCanceledMessage": "请求在完成之前被取消。请刷新页面重试。",
+  "proxyError.configurationError": "配置错误",
+  "proxyError.configurationErrorMessage": "由于配置问题，无法处理请求。请刷新页面重试。",
+  "proxyError.proxyNotConnected": "代理未连接",
+  "proxyError.proxyNotConnectedMessage": "代理未连接到 NetBird 网络。请稍后重试或联系管理员。",
+  "proxyError.serviceOverloaded": "服务过载",
+  "proxyError.serviceOverloadedMessage": "服务当前正在处理过多请求。请稍后重试。",
+  "proxyError.serviceUnavailable": "服务不可用",
+  "proxyError.serviceUnavailableMessage": "连接服务被拒绝。请验证服务是否正在运行并重试。",
+  "proxyError.peerNotConnected": "节点未连接",
+  "proxyError.peerNotConnectedMessage": "无法建立与节点的连接。请确保节点正在运行并已连接到 NetBird 网络。",
+  "proxyError.connectionError": "连接错误",
+  "proxyError.connectionErrorMessage": "连接服务时发生意外错误。请稍后重试。",
+
+  // Access denied messages
+  "proxyError.accessDenied": "访问被拒绝",
+  "proxyError.accessDeniedMessage": "您无权访问此服务",
+  "proxyError.authError": "认证过程中发生错误",
+  "proxyError.accountPendingApproval": "您的账户正在等待管理员批准",
+  "proxyError.accountBlocked": "您的账户已被封禁",
+  "proxyError.serviceConfigError": "服务配置错误",
+  "proxyError.invalidSessionToken": "无效的会话令牌",
+  "proxyError.authServiceUnavailable": "认证服务不可用",
 };
 
 export default zhCN;

@@ -1,3 +1,123 @@
+<style>
+.nb-lang-switch{position:fixed;top:16px;right:16px;z-index:999;display:flex;background:rgba(63,68,75,.5);border:1px solid rgba(63,68,75,.8);border-radius:8px;overflow:hidden}
+.nb-lang-btn{padding:6px 14px;font-size:12px;color:#a7b1b9;cursor:pointer;border:none;background:transparent;transition:all .2s;font-family:inherit}
+.nb-lang-btn:hover{color:#e4e7e9}
+.nb-lang-btn.active{background:rgba(246,131,48,.2);color:#f68330}
+</style>
+<div class="nb-lang-switch" id="nb-lang-switch">
+  <button class="nb-lang-btn" data-lang="en">EN</button>
+  <button class="nb-lang-btn" data-lang="zh-CN">中文</button>
+</div>
+<script>
+(function(){
+  var zh={
+    "Sign in":"登录",
+    "Choose your login method":"选择登录方式",
+    "Enter your credentials":"请输入凭据",
+    "Password":"密码",
+    "Enter your password":"输入密码",
+    "Invalid":"无效的",
+    "or password":"或密码",
+    "Choose another login method":"选择其他登录方式",
+    "Not Found":"未找到",
+    "Bad Request":"错误请求",
+    "Continue with {name}":"使用 {name} 登录"
+  };
+
+  function getLang(){
+    var s=null;
+    try{s=localStorage.getItem("nb-locale")}catch(e){}
+    if(s==="zh-CN"||s==="en") return s;
+    return "zh-CN";
+  }
+
+  /* Save original English text before first translation */
+  function origText(el){
+    if(!el.hasAttribute("data-orig")){
+      el.setAttribute("data-orig", el.textContent);
+    }
+    return el.getAttribute("data-orig");
+  }
+
+  function origAttr(el, attr){
+    if(!el.hasAttribute("data-orig-"+attr)){
+      el.setAttribute("data-orig-"+attr, el.getAttribute(attr)||"");
+    }
+    return el.getAttribute("data-orig-"+attr);
+  }
+
+  function applyLang(lang){
+    var isZh=lang==="zh-CN";
+    document.documentElement.lang=isZh?"zh-CN":"en";
+
+    /* data-i18n: full text replacement */
+    var nodes=document.querySelectorAll("[data-i18n]");
+    for(var i=0;i<nodes.length;i++){
+      var en=origText(nodes[i]);
+      var key=nodes[i].getAttribute("data-i18n");
+      nodes[i].textContent=isZh?(zh[key]||en):en;
+    }
+
+    /* data-i18n-continue: "Continue with {name}" */
+    var conts=document.querySelectorAll("[data-i18n-continue]");
+    for(var i=0;i<conts.length;i++){
+      var en=origText(conts[i]);
+      var name=conts[i].getAttribute("data-i18n-continue");
+      if(isZh){
+        conts[i].textContent=(zh["Continue with {name}"]||"Continue with {name}").replace("{name}",name);
+      }else{
+        conts[i].textContent=en;
+      }
+    }
+
+    /* data-i18n-placeholder */
+    var phs=document.querySelectorAll("[data-i18n-placeholder]");
+    for(var i=0;i<phs.length;i++){
+      var en=origAttr(phs[i],"placeholder");
+      var key=phs[i].getAttribute("data-i18n-placeholder");
+      phs[i].placeholder=isZh?(zh[key]||en):en;
+    }
+
+    /* data-i18n-btn */
+    var btns=document.querySelectorAll("[data-i18n-btn]");
+    for(var i=0;i<btns.length;i++){
+      var en=origText(btns[i]);
+      var key=btns[i].getAttribute("data-i18n-btn");
+      btns[i].textContent=isZh?(zh[key]||en):en;
+    }
+
+    /* data-i18n-label */
+    var labels=document.querySelectorAll("[data-i18n-label]");
+    for(var i=0;i<labels.length;i++){
+      var en=origText(labels[i]);
+      var key=labels[i].getAttribute("data-i18n-label");
+      labels[i].textContent=isZh?(zh[key]||en):en;
+    }
+
+    /* highlight active button */
+    var sw=document.querySelectorAll("#nb-lang-switch .nb-lang-btn");
+    for(var i=0;i<sw.length;i++){
+      sw[i].classList.toggle("active",sw[i].getAttribute("data-lang")===lang);
+    }
+  }
+
+  var lang=getLang();
+  applyLang(lang);
+
+  /* click handlers */
+  var sw=document.getElementById("nb-lang-switch");
+  if(sw){
+    var btns=sw.querySelectorAll(".nb-lang-btn");
+    for(var i=0;i<btns.length;i++){
+      btns[i].addEventListener("click",function(){
+        var l=this.getAttribute("data-lang");
+        try{localStorage.setItem("nb-locale",l)}catch(e){}
+        applyLang(l);
+      });
+    }
+  }
+})();
+</script>
 </div>
 </body>
 </html>

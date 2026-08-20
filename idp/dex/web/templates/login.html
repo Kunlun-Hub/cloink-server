@@ -1,8 +1,8 @@
 {{ template "header.html" . }}
 
 <div class="nb-card">
-    <h1 class="nb-heading">Sign in</h1>
-    <p class="nb-subheading">Choose your login method</p>
+    <h1 class="nb-heading" data-i18n="Sign in">Sign in</h1>
+    <p class="nb-subheading" data-i18n="Choose your login method">Choose your login method</p>
 
     {{/* First pass: render Email/Local connectors at the top */}}
     {{ range $c := .Connectors }}
@@ -11,7 +11,7 @@
     {{- if or (contains "email" $nameLower) (contains "email" $idLower) (contains "local" $nameLower) (contains "local" $idLower) -}}
     <a href="{{ $c.URL }}" class="nb-btn-connector">
         <span class="nb-icon nb-icon-email"></span>
-        <span>Continue with {{ $c.Name }}</span>
+        <span data-i18n-continue="{{ $c.Name }}">Continue with {{ $c.Name }}</span>
     </a>
     {{- end -}}
     {{ end }}
@@ -50,7 +50,7 @@
             {{- $iconClass = "nb-icon-keycloak" -}}
         {{- end -}}
         <span class="nb-icon {{ $iconClass }}"></span>
-        <span>Continue with {{ $c.Name }}</span>
+        <span data-i18n-continue="{{ $c.Name }}">Continue with {{ $c.Name }}</span>
     </a>
     {{- end -}}
     {{ end }}

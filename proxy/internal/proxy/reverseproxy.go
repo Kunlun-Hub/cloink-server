@@ -84,8 +84,8 @@ func NewReverseProxy(transport http.RoundTripper, forwardedProto string, trusted
 func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	result, exists := p.findTargetForRequest(r)
 	if !exists {
-		p.serveRouteError(w, r, http.StatusNotFound, "Service Not Found",
-			"The requested service could not be found. Please check the URL, try refreshing, or check if the peer is running. If that doesn't work, see our documentation for help.")
+		p.serveRouteError(w, r, http.StatusNotFound, "proxyError.serviceNotFound",
+			"proxyError.serviceNotFoundMessage")
 		return
 	}
 
@@ -95,8 +95,8 @@ func (p *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// with 421 (Misdirected Request) so the caller sees an explicit
 	// error instead of silently doubling tunnel traffic.
 	if p.isSelfTargetLoop(r, result.target.URL) {
-		p.serveRouteError(w, r, http.StatusMisdirectedRequest, "Loop Detected",
-			"This peer is the target of the requested service. Reach the backend directly instead of dialing the public service URL from the same machine.")
+		p.serveRouteError(w, r, http.StatusMisdirectedRequest, "proxyError.loopDetected",
+			"proxyError.loopDetectedMessage")
 		return
 	}
 
@@ -777,55 +777,56 @@ func getRequestID(r *http.Request) string {
 
 // classifyProxyError determines the appropriate error title, message, HTTP
 // status code, and component status based on the error type.
+// Title and message are i18n keys resolved by the frontend.
 func classifyProxyError(err error) (title, message string, code int, status web.ErrorStatus) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded),
 		isNetTimeout(err):
-		return "Request Timeout",
-			"The request timed out while trying to reach the service. Please refresh the page and try again.",
+		return "proxyError.requestTimeout",
+			"proxyError.requestTimeoutMessage",
 			http.StatusGatewayTimeout,
 			web.ErrorStatus{Proxy: true, Destination: false}
 
 	case errors.Is(err, context.Canceled):
-		return "Request Canceled",
-			"The request was canceled before it could be completed. Please refresh the page and try again.",
+		return "proxyError.requestCanceled",
+			"proxyError.requestCanceledMessage",
 			http.StatusBadGateway,
 			web.ErrorStatus{Proxy: true, Destination: false}
 
 	case errors.Is(err, roundtrip.ErrNoAccountID):
-		return "Configuration Error",
-			"The request could not be processed due to a configuration issue. Please refresh the page and try again.",
+		return "proxyError.configurationError",
+			"proxyError.configurationErrorMessage",
 			http.StatusInternalServerError,
 			web.ErrorStatus{Proxy: false, Destination: false}
 
 	case errors.Is(err, roundtrip.ErrNoPeerConnection),
 		errors.Is(err, roundtrip.ErrClientStartFailed):
-		return "Proxy Not Connected",
-			"The proxy is not connected to the NetBird network. Please try again later or contact your administrator.",
+		return "proxyError.proxyNotConnected",
+			"proxyError.proxyNotConnectedMessage",
 			http.StatusBadGateway,
 			web.ErrorStatus{Proxy: false, Destination: false}
 
 	case errors.Is(err, roundtrip.ErrTooManyInflight):
-		return "Service Overloaded",
-			"The service is currently handling too many requests. Please try again shortly.",
+		return "proxyError.serviceOverloaded",
+			"proxyError.serviceOverloadedMessage",
 			http.StatusServiceUnavailable,
 			web.ErrorStatus{Proxy: true, Destination: false}
 
 	case isConnectionRefused(err):
-		return "Service Unavailable",
-			"The connection to the service was refused. Please verify that the service is running and try again.",
+		return "proxyError.serviceUnavailable",
+			"proxyError.serviceUnavailableMessage",
 			http.StatusBadGateway,
 			web.ErrorStatus{Proxy: true, Destination: false}
 
 	case isHostUnreachable(err):
-		return "Peer Not Connected",
-			"The connection to the peer could not be established. Please ensure the peer is running and connected to the NetBird network.",
+		return "proxyError.peerNotConnected",
+			"proxyError.peerNotConnectedMessage",
 			http.StatusBadGateway,
 			web.ErrorStatus{Proxy: true, Destination: false}
 	}
 
-	return "Connection Error",
-		"An unexpected error occurred while connecting to the service. Please try again later.",
+	return "proxyError.connectionError",
+		"proxyError.connectionErrorMessage",
 		http.StatusBadGateway,
 		web.ErrorStatus{Proxy: true, Destination: false}
 }

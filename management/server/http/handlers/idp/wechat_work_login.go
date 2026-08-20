@@ -15,6 +15,7 @@ import (
 
 	"github.com/netbirdio/netbird/idp/dex"
 	idpmanager "github.com/netbirdio/netbird/management/server/idp"
+	"github.com/netbirdio/netbird/shared/i18n"
 )
 
 const (
@@ -42,6 +43,13 @@ type weChatWorkLoginPageData struct {
 	RedirectURI   string
 	State         string
 	ScriptURL     string
+	// i18n fields
+	Lang           string
+	PageTitle      string
+	Title          string
+	Subtitle       string
+	FallbackPrefix string
+	FallbackLink   string
 }
 
 func toJSON(v any) template.JS {
@@ -55,11 +63,11 @@ func toJSON(v any) template.JS {
 var weChatWorkLoginPageTmpl = template.Must(template.New("wechatwork-login").Funcs(template.FuncMap{
 	"toJSON": toJSON,
 }).Parse(`<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ .Lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ .ConnectorName }} 登录</title>
+  <title>{{ .PageTitle }}</title>
   <style>
     *,:before,:after{box-sizing:border-box}
     body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#18191d;color:#e4e7e9;font-family:ui-sans-serif,system-ui,sans-serif}
@@ -74,11 +82,11 @@ var weChatWorkLoginPageTmpl = template.Must(template.New("wechatwork-login").Fun
 </head>
 <body>
   <div class="nb-card">
-    <h1 class="nb-title">企业微信登录</h1>
-    <p class="nb-subtitle">使用 {{ .ConnectorName }} 完成扫码登录</p>
+    <h1 class="nb-title">{{ .Title }}</h1>
+    <p class="nb-subtitle">{{ .Subtitle }}</p>
     <div id="ww_login_panel" class="nb-panel"></div>
     <div class="nb-fallback">
-      如果登录组件未正常加载，请<a class="nb-link" href="{{ .FallbackURL }}">点击这里继续登录</a>
+      {{ .FallbackPrefix }}<a class="nb-link" href="{{ .FallbackURL }}">{{ .FallbackLink }}</a>
     </div>
   </div>
   <script src="{{ .ScriptURL }}"></script>
@@ -161,6 +169,7 @@ func NewWeChatWorkCallbackHandler(embeddedIDP *idpmanager.EmbeddedIdPManager) ht
 }
 
 func (h *weChatWorkCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	lang := i18n.DetectLanguage(r.Header.Get("Accept-Language"))
 	connectorID := mux.Vars(r)["connector"]
 	if connectorID == "" {
 		h.dexHandler.ServeHTTP(w, r)
@@ -175,7 +184,7 @@ func (h *weChatWorkCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 
 	state := r.URL.Query().Get("state")
 	if state == "" {
-		http.Error(w, "missing state parameter", http.StatusBadRequest)
+		http.Error(w, i18n.T(lang, "error.missingStateParameter"), http.StatusBadRequest)
 		return
 	}
 
@@ -185,7 +194,7 @@ func (h *weChatWorkCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 	}
 
 	if r.URL.Query().Get("code") == "" {
-		h.renderLoginPage(w, r, connector, state)
+		h.renderLoginPage(w, r, connector, state, lang)
 		return
 	}
 
@@ -207,20 +216,19 @@ func (h *weChatWorkCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 	h.dexHandler.ServeHTTP(w, proxiedReq)
 }
 
-func (h *weChatWorkCallbackHandler) renderLoginPage(w http.ResponseWriter, r *http.Request, connector *dex.ConnectorConfig, state string) {
+func (h *weChatWorkCallbackHandler) renderLoginPage(w http.ResponseWriter, r *http.Request, connector *dex.ConnectorConfig, state string, lang string) {
 	if connector.ClientID == "" || connector.AgentID == "" {
-		http.Error(w, "wechat work connector is missing app configuration", http.StatusBadRequest)
+		http.Error(w, i18n.T(lang, "error.wecomConnectorMissingConfig"), http.StatusBadRequest)
 		return
 	}
 
 	fallbackURL, err := buildWeChatWorkLoginURL(r, connector.ClientID, connector.AgentID, state)
 	if err != nil {
-		http.Error(w, "failed to build WeChat Work login URL", http.StatusInternalServerError)
+		http.Error(w, i18n.T(lang, "error.failedBuildLoginUrl"), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := weChatWorkLoginPageTmpl.Execute(w, weChatWorkLoginPageData{
+	data := weChatWorkLoginPageData{
 		ConnectorName: connector.Name,
 		FallbackURL:   fallbackURL,
 		AppID:         connector.ClientID,
@@ -228,8 +236,26 @@ func (h *weChatWorkCallbackHandler) renderLoginPage(w http.ResponseWriter, r *ht
 		RedirectURI:   currentRequestURL(r),
 		State:         state,
 		ScriptURL:     weChatWorkPanelSDKURL,
-	}); err != nil {
-		http.Error(w, "failed to render login page", http.StatusInternalServerError)
+		Lang:          lang,
+	}
+
+	if lang == "zh-CN" {
+		data.PageTitle = connector.Name + " 登录"
+		data.Title = "企业微信登录"
+		data.Subtitle = "使用 " + connector.Name + " 完成扫码登录"
+		data.FallbackPrefix = "如果登录组件未正常加载，请"
+		data.FallbackLink = "点击这里继续登录"
+	} else {
+		data.PageTitle = connector.Name + " Login"
+		data.Title = "WeCom Login"
+		data.Subtitle = "Scan to sign in with " + connector.Name
+		data.FallbackPrefix = "If the login widget fails to load, "
+		data.FallbackLink = "click here to continue"
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := weChatWorkLoginPageTmpl.Execute(w, data); err != nil {
+		http.Error(w, i18n.T(lang, "error.failedRenderLoginPage"), http.StatusInternalServerError)
 	}
 }
 

@@ -306,11 +306,11 @@ func (mw *Middleware) handleOAuthCallbackError(w http.ResponseWriter, r *http.Re
 	}
 	errDesc := r.URL.Query().Get("error_description")
 	if errDesc == "" {
-		errDesc = "An error occurred during authentication"
+		errDesc = "proxyError.authError"
 	} else {
 		errDesc = html.EscapeString(errDesc)
 	}
-	web.ServeAccessDeniedPage(w, r, http.StatusForbidden, "Access Denied", errDesc, requestID)
+	web.ServeAccessDeniedPage(w, r, http.StatusForbidden, "proxyError.accessDenied", errDesc, requestID)
 	return true
 }
 
@@ -593,7 +593,7 @@ func (mw *Middleware) handleAuthenticatedToken(w http.ResponseWriter, r *http.Re
 			cd.SetAuthMethod(scheme.Type().String())
 			requestID = cd.GetRequestID()
 		}
-		web.ServeAccessDeniedPage(w, r, http.StatusForbidden, "Access Denied", "You are not authorized to access this service", requestID)
+		web.ServeAccessDeniedPage(w, r, http.StatusForbidden, "proxyError.accessDenied", "proxyError.accessDeniedMessage", requestID)
 		return
 	}
 

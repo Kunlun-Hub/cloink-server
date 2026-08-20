@@ -12,7 +12,8 @@ export function ErrorPage({ code, title, message, proxy = true, destination = tr
   const { t } = useI18n();
 
   useEffect(() => {
-    document.title = t("error.pageTitle", { title });
+    const translatedTitle = t(title as any) || title;
+    document.title = t("error.pageTitle", { title: translatedTitle });
   }, [title, t]);
 
   const [timestamp] = useState(() => new Date().toISOString());
@@ -25,10 +26,10 @@ export function ErrorPage({ code, title, message, proxy = true, destination = tr
       </div>
 
       {/* Title */}
-      <Title className="text-3xl!">{title}</Title>
+      <Title className="text-3xl!">{t(title as any) || title}</Title>
 
       {/* Description */}
-      <Description className="mt-2 mb-8 max-w-md">{message}</Description>
+      <Description className="mt-2 mb-8 max-w-md">{t(message as any) || message}</Description>
 
       {/* Status Cards - hidden in simple mode */}
       {!simple && (
