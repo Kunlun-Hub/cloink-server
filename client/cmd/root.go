@@ -171,6 +171,7 @@ func init() {
 	rootCmd.AddCommand(sshCmd)
 	rootCmd.AddCommand(networksCMD)
 	rootCmd.AddCommand(forwardingRulesCmd)
+	rootCmd.AddCommand(relayCmd)
 	rootCmd.AddCommand(debugCmd)
 	rootCmd.AddCommand(profileCmd)
 	rootCmd.AddCommand(exposeCmd)
@@ -179,6 +180,7 @@ func init() {
 	networksCMD.AddCommand(routesSelectCmd, routesDeselectCmd)
 
 	forwardingRulesCmd.AddCommand(forwardingRulesListCmd)
+	relayCmd.AddCommand(relaySetCmd)
 
 	debugCmd.AddCommand(debugBundleCmd)
 	debugCmd.AddCommand(logCmd)

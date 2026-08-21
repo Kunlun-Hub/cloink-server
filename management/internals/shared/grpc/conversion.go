@@ -18,6 +18,7 @@ import (
 
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map/controller/cache"
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
+	relayhandler "github.com/netbirdio/netbird/management/server/http/handlers/relays"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/posture"
 	"github.com/netbirdio/netbird/management/server/types"
@@ -84,14 +85,17 @@ func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken
 	}
 
 	var relayCfg *proto.RelayConfig
-	if config.Relay != nil && len(config.Relay.Addresses) > 0 {
-		relayCfg = &proto.RelayConfig{
-			Urls: config.Relay.Addresses,
+	if config.Relay != nil {
+		relayServers := relayhandler.ActiveRelayServers(config.Relay)
+		if settings != nil {
+			relayServers = relayhandler.RelayServersForAccount(config.Relay, settings)
 		}
-
-		if relayToken != nil {
-			relayCfg.TokenPayload = relayToken.Payload
-			relayCfg.TokenSignature = relayToken.Signature
+		if len(relayServers) > 0 {
+			relayCfg = relayConfigFromDescriptors(relayServers)
+			if relayToken != nil {
+				relayCfg.TokenPayload = relayToken.Payload
+				relayCfg.TokenSignature = relayToken.Signature
+			}
 		}
 	}
 
@@ -117,6 +121,23 @@ func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken
 	}
 
 	return nbConfig
+}
+
+func relayConfigFromDescriptors(relays []relayhandler.RelayServerDescriptor) *proto.RelayConfig {
+	config := &proto.RelayConfig{
+		Urls:    make([]string, 0, len(relays)),
+		Servers: make([]*proto.RelayServerConfig, 0, len(relays)),
+	}
+	for _, relay := range relays {
+		if relay.Address == "" {
+			continue
+		}
+		config.Urls = append(config.Urls, relay.Address)
+		config.Servers = append(config.Servers, &proto.RelayServerConfig{
+			Url: relay.Address, Priority: int32(relay.Priority), Id: relay.ID, Name: relay.Name,
+		})
+	}
+	return config
 }
 
 func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, settings *types.Settings, httpConfig *nbconfig.HttpServerConfig, deviceFlowConfig *nbconfig.DeviceAuthorizationFlow, enableSSH bool, forceRoutingPeerDNS bool) *proto.PeerConfig {

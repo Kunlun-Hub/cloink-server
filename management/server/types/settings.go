@@ -186,6 +186,9 @@ type ExtraSettings struct {
 	// IntegratedValidatorGroups list of group IDs to be used with integrated approval configurations
 	IntegratedValidatorGroups []string `gorm:"serializer:json"`
 
+	// RegisteredRelays stores relay metadata learned from active registrations.
+	RegisteredRelays map[string]RegisteredRelay `gorm:"serializer:json"`
+
 	FlowEnabled              bool     `gorm:"default:false"`
 	FlowGroups               []string `gorm:"serializer:json"`
 	FlowPacketCounterEnabled bool     `gorm:"default:false"`
@@ -200,10 +203,34 @@ func (e *ExtraSettings) Copy() *ExtraSettings {
 		UserApprovalRequired:      e.UserApprovalRequired,
 		IntegratedValidatorGroups: slices.Clone(e.IntegratedValidatorGroups),
 		IntegratedValidator:       e.IntegratedValidator,
+		RegisteredRelays:          cloneRegisteredRelays(e.RegisteredRelays),
 		FlowEnabled:               e.FlowEnabled,
 		FlowGroups:                slices.Clone(e.FlowGroups),
 		FlowPacketCounterEnabled:  e.FlowPacketCounterEnabled,
 		FlowENCollectionEnabled:   e.FlowENCollectionEnabled,
 		FlowDnsCollectionEnabled:  e.FlowDnsCollectionEnabled,
 	}
+}
+
+// RegisteredRelay is persisted metadata for a dynamically registered relay.
+type RegisteredRelay struct {
+	ID               string
+	Name             string
+	Address          string
+	Priority         int
+	ManagementURL    string
+	Version          string
+	ConnectedClients *int
+	LastSeen         time.Time
+}
+
+func cloneRegisteredRelays(source map[string]RegisteredRelay) map[string]RegisteredRelay {
+	if source == nil {
+		return nil
+	}
+	result := make(map[string]RegisteredRelay, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }

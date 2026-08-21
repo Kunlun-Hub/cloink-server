@@ -29,6 +29,7 @@ import (
 	zonesManager "github.com/netbirdio/netbird/management/internals/modules/zones/manager"
 	"github.com/netbirdio/netbird/management/internals/modules/zones/records"
 	recordsManager "github.com/netbirdio/netbird/management/internals/modules/zones/records/manager"
+	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/server/account"
 	"github.com/netbirdio/netbird/management/server/settings"
 
@@ -50,6 +51,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/http/handlers/networks"
 	"github.com/netbirdio/netbird/management/server/http/handlers/peers"
 	"github.com/netbirdio/netbird/management/server/http/handlers/policies"
+	"github.com/netbirdio/netbird/management/server/http/handlers/relays"
 	"github.com/netbirdio/netbird/management/server/http/handlers/routes"
 	"github.com/netbirdio/netbird/management/server/http/handlers/setup_keys"
 	"github.com/netbirdio/netbird/management/server/http/handlers/users"
@@ -64,7 +66,7 @@ import (
 )
 
 // NewAPIHandler creates the Management service HTTP API handler registering all the available endpoints.
-func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager account.Manager, networksManager nbnetworks.Manager, resourceManager resources.Manager, routerManager routers.Manager, groupsManager nbgroups.Manager, LocationManager geolocation.Geolocation, authManager auth.Manager, appMetrics telemetry.AppMetrics, permissionsManager permissions.Manager, settingsManager settings.Manager, zManager zones.Manager, rManager records.Manager, networkMapController network_map.Controller, idpManager idpmanager.Manager, serviceManager service.Manager, reverseProxyDomainManager *manager.Manager, reverseProxyAccessLogsManager accesslogs.Manager, proxyGRPCServer *nbgrpc.ProxyServiceServer, trustedHTTPProxies []netip.Prefix, rateLimiter *middleware.APIRateLimiter, isValidChildAccount middleware.IsValidChildAccountFunc, agentNetworkManager agentnetwork.Manager) (http.Handler, error) {
+func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager account.Manager, networksManager nbnetworks.Manager, resourceManager resources.Manager, routerManager routers.Manager, groupsManager nbgroups.Manager, LocationManager geolocation.Geolocation, authManager auth.Manager, appMetrics telemetry.AppMetrics, permissionsManager permissions.Manager, settingsManager settings.Manager, zManager zones.Manager, rManager records.Manager, networkMapController network_map.Controller, idpManager idpmanager.Manager, serviceManager service.Manager, reverseProxyDomainManager *manager.Manager, reverseProxyAccessLogsManager accesslogs.Manager, proxyGRPCServer *nbgrpc.ProxyServiceServer, trustedHTTPProxies []netip.Prefix, rateLimiter *middleware.APIRateLimiter, isValidChildAccount middleware.IsValidChildAccountFunc, agentNetworkManager agentnetwork.Manager, relayConfig *nbconfig.Relay, secretsManager nbgrpc.SecretsManager) (http.Handler, error) {
 
 	// Register bypass paths for unauthenticated endpoints
 	if err := bypass.AddBypassPath("/api/instance"); err != nil {
@@ -88,6 +90,10 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
 	if err := bypass.AddBypassPath("/api/version-releases/files/*"); err != nil {
+		return nil, fmt.Errorf("failed to add bypass path: %w", err)
+	}
+
+	if err := bypass.AddBypassPath("/api/relays/register"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
 
@@ -136,6 +142,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	policies.AddLocationsEndpoints(accountManager, LocationManager, permissionsManager, router)
 	groups.AddEndpoints(accountManager, router)
 	routes.AddEndpoints(accountManager, router)
+	relays.AddEndpoints(accountManager, relayConfig, LocationManager, secretsManager, permissionsManager, router)
 	dns.AddEndpoints(accountManager, router)
 	events.AddEndpoints(accountManager, permissionsManager, router)
 	networks.AddEndpoints(networksManager, resourceManager, routerManager, groupsManager, accountManager, router)

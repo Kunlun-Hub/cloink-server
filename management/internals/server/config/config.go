@@ -95,8 +95,31 @@ type TURNConfig struct {
 // Relay configuration type
 type Relay struct {
 	Addresses      []string
+	Servers        []*RelayServer
 	CredentialsTTL util.Duration
 	Secret         string
+}
+
+// RelayServer describes a configured relay and its selection priority.
+type RelayServer struct {
+	ID       string
+	Name     string
+	Address  string
+	Priority int
+}
+
+func (r *Relay) GetServers() []*RelayServer {
+	if r == nil {
+		return nil
+	}
+	if len(r.Servers) > 0 {
+		return r.Servers
+	}
+	servers := make([]*RelayServer, 0, len(r.Addresses))
+	for _, address := range r.Addresses {
+		servers = append(servers, &RelayServer{Address: address})
+	}
+	return servers
 }
 
 // HttpServerConfig is a config of the HTTP Management service server

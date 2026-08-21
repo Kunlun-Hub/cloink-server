@@ -16,7 +16,9 @@ import (
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map"
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/server/groups"
+	relayhandler "github.com/netbirdio/netbird/management/server/http/handlers/relays"
 	"github.com/netbirdio/netbird/management/server/settings"
+	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/shared/management/proto"
 	auth "github.com/netbirdio/netbird/shared/relay/auth/hmac"
 	authv2 "github.com/netbirdio/netbird/shared/relay/auth/hmac/v2"
@@ -28,6 +30,7 @@ const defaultDuration = 12 * time.Hour
 type SecretsManager interface {
 	GenerateTurnToken() (*Token, error)
 	GenerateRelayToken() (*Token, error)
+	PushRelayList(ctx context.Context, accountID string, peerIDs []string) int
 	SetupRefresh(ctx context.Context, accountID, peerKey string)
 	CancelRefresh(peerKey string)
 	GetWGKey() (wgtypes.Key, error)
@@ -124,6 +127,51 @@ func (m *TimeBasedAuthSecretsManager) GenerateRelayToken() (*Token, error) {
 		Payload:   string(relayToken.Payload),
 		Signature: base64.StdEncoding.EncodeToString(relayToken.Signature),
 	}, nil
+}
+
+// PushRelayList sends the current Relay configuration to connected account peers.
+func (m *TimeBasedAuthSecretsManager) PushRelayList(ctx context.Context, accountID string, peerIDs []string) int {
+	if m.relayCfg == nil || m.relayHmacToken == nil {
+		return 0
+	}
+	connected := m.updateManager.GetAllConnectedPeers()
+	count := 0
+	for _, peerID := range peerIDs {
+		if _, ok := connected[peerID]; !ok {
+			continue
+		}
+		if m.pushRelayList(ctx, accountID, peerID) {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *TimeBasedAuthSecretsManager) pushRelayList(ctx context.Context, accountID, peerID string) bool {
+	token, err := m.GenerateRelayToken()
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Warn("failed to generate relay token for relay list update")
+		return false
+	}
+	update := &proto.SyncResponse{NetbirdConfig: &proto.NetbirdConfig{Relay: m.relayConfig(ctx, accountID, token)}}
+	m.extendNetbirdConfig(ctx, peerID, accountID, update)
+	m.updateManager.SendUpdate(ctx, peerID, &network_map.UpdateMessage{Update: update, MessageType: network_map.MessageTypeControlConfig})
+	return true
+}
+
+func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID string, token *Token) *proto.RelayConfig {
+	settings, err := m.settingsManager.GetExtraSettings(ctx, accountID)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Warn("failed to load registered relays")
+	}
+	servers := relayhandler.ActiveRelayServers(m.relayCfg)
+	if err == nil {
+		servers = relayhandler.RelayServersForAccount(m.relayCfg, &types.Settings{Extra: settings})
+	}
+	config := relayConfigFromDescriptors(servers)
+	config.TokenPayload = token.Payload
+	config.TokenSignature = token.Signature
+	return config
 }
 
 func (m *TimeBasedAuthSecretsManager) cancelTURN(peerID string) {
@@ -235,11 +283,7 @@ func (m *TimeBasedAuthSecretsManager) pushNewTURNAndRelayTokens(ctx context.Cont
 	if m.relayCfg != nil {
 		token, err := m.GenerateRelayToken()
 		if err == nil {
-			update.NetbirdConfig.Relay = &proto.RelayConfig{
-				Urls:           m.relayCfg.Addresses,
-				TokenPayload:   token.Payload,
-				TokenSignature: token.Signature,
-			}
+			update.NetbirdConfig.Relay = m.relayConfig(ctx, accountID, token)
 		}
 	}
 
@@ -253,7 +297,7 @@ func (m *TimeBasedAuthSecretsManager) pushNewTURNAndRelayTokens(ctx context.Cont
 }
 
 func (m *TimeBasedAuthSecretsManager) pushNewRelayTokens(ctx context.Context, accountID, peerID string) {
-	relayToken, err := m.relayHmacToken.GenerateToken()
+	token, err := m.GenerateRelayToken()
 	if err != nil {
 		log.Errorf("failed to generate relay token for peer '%s': %s", peerID, err)
 		return
@@ -261,11 +305,7 @@ func (m *TimeBasedAuthSecretsManager) pushNewRelayTokens(ctx context.Context, ac
 
 	update := &proto.SyncResponse{
 		NetbirdConfig: &proto.NetbirdConfig{
-			Relay: &proto.RelayConfig{
-				Urls:           m.relayCfg.Addresses,
-				TokenPayload:   string(relayToken.Payload),
-				TokenSignature: base64.StdEncoding.EncodeToString(relayToken.Signature),
-			},
+			Relay: m.relayConfig(ctx, accountID, token),
 			// omit Turns to avoid updates there
 		},
 	}

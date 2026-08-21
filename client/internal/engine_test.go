@@ -42,6 +42,25 @@ import (
 	"github.com/netbirdio/netbird/util"
 )
 
+func TestRelayURLsAndWeights(t *testing.T) {
+	t.Run("legacy URLs fallback", func(t *testing.T) {
+		urls, weights := relayURLsAndWeights(&mgmtProto.RelayConfig{Urls: []string{"rels://legacy"}})
+		require.Equal(t, []string{"rels://legacy"}, urls)
+		require.Nil(t, weights)
+	})
+
+	t.Run("structured servers", func(t *testing.T) {
+		urls, weights := relayURLsAndWeights(&mgmtProto.RelayConfig{Servers: []*mgmtProto.RelayServerConfig{
+			{Url: "rels://high", Priority: 80},
+			{Url: ""},
+			{Url: "rels://high", Priority: 20},
+			{Url: "rels://default"},
+		}})
+		require.Equal(t, []string{"rels://high", "rels://default"}, urls)
+		require.Equal(t, map[string]int{"rels://high": 80}, weights)
+	})
+}
+
 type MockWGIface struct {
 	CreateFunc                 func() error
 	CreateOnAndroidFunc        func(routeRange []string, ip string, domains []string) error

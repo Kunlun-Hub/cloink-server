@@ -350,6 +350,7 @@ message RelayConfig {
   repeated string urls = 1;
   string tokenPayload = 2;
   string tokenSignature = 3;
+  repeated RelayServerConfig servers = 4;
 }
 
 message FlowConfig {
@@ -1210,4 +1211,11 @@ message UserIDList {
 // NetworkMapComponentsFull.posture_failed_peers.
 message PeerIndexSet {
   repeated uint32 peer_indexes = 1;
+}
+
+message RelayServerConfig {
+  string url = 1;
+  int32 priority = 2;
+  string id = 3;
+  string name = 4;
 }

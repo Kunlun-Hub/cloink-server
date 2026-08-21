@@ -30,6 +30,8 @@ const (
 	DaemonService_SelectNetworks_FullMethodName             = "/daemon.DaemonService/SelectNetworks"
 	DaemonService_DeselectNetworks_FullMethodName           = "/daemon.DaemonService/DeselectNetworks"
 	DaemonService_ForwardingRules_FullMethodName            = "/daemon.DaemonService/ForwardingRules"
+	DaemonService_ListRelays_FullMethodName                 = "/daemon.DaemonService/ListRelays"
+	DaemonService_SetRelay_FullMethodName                   = "/daemon.DaemonService/SetRelay"
 	DaemonService_DebugBundle_FullMethodName                = "/daemon.DaemonService/DebugBundle"
 	DaemonService_GetLogLevel_FullMethodName                = "/daemon.DaemonService/GetLogLevel"
 	DaemonService_SetLogLevel_FullMethodName                = "/daemon.DaemonService/SetLogLevel"
@@ -96,6 +98,8 @@ type DaemonServiceClient interface {
 	// Deselect specific routes
 	DeselectNetworks(ctx context.Context, in *SelectNetworksRequest, opts ...grpc.CallOption) (*SelectNetworksResponse, error)
 	ForwardingRules(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ForwardingRulesResponse, error)
+	ListRelays(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListRelaysResponse, error)
+	SetRelay(ctx context.Context, in *SetRelayRequest, opts ...grpc.CallOption) (*SetRelayResponse, error)
 	// DebugBundle creates a debug bundle
 	DebugBundle(ctx context.Context, in *DebugBundleRequest, opts ...grpc.CallOption) (*DebugBundleResponse, error)
 	// GetLogLevel gets the log level of the daemon
@@ -294,6 +298,26 @@ func (c *daemonServiceClient) ForwardingRules(ctx context.Context, in *EmptyRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ForwardingRulesResponse)
 	err := c.cc.Invoke(ctx, DaemonService_ForwardingRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ListRelays(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListRelaysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRelaysResponse)
+	err := c.cc.Invoke(ctx, DaemonService_ListRelays_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) SetRelay(ctx context.Context, in *SetRelayRequest, opts ...grpc.CallOption) (*SetRelayResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetRelayResponse)
+	err := c.cc.Invoke(ctx, DaemonService_SetRelay_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -706,6 +730,8 @@ type DaemonServiceServer interface {
 	// Deselect specific routes
 	DeselectNetworks(context.Context, *SelectNetworksRequest) (*SelectNetworksResponse, error)
 	ForwardingRules(context.Context, *EmptyRequest) (*ForwardingRulesResponse, error)
+	ListRelays(context.Context, *EmptyRequest) (*ListRelaysResponse, error)
+	SetRelay(context.Context, *SetRelayRequest) (*SetRelayResponse, error)
 	// DebugBundle creates a debug bundle
 	DebugBundle(context.Context, *DebugBundleRequest) (*DebugBundleResponse, error)
 	// GetLogLevel gets the log level of the daemon
@@ -823,6 +849,12 @@ func (UnimplementedDaemonServiceServer) DeselectNetworks(context.Context, *Selec
 }
 func (UnimplementedDaemonServiceServer) ForwardingRules(context.Context, *EmptyRequest) (*ForwardingRulesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ForwardingRules not implemented")
+}
+func (UnimplementedDaemonServiceServer) ListRelays(context.Context, *EmptyRequest) (*ListRelaysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRelays not implemented")
+}
+func (UnimplementedDaemonServiceServer) SetRelay(context.Context, *SetRelayRequest) (*SetRelayResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetRelay not implemented")
 }
 func (UnimplementedDaemonServiceServer) DebugBundle(context.Context, *DebugBundleRequest) (*DebugBundleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DebugBundle not implemented")
@@ -1137,6 +1169,42 @@ func _DaemonService_ForwardingRules_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).ForwardingRules(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ListRelays_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ListRelays(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ListRelays_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ListRelays(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_SetRelay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRelayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).SetRelay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_SetRelay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).SetRelay(ctx, req.(*SetRelayRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1796,6 +1864,14 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ForwardingRules",
 			Handler:    _DaemonService_ForwardingRules_Handler,
+		},
+		{
+			MethodName: "ListRelays",
+			Handler:    _DaemonService_ListRelays_Handler,
+		},
+		{
+			MethodName: "SetRelay",
+			Handler:    _DaemonService_SetRelay_Handler,
 		},
 		{
 			MethodName: "DebugBundle",

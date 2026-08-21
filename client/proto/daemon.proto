@@ -47,6 +47,10 @@ service DaemonService {
 
   rpc ForwardingRules(EmptyRequest) returns (ForwardingRulesResponse) {}
 
+  rpc ListRelays(EmptyRequest) returns (ListRelaysResponse) {}
+
+  rpc SetRelay(SetRelayRequest) returns (SetRelayResponse) {}
+
   // DebugBundle creates a debug bundle
   rpc DebugBundle(DebugBundleRequest) returns (DebugBundleResponse) {}
 
@@ -1055,3 +1059,25 @@ message StartBundleCaptureRequest {
 message StartBundleCaptureResponse {}
 message StopBundleCaptureRequest {}
 message StopBundleCaptureResponse {}
+
+message RelayServer {
+  string uri = 1;
+  int32 weight = 2;
+  bool preferred = 3;
+  bool forced = 4;
+  bool current = 5;
+  bool available = 6;
+  string error = 7;
+}
+
+message ListRelaysResponse {
+  repeated RelayServer relays = 1;
+}
+
+message SetRelayRequest {
+  string relay = 1;
+}
+
+message SetRelayResponse {
+  string selected = 1;
+}

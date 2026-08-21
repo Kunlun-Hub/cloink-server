@@ -1157,12 +1157,13 @@ func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
 			return fmt.Errorf("update relay token: %w", err)
 		}
 
-		urls := update.Urls
+		urls, weights := relayURLsAndWeights(update)
 		if override, ok := peer.OverrideRelayURLs(); ok {
 			log.Infof("overriding relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
 			urls = override
+			weights = nil
 		}
-		e.relayManager.UpdateServerURLs(urls)
+		e.relayManager.UpdateServerURLsWithWeights(urls, weights)
 
 		// Just in case the agent started with an MGM server where the relay was disabled but was later enabled.
 		// We can ignore all errors because the guard will manage the reconnection retries.
@@ -1172,6 +1173,32 @@ func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
 	}
 
 	return nil
+}
+
+func relayURLsAndWeights(update *mgmProto.RelayConfig) ([]string, map[string]int) {
+	servers := update.GetServers()
+	if len(servers) == 0 {
+		return update.GetUrls(), nil
+	}
+
+	urls := make([]string, 0, len(servers))
+	weights := make(map[string]int, len(servers))
+	seen := make(map[string]struct{}, len(servers))
+	for _, server := range servers {
+		relayURL := server.GetUrl()
+		if relayURL == "" {
+			continue
+		}
+		if _, ok := seen[relayURL]; ok {
+			continue
+		}
+		seen[relayURL] = struct{}{}
+		urls = append(urls, relayURL)
+		if server.GetPriority() > 0 {
+			weights[relayURL] = int(server.GetPriority())
+		}
+	}
+	return urls, weights
 }
 
 func (e *Engine) handleFlowUpdate(config *mgmProto.FlowConfig) error {
@@ -2206,6 +2233,22 @@ func (e *Engine) GetExposeManager() *expose.Manager {
 	e.syncMsgMux.Lock()
 	defer e.syncMsgMux.Unlock()
 	return e.exposeManager
+}
+
+// ProbeRelayServers probes the configured relay servers.
+func (e *Engine) ProbeRelayServers(ctx context.Context) []relayClient.RelayServerInfo {
+	if e.relayManager == nil {
+		return nil
+	}
+	return e.relayManager.ProbeRelayServers(ctx)
+}
+
+// SetForcedRelay overrides automatic relay selection for this engine session.
+func (e *Engine) SetForcedRelay(identifier string) (string, error) {
+	if e.relayManager == nil {
+		return "", fmt.Errorf("relay manager is not initialized")
+	}
+	return e.relayManager.SetForcedRelay(identifier)
 }
 
 // IsBlockInbound returns whether inbound connections are blocked.

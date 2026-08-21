@@ -1823,10 +1823,11 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 			settings_network_range_v6, settings_ipv6_enabled_groups, settings_lazy_connection_enabled,
 			settings_local_mfa_enabled, settings_metrics_push_enabled, settings_agent_network_only,
 			settings_dashboard_features, settings_auto_update_version, settings_auto_update_always,
-			settings_peer_expose_enabled, settings_peer_expose_groups,
+			settings_peer_expose_enabled, settings_peer_expose_groups, settings_login_method,
 			-- Embedded ExtraSettings
 			settings_extra_peer_approval_enabled, settings_extra_user_approval_required,
 			settings_extra_integrated_validator, settings_extra_integrated_validator_groups,
+			settings_extra_registered_relays,
 			settings_extra_flow_enabled, settings_extra_flow_groups,
 			settings_extra_flow_packet_counter_enabled, settings_extra_flow_en_collection_enabled,
 			settings_extra_flow_dns_collection_enabled
@@ -1856,10 +1857,12 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 		autoUpdateAlways                 sql.NullBool
 		peerExposeEnabled                sql.NullBool
 		peerExposeGroups                 sql.NullString
+		sLoginMethod                     sql.NullString
 		sExtraPeerApprovalEnabled        sql.NullBool
 		sExtraUserApprovalRequired       sql.NullBool
 		sExtraIntegratedValidator        sql.NullString
 		sExtraIntegratedValidatorGroups  sql.NullString
+		sExtraRegisteredRelays           sql.NullString
 		sExtraFlowEnabled                sql.NullBool
 		sExtraFlowGroups                 sql.NullString
 		sExtraFlowPacketCounterEnabled   sql.NullBool
@@ -1885,9 +1888,10 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 		&sNetworkRangeV6, &sIPv6EnabledGroups, &sLazyConnectionEnabled,
 		&sLocalMFAEnabled, &sMetricsPushEnabled, &sAgentNetworkOnly,
 		&sDashboardFeatures, &autoUpdateVersion, &autoUpdateAlways,
-		&peerExposeEnabled, &peerExposeGroups,
+		&peerExposeEnabled, &peerExposeGroups, &sLoginMethod,
 		&sExtraPeerApprovalEnabled, &sExtraUserApprovalRequired,
 		&sExtraIntegratedValidator, &sExtraIntegratedValidatorGroups,
+		&sExtraRegisteredRelays,
 		&sExtraFlowEnabled, &sExtraFlowGroups,
 		&sExtraFlowPacketCounterEnabled, &sExtraFlowENCollectionEnabled,
 		&sExtraFlowDNSCollectionEnabled,
@@ -1992,6 +1996,9 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 	if peerExposeGroups.Valid {
 		_ = json.Unmarshal([]byte(peerExposeGroups.String), &account.Settings.PeerExposeGroups)
 	}
+	if sLoginMethod.Valid {
+		account.Settings.LoginMethod = types.LoginMethod(sLoginMethod.String)
+	}
 
 	if sExtraPeerApprovalEnabled.Valid {
 		account.Settings.Extra.PeerApprovalEnabled = sExtraPeerApprovalEnabled.Bool
@@ -2004,6 +2011,9 @@ func (s *SqlStore) getAccount(ctx context.Context, accountID string) (*types.Acc
 	}
 	if sExtraIntegratedValidatorGroups.Valid {
 		_ = json.Unmarshal([]byte(sExtraIntegratedValidatorGroups.String), &account.Settings.Extra.IntegratedValidatorGroups)
+	}
+	if sExtraRegisteredRelays.Valid {
+		_ = json.Unmarshal([]byte(sExtraRegisteredRelays.String), &account.Settings.Extra.RegisteredRelays)
 	}
 	if sExtraFlowEnabled.Valid {
 		account.Settings.Extra.FlowEnabled = sExtraFlowEnabled.Bool

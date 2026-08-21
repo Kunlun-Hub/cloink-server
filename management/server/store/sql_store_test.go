@@ -321,6 +321,16 @@ func Test_AccountSettings_SaveAndRetrieve(t *testing.T) {
 			reflectedDf := reflect.ValueOf(&df).Elem()
 			field.Set(reflectedDf.Addr())
 			return 1, nil
+		}).WithCustomFieldSetter(
+		reflect.TypeOf(map[string]types.RegisteredRelay{}), func(_ *testing_helpers.PopulateFields, field reflect.Value) (int, error) {
+			connected := 2
+			field.Set(reflect.ValueOf(map[string]types.RegisteredRelay{
+				"relay-test": {
+					ID: "relay-test", Address: "rels://relay.example.com:443", Priority: 30,
+					ConnectedClients: &connected, LastSeen: time.Unix(1, 0).UTC(),
+				},
+			}))
+			return 1, nil
 		}).WithSkippedTag("gorm", "-")
 
 	runTestForAllEngines(t, "", func(t *testing.T, store Store) {
@@ -331,7 +341,7 @@ func Test_AccountSettings_SaveAndRetrieve(t *testing.T) {
 		settings := types.Settings{}
 		numOfExportedFields, err := populateFields.PopulateAll(reflect.ValueOf(&settings).Elem())
 		assert.NoError(t, err)
-		assert.Equal(t, 32, numOfExportedFields)
+		assert.Equal(t, 34, numOfExportedFields)
 		account.Settings = &settings
 
 		err = store.SaveAccount(context.Background(), account)
@@ -342,7 +352,7 @@ func Test_AccountSettings_SaveAndRetrieve(t *testing.T) {
 		assert.NotNil(t, accountFromDb)
 		assert.NotNil(t, accountFromDb.Settings)
 
-		assert.True(t, reflect.DeepEqual(&settings, accountFromDb.Settings), "created settings and settings retrieved from the db should match")
+		assert.Equal(t, &settings, accountFromDb.Settings, "created settings and settings retrieved from the db should match")
 	})
 }
 

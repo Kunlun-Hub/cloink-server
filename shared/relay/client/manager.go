@@ -4,9 +4,13 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
+	"net/url"
 	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +22,9 @@ import (
 var (
 	relayCleanupInterval = 60 * time.Second
 	keepUnusedServerTime = 5 * time.Second
+	relayProbeTimeout    = 6 * time.Second
+	relayServerCooldown  = 2 * time.Minute
+	defaultRelayWeight   = 30
 
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
 )
@@ -45,6 +52,17 @@ func NewRelayTrack() *RelayTrack {
 
 type OnServerCloseListener func()
 
+// RelayServerInfo describes a configured relay and its local state.
+type RelayServerInfo struct {
+	URL       string
+	Weight    int
+	Preferred bool
+	Forced    bool
+	Current   bool
+	Available bool
+	Error     string
+}
+
 // ManagerOption configures a Manager at construction time.
 type ManagerOption func(*Manager)
 
@@ -63,6 +81,11 @@ type RelayConnState struct {
 // attempts to the home relay. A non-positive value keeps the default.
 func WithMaxBackoffInterval(d time.Duration) ManagerOption {
 	return func(m *Manager) { m.maxBackoffInterval = d }
+}
+
+// WithRelayServerCooldown sets how long failed relay servers are skipped.
+func WithRelayServerCooldown(d time.Duration) ManagerOption {
+	return func(m *Manager) { m.relayServerCooldown = d }
 }
 
 // Manager is a manager for the relay client instances. It establishes one persistent connection to the given relay URL
@@ -90,8 +113,14 @@ type Manager struct {
 	onReconnectedListenerFn func()
 	listenerLock            sync.Mutex
 
-	mtu                uint16
-	maxBackoffInterval time.Duration
+	mtu                 uint16
+	maxBackoffInterval  time.Duration
+	relayServerCooldown time.Duration
+	switchMu            sync.Mutex
+	relayConfigMu       sync.RWMutex
+	configuredRelayURLs []string
+	relayWeights        map[string]int
+	forcedRelayURL      string
 
 	cleanupInterval      time.Duration
 	keepUnusedServerTime time.Duration
@@ -108,11 +137,12 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 	tf := newTransportFallback()
 
 	m := &Manager{
-		ctx:               ctx,
-		peerID:            peerID,
-		tokenStore:        tokenStore,
-		mtu:               mtu,
-		transportFallback: tf,
+		ctx:                 ctx,
+		peerID:              peerID,
+		tokenStore:          tokenStore,
+		mtu:                 mtu,
+		transportFallback:   tf,
+		relayServerCooldown: relayServerCooldown,
 		serverPicker: &ServerPicker{
 			TokenStore:        tokenStore,
 			PeerID:            peerID,
@@ -128,7 +158,11 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 	for _, opt := range opts {
 		opt(m)
 	}
-	m.serverPicker.ServerURLs.Store(serverURLs)
+	m.serverPicker.CooldownDuration = m.relayServerCooldown
+	m.configuredRelayURLs = slices.Clone(serverURLs)
+	m.relayWeights = relayWeightsFromURLs(serverURLs)
+	m.serverPicker.ServerURLs.Store(m.effectiveRelayURLsLocked())
+	m.serverPicker.ServerWeights.Store(maps.Clone(m.relayWeights))
 	m.reconnectGuard = NewGuard(m.serverPicker, m.maxBackoffInterval)
 	return m
 }
@@ -318,8 +352,231 @@ func (m *Manager) HasRelayAddress() bool {
 }
 
 func (m *Manager) UpdateServerURLs(serverURLs []string) {
+	m.UpdateServerURLsWithWeights(serverURLs, nil)
+}
+
+func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, relayWeights map[string]int) {
 	log.Infof("update relay server URLs: %v", serverURLs)
-	m.serverPicker.ServerURLs.Store(serverURLs)
+	m.relayConfigMu.Lock()
+	m.relayWeights = relayWeightsFromURLs(serverURLs)
+	for relayURL, weight := range relayWeights {
+		if relayURL != "" && weight > 0 {
+			m.relayWeights[relayURL] = weight
+		}
+	}
+	m.configuredRelayURLs = sortRelayURLsByWeight(serverURLs, m.relayWeights)
+	if m.forcedRelayURL != "" && !slices.Contains(m.configuredRelayURLs, m.forcedRelayURL) {
+		log.Warnf("forced Relay server %s is no longer configured, clearing override", m.forcedRelayURL)
+		m.forcedRelayURL = ""
+	}
+	effectiveURLs := m.effectiveRelayURLsLocked()
+	weights := maps.Clone(m.relayWeights)
+	forcedURL := m.forcedRelayURL
+	m.relayConfigMu.Unlock()
+
+	m.serverPicker.ServerURLs.Store(effectiveURLs)
+	m.serverPicker.ServerWeights.Store(weights)
+	m.serverPicker.setForcedServerURL(forcedURL)
+	go m.switchHomeRelayIfNeeded(effectiveURLs)
+}
+
+func (m *Manager) RelayServers() []RelayServerInfo {
+	m.relayConfigMu.RLock()
+	configuredURLs := slices.Clone(m.configuredRelayURLs)
+	weights := maps.Clone(m.relayWeights)
+	forcedURL := m.forcedRelayURL
+	m.relayConfigMu.RUnlock()
+	currentURL := m.currentRelayURL()
+
+	result := make([]RelayServerInfo, 0, len(configuredURLs))
+	for _, relayURL := range configuredURLs {
+		weight := weights[relayURL]
+		if weight <= 0 {
+			weight = defaultRelayWeight
+		}
+		result = append(result, RelayServerInfo{
+			URL: relayURL, Weight: weight, Forced: relayURL == forcedURL, Current: relayURL == currentURL,
+		})
+	}
+	return result
+}
+
+func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
+	relays := m.RelayServers()
+	var wg sync.WaitGroup
+	for i := range relays {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			probeCtx, cancel := context.WithTimeout(ctx, relayProbeTimeout)
+			defer cancel()
+			probeClient := NewClient(relays[idx].URL, m.tokenStore, m.peerID, m.mtu)
+			probeClient.SetTransportFallback(m.transportFallback)
+			if err := probeClient.Connect(probeCtx); err != nil {
+				relays[idx].Error = err.Error()
+				return
+			}
+			relays[idx].Available = true
+			if err := probeClient.Close(); err != nil {
+				relays[idx].Available = false
+				relays[idx].Error = err.Error()
+			}
+		}(i)
+	}
+	wg.Wait()
+	return relays
+}
+
+func (m *Manager) SetForcedRelay(identifier string) (string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", fmt.Errorf("relay identifier is required")
+	}
+
+	m.relayConfigMu.Lock()
+	if strings.EqualFold(identifier, "auto") || strings.EqualFold(identifier, "default") || strings.EqualFold(identifier, "clear") {
+		m.forcedRelayURL = ""
+		effectiveURLs := m.effectiveRelayURLsLocked()
+		m.relayConfigMu.Unlock()
+		m.serverPicker.ServerURLs.Store(effectiveURLs)
+		m.serverPicker.setForcedServerURL("")
+		go m.switchHomeRelayIfNeeded(effectiveURLs)
+		return "", nil
+	}
+
+	relayURL, err := matchRelayURL(identifier, m.configuredRelayURLs)
+	if err != nil {
+		m.relayConfigMu.Unlock()
+		return "", err
+	}
+	m.forcedRelayURL = relayURL
+	effectiveURLs := m.effectiveRelayURLsLocked()
+	m.relayConfigMu.Unlock()
+	m.serverPicker.ServerURLs.Store(effectiveURLs)
+	m.serverPicker.setForcedServerURL(relayURL)
+	go m.switchHomeRelayIfNeeded(effectiveURLs)
+	return relayURL, nil
+}
+
+func (m *Manager) effectiveRelayURLsLocked() []string {
+	if m.forcedRelayURL == "" {
+		return slices.Clone(m.configuredRelayURLs)
+	}
+	result := []string{m.forcedRelayURL}
+	for _, relayURL := range m.configuredRelayURLs {
+		if relayURL != m.forcedRelayURL {
+			result = append(result, relayURL)
+		}
+	}
+	return result
+}
+
+func relayWeightsFromURLs(relayURLs []string) map[string]int {
+	weights := make(map[string]int, len(relayURLs))
+	for _, relayURL := range relayURLs {
+		if relayURL != "" {
+			weights[relayURL] = defaultRelayWeight
+		}
+	}
+	return weights
+}
+
+func sortRelayURLsByWeight(relayURLs []string, weights map[string]int) []string {
+	urls := slices.Clone(relayURLs)
+	slices.SortStableFunc(urls, func(left, right string) int {
+		leftWeight, rightWeight := weights[left], weights[right]
+		if leftWeight <= 0 {
+			leftWeight = defaultRelayWeight
+		}
+		if rightWeight <= 0 {
+			rightWeight = defaultRelayWeight
+		}
+		return rightWeight - leftWeight
+	})
+	return urls
+}
+
+func (m *Manager) currentRelayURL() string {
+	m.relayClientMu.RLock()
+	defer m.relayClientMu.RUnlock()
+	if m.relayClient == nil {
+		return ""
+	}
+	return m.relayClient.connectionURL
+}
+
+func matchRelayURL(identifier string, relayURLs []string) (string, error) {
+	var matches []string
+	for _, relayURL := range relayURLs {
+		if relayURL == identifier {
+			return relayURL, nil
+		}
+		parsedURL, _ := url.Parse(relayURL)
+		host := parsedURL.Hostname()
+		if strings.EqualFold(host, identifier) {
+			return relayURL, nil
+		}
+		if strings.Contains(strings.ToLower(relayURL), strings.ToLower(identifier)) || strings.Contains(strings.ToLower(host), strings.ToLower(identifier)) {
+			matches = append(matches, relayURL)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("relay %q was not found in received relay list", identifier)
+	}
+	return "", fmt.Errorf("relay %q matches multiple relays: %s", identifier, strings.Join(matches, ", "))
+}
+
+func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string) {
+	if len(serverURLs) == 0 {
+		return
+	}
+	m.switchMu.Lock()
+	defer m.switchMu.Unlock()
+	m.relayClientMu.Lock()
+	if !m.running || m.relayClient == nil || m.currentRelayStillHighestPriorityLocked(serverURLs) {
+		m.relayClientMu.Unlock()
+		return
+	}
+	oldClient := m.relayClient
+	oldURL := oldClient.connectionURL
+	oldClient.SetOnDisconnectListener(nil)
+	m.relayClient = nil
+	m.relayClientMu.Unlock()
+
+	log.Infof("relay priority changed from %s to %s, switching home Relay server", oldURL, serverURLs[0])
+	if err := oldClient.Close(); err != nil {
+		log.Warnf("failed to close previous home Relay server %s: %v", oldURL, err)
+	}
+	newClient, err := m.serverPicker.PickServer(m.ctx)
+	if err != nil {
+		log.Errorf("failed to switch home Relay server: %v", err)
+		go m.reconnectGuard.StartReconnectTrys(m.ctx, nil)
+		return
+	}
+	m.storeClient(newClient)
+	m.onServerConnected()
+}
+
+// Caller holds relayClientMu for the referenced client.
+func (m *Manager) currentRelayStillHighestPriorityLocked(serverURLs []string) bool {
+	currentURL := m.relayClient.connectionURL
+	m.relayConfigMu.RLock()
+	forcedURL := m.forcedRelayURL
+	currentWeight, topWeight := m.relayWeights[currentURL], m.relayWeights[serverURLs[0]]
+	m.relayConfigMu.RUnlock()
+	if forcedURL != "" {
+		return currentURL == forcedURL
+	}
+	if currentWeight <= 0 {
+		currentWeight = defaultRelayWeight
+	}
+	if topWeight <= 0 {
+		topWeight = defaultRelayWeight
+	}
+	return currentWeight == topWeight && slices.Contains(serverURLs, currentURL)
 }
 
 // UpdateToken updates the token in the token store.
