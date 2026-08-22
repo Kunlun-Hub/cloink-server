@@ -1147,6 +1147,7 @@ func (e *Engine) persistSyncResponse(update *mgmProto.SyncResponse) {
 }
 
 func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
+	override, hasOverride := peer.OverrideRelayURLs()
 	if update != nil {
 		// when we receive token we expect valid address list too
 		c := &auth.Token{
@@ -1158,7 +1159,7 @@ func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
 		}
 
 		urls, weights := relayURLsAndWeights(update)
-		if override, ok := peer.OverrideRelayURLs(); ok {
+		if hasOverride {
 			log.Infof("overriding relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
 			urls = override
 			weights = nil
@@ -1168,6 +1169,9 @@ func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
 		// Just in case the agent started with an MGM server where the relay was disabled but was later enabled.
 		// We can ignore all errors because the guard will manage the reconnection retries.
 		_ = e.relayManager.Serve()
+	} else if hasOverride {
+		log.Infof("preserving relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
+		e.relayManager.UpdateServerURLsWithWeights(override, nil)
 	} else {
 		e.relayManager.UpdateServerURLs(nil)
 	}

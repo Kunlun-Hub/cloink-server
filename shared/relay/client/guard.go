@@ -64,8 +64,11 @@ func (g *Guard) LastError() error {
 func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
 	// try to reconnect to the same server
 	if ok := g.tryToQuickReconnect(ctx, relayClient); ok {
-		g.notifyReconnected()
-		return
+		if g.isServerURLStillValid(relayClient) {
+			g.notifyReconnected()
+			return
+		}
+		_ = relayClient.Close()
 	}
 
 	// start a ticker to pick a new server
@@ -137,7 +140,7 @@ func (g *Guard) drainRelayClientChan() {
 }
 
 func (g *Guard) isServerURLStillValid(rc *Client) bool {
-	for _, url := range g.serverPicker.ServerURLs.Load().([]string) {
+	for _, url := range g.serverPicker.loadConfig().serverURLs {
 		if url == rc.connectionURL {
 			return true
 		}

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
 
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
@@ -34,6 +36,75 @@ func (m *relayConfigPusherMock) PushRelayList(_ context.Context, accountID strin
 	m.accountID = accountID
 	m.peerIDs = append([]string(nil), peerIDs...)
 	return m.count
+}
+
+func TestRelayProbeURLsRejectInvalidSchemes(t *testing.T) {
+	for _, build := range []func(string) (string, error){relayWebsocketURL, relayHealthURL} {
+		_, err := build("http://relay.example.com:443")
+		require.EqualError(t, err, "relay address must use rel or rels scheme")
+	}
+}
+
+func TestFetchHealthRejectsRedirect(t *testing.T) {
+	redirected := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirected = true
+		_, _ = w.Write([]byte(`{"connected_peers":1}`))
+	}))
+	defer target.Close()
+	server := httptest.NewServer(http.RedirectHandler(target.URL, http.StatusFound))
+	defer server.Close()
+
+	_, err := fetchHealth(context.Background(), "rel://"+strings.TrimPrefix(server.URL, "http://"))
+
+	require.EqualError(t, err, "relay health returned 302 Found")
+	require.False(t, redirected)
+}
+
+func TestFetchHealthRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, relayHealthMaxBytes+1))
+	}))
+	defer server.Close()
+
+	_, err := fetchHealth(context.Background(), "rel://"+strings.TrimPrefix(server.URL, "http://"))
+
+	require.EqualError(t, err, "relay health response is too large")
+}
+
+func TestValidateRelayRegistration(t *testing.T) {
+	negativeClients := -1
+	excessivePriority := maxRelayPriority + 1
+	tests := []struct {
+		name string
+		req  registerRelayRequest
+		want string
+	}{
+		{name: "valid TLS", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443"}},
+		{name: "valid non-TLS", req: registerRelayRequest{ID: "relay-1", Address: "rel://10.0.0.2:8080", ManagementURL: "https://management.example.com"}},
+		{name: "missing ID", req: registerRelayRequest{Address: "rels://relay.example.com:443"}, want: "relay ID is required"},
+		{name: "missing address", req: registerRelayRequest{ID: "relay-1"}, want: "relay address is required"},
+		{name: "unsupported scheme", req: registerRelayRequest{ID: "relay-1", Address: "http://relay.example.com:443"}, want: "relay address must use rel or rels scheme"},
+		{name: "userinfo", req: registerRelayRequest{ID: "relay-1", Address: "rels://user@relay.example.com:443"}, want: "relay address is invalid"},
+		{name: "path", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443/path"}, want: "relay address is invalid"},
+		{name: "query", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443?x=1"}, want: "relay address is invalid"},
+		{name: "zero port", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:0"}, want: "relay address has an invalid port"},
+		{name: "invalid management URL", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", ManagementURL: "file:///tmp/relay"}, want: "relay management URL is invalid"},
+		{name: "negative clients", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", ConnectedClients: &negativeClients}, want: "connected clients cannot be negative"},
+		{name: "excessive priority", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", Priority: excessivePriority}, want: "relay priority must be between 0 and 1000"},
+		{name: "ID control character", req: registerRelayRequest{ID: "relay\n1", Address: "rels://relay.example.com:443"}, want: "relay ID is invalid"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateRelayRegistration(test.req)
+			if test.want == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, test.want)
+		})
+	}
 }
 
 func TestApplyRelayConfigPushesAccountPeers(t *testing.T) {
@@ -129,6 +200,17 @@ func TestRelayRegistryIsAccountScoped(t *testing.T) {
 	require.Len(t, registry.list("account-b"), 1)
 }
 
+func TestRelayServersForAccountExpiresDynamicRelays(t *testing.T) {
+	settings := &types.Settings{Extra: &types.ExtraSettings{RegisteredRelays: map[string]types.RegisteredRelay{
+		"online":  {ID: "online", Address: "rels://online.example.com:443", LastSeen: time.Now().Add(-relayRegistrationTTL + time.Second)},
+		"expired": {ID: "expired", Address: "rels://expired.example.com:443", LastSeen: time.Now().Add(-relayRegistrationTTL - time.Second)},
+	}}}
+
+	servers := RelayServersForAccount(nil, settings)
+
+	require.Equal(t, []RelayServerDescriptor{{ID: "online", Address: "rels://online.example.com:443", Priority: defaultRelayPriority}}, servers)
+}
+
 func TestRelayServersForAccountSortsAndDeduplicates(t *testing.T) {
 	const address = "rels://relay.example.com:443"
 	config := &nbconfig.Relay{Servers: []*nbconfig.RelayServer{
@@ -147,6 +229,41 @@ func TestRelayServersForAccountSortsAndDeduplicates(t *testing.T) {
 	require.Equal(t, "relay-a", servers[1].ID)
 }
 
+func TestDeleteRelayPushesUpdatedAccountPeers(t *testing.T) {
+	const accountID, userID = "account-id", "user-id"
+	activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)}
+	activeRelayRegistry.upsert(accountID, registeredRelay{ID: "relay-1", Address: "rels://relay.example.com:443"})
+	t.Cleanup(func() { activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)} })
+
+	ctrl := gomock.NewController(t)
+	permissionsManager := permissions.NewMockManager(ctrl)
+	permissionsManager.EXPECT().
+		ValidateUserPermissions(gomock.Any(), accountID, userID, modules.Settings, operations.Update).
+		Return(true, context.Background(), nil)
+	pusher := &relayConfigPusherMock{count: 1}
+	h := &Handler{
+		permissions:  permissionsManager,
+		configPusher: pusher,
+		accountManager: &mock_server.MockAccountManager{
+			GetStoreFunc: func() store.Store { return nil },
+			GetPeersFunc: func(context.Context, string, string, string, string) ([]*nbpeer.Peer, error) {
+				return []*nbpeer.Peer{{ID: "peer-1"}}, nil
+			},
+		},
+	}
+
+	req := withRelayUser(httptest.NewRequest(http.MethodDelete, "/api/relays/relay-1", nil), accountID, userID)
+	req = mux.SetURLVars(req, map[string]string{"id": "relay-1"})
+	recorder := httptest.NewRecorder()
+
+	h.deleteRelay(recorder, req)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.Empty(t, activeRelayRegistry.list(accountID))
+	require.Equal(t, accountID, pusher.accountID)
+	require.Equal(t, []string{"peer-1"}, pusher.peerIDs)
+}
+
 func TestRelaySetupTokenRequiresBoundAccountAndValidSignature(t *testing.T) {
 	const secret, accountID = "relay-secret", "account-id"
 	token, err := signRelaySetupToken(secret, relaySetupTokenNeverExpires, accountID)
@@ -157,6 +274,11 @@ func TestRelaySetupTokenRequiresBoundAccountAndValidSignature(t *testing.T) {
 
 	_, err = verifyRelaySetupToken(token+"x", secret)
 	require.Error(t, err)
+	expiredToken, err := signRelaySetupToken(secret, time.Now().Add(-time.Second).Unix(), accountID)
+	require.NoError(t, err)
+	_, err = verifyRelaySetupToken(expiredToken, secret)
+	require.EqualError(t, err, "relay setup token has expired")
+
 	legacyToken, err := signRelaySetupToken(secret, relaySetupTokenNeverExpires, "")
 	require.NoError(t, err)
 	actualAccountID, err = verifyRelaySetupToken(legacyToken, secret)

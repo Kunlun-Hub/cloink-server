@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,6 +31,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/permissions/modules"
 	"github.com/netbirdio/netbird/management/server/permissions/operations"
 	"github.com/netbirdio/netbird/management/server/store"
+	"github.com/netbirdio/netbird/management/server/telemetry"
 	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/relay/healthcheck/peerid"
 	relayserver "github.com/netbirdio/netbird/relay/server"
@@ -42,10 +44,18 @@ import (
 
 const (
 	relayProbeTimeout           = 5 * time.Second
+	relayHealthMaxBytes         = 64 << 10
 	relaySetupTokenNeverExpires = 0
+	relaySetupTokenTTL          = 15 * time.Minute
 	relayRegistrationTTL        = 2 * time.Minute
 	relaySetupTokenVersion      = "v1"
 	defaultRelayPriority        = 30
+	maxRelayPriority            = 1000
+	maxRelayIDLength            = 128
+	maxRelayNameLength          = 256
+	maxRelayAddressLength       = 2048
+	maxRelayManagementURLLength = 2048
+	maxRelayVersionLength       = 128
 )
 
 type Handler struct {
@@ -54,6 +64,7 @@ type Handler struct {
 	geo            geolocation.Geolocation
 	configPusher   relayConfigPusher
 	permissions    permissions.Manager
+	metrics        *telemetry.RelayMetrics
 }
 
 type relayConfigPusher interface {
@@ -238,8 +249,8 @@ func sortRelayDescriptorsByPriority(relays []RelayServerDescriptor) {
 	})
 }
 
-func AddEndpoints(accountManager account.Manager, config *nbconfig.Relay, geo geolocation.Geolocation, configPusher relayConfigPusher, permissionsManager permissions.Manager, router *mux.Router) {
-	handler := &Handler{accountManager: accountManager, config: config, geo: geo, configPusher: configPusher, permissions: permissionsManager}
+func AddEndpoints(accountManager account.Manager, config *nbconfig.Relay, geo geolocation.Geolocation, configPusher relayConfigPusher, permissionsManager permissions.Manager, metrics *telemetry.RelayMetrics, router *mux.Router) {
+	handler := &Handler{accountManager: accountManager, config: config, geo: geo, configPusher: configPusher, permissions: permissionsManager, metrics: metrics}
 	router.HandleFunc("/relays", handler.getAllRelays).Methods("GET", "OPTIONS")
 	router.HandleFunc("/relays/apply", handler.applyRelayConfig).Methods("POST", "OPTIONS")
 	router.HandleFunc("/relays/setup-token", handler.createSetupToken).Methods("POST", "OPTIONS")
@@ -309,7 +320,8 @@ func (h *Handler) createSetupToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	token, err := signRelaySetupToken(h.config.Secret, relaySetupTokenNeverExpires, userAuth.AccountId)
+	expiresAt := time.Now().Add(relaySetupTokenTTL)
+	token, err := signRelaySetupToken(h.config.Secret, expiresAt.Unix(), userAuth.AccountId)
 	if err != nil {
 		util.WriteErrorResponse("failed to generate relay setup token", http.StatusInternalServerError, w)
 		return
@@ -319,6 +331,7 @@ func (h *Handler) createSetupToken(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(relaySetupTokenResponse{
 		Token:           token,
 		RelayAuthSecret: h.config.Secret,
+		ExpiresAt:       expiresAt.UTC().Format(time.RFC3339),
 	}); err != nil {
 		log.WithContext(r.Context()).Errorf("failed to encode relay setup token response: %v", err)
 	}
@@ -355,7 +368,66 @@ func (h *Handler) applyRelayConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func validateRelayRegistration(req registerRelayRequest) error {
+	if req.ID == "" {
+		return errors.New("relay ID is required")
+	}
+	if len(req.ID) > maxRelayIDLength || strings.ContainsAny(req.ID, "\x00\r\n") {
+		return errors.New("relay ID is invalid")
+	}
+	if len(req.Name) > maxRelayNameLength || strings.ContainsAny(req.Name, "\x00\r\n") {
+		return errors.New("relay name is invalid")
+	}
+	if len(req.Version) > maxRelayVersionLength || strings.ContainsAny(req.Version, "\x00\r\n") {
+		return errors.New("relay version is invalid")
+	}
+	if len(req.Address) > maxRelayAddressLength {
+		return errors.New("relay address is too long")
+	}
+	if err := validateRelayURL(req.Address); err != nil {
+		return err
+	}
+	if len(req.ManagementURL) > maxRelayManagementURLLength {
+		return errors.New("relay management URL is too long")
+	}
+	if req.ManagementURL != "" {
+		managementURL, err := url.ParseRequestURI(req.ManagementURL)
+		if err != nil || managementURL.Host == "" || (managementURL.Scheme != "http" && managementURL.Scheme != "https") || managementURL.User != nil {
+			return errors.New("relay management URL is invalid")
+		}
+	}
+	if req.ConnectedClients != nil && *req.ConnectedClients < 0 {
+		return errors.New("connected clients cannot be negative")
+	}
+	if req.Priority < 0 || req.Priority > maxRelayPriority {
+		return fmt.Errorf("relay priority must be between 0 and %d", maxRelayPriority)
+	}
+	return nil
+}
+
+func validateRelayURL(address string) error {
+	if address == "" {
+		return errors.New("relay address is required")
+	}
+	parsed, err := url.ParseRequestURI(address)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
+		return errors.New("relay address is invalid")
+	}
+	if parsed.Scheme != relayserver.SchemeREL && parsed.Scheme != relayserver.SchemeRELS {
+		return errors.New("relay address must use rel or rels scheme")
+	}
+	if port := parsed.Port(); port != "" {
+		value, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || value == 0 {
+			return errors.New("relay address has an invalid port")
+		}
+	}
+	return nil
+}
+
 func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
+	result := "error"
+	defer func() { h.metrics.CountRegister(r.Context(), result) }()
 	if h.config == nil || h.config.Secret == "" {
 		util.WriteErrorResponse("relay secret is not configured", http.StatusPreconditionFailed, w)
 		return
@@ -370,12 +442,10 @@ func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
 	req.ID = strings.TrimSpace(req.ID)
 	req.Name = strings.TrimSpace(req.Name)
 	req.Address = strings.TrimSpace(req.Address)
-	if req.ID == "" {
-		util.WriteErrorResponse("relay ID is required", http.StatusBadRequest, w)
-		return
-	}
-	if req.Address == "" {
-		util.WriteErrorResponse("relay address is required", http.StatusBadRequest, w)
+	req.ManagementURL = strings.TrimSpace(req.ManagementURL)
+	req.Version = strings.TrimSpace(req.Version)
+	if err := validateRelayRegistration(req); err != nil {
+		util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
 		return
 	}
 	accountID, err := verifyRelaySetupToken(req.SetupKey, h.config.Secret)
@@ -410,6 +480,7 @@ func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	activeRelayRegistry.upsert(accountID, relay)
+	result = "success"
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(registerRelayResponse{Status: "ok"}); err != nil {
@@ -473,11 +544,22 @@ func (h *Handler) deleteRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deletedStored, err := h.deleteStoredRelay(ctx, userAuth.AccountId, id)
+	if err != nil {
+		util.WriteError(r.Context(), err, w)
+		return
+	}
 	deletedActive := activeRelayRegistry.delete(userAuth.AccountId, id)
-	deletedStored := h.deleteStoredRelay(ctx, userAuth.AccountId, id)
 	if !deletedActive && !deletedStored {
 		util.WriteErrorResponse("relay not found", http.StatusNotFound, w)
 		return
+	}
+
+	if h.configPusher != nil {
+		if _, err := h.pushRelayListToAccount(ctx, userAuth.AccountId, userAuth.UserId); err != nil {
+			util.WriteError(r.Context(), err, w)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -518,7 +600,10 @@ func relayIDFromRequest(r *http.Request) string {
 }
 
 func (h *Handler) pushRelayListToAccount(ctx context.Context, accountID, userID string) (int, error) {
+	result := "error"
+	defer func() { h.metrics.CountConfigPush(ctx, result) }()
 	if h.configPusher == nil {
+		result = "skipped"
 		return 0, nil
 	}
 	peers, err := h.accountManager.GetPeers(ctx, accountID, userID, "", "")
@@ -533,6 +618,7 @@ func (h *Handler) pushRelayListToAccount(ctx context.Context, accountID, userID 
 		}
 		peerIDs = append(peerIDs, peer.ID)
 	}
+	result = "success"
 	return h.configPusher.PushRelayList(ctx, accountID, peerIDs), nil
 }
 
@@ -745,10 +831,10 @@ func (h *Handler) persistRegisteredRelay(ctx context.Context, accountID string, 
 	})
 }
 
-func (h *Handler) deleteStoredRelay(ctx context.Context, accountID, id string) bool {
+func (h *Handler) deleteStoredRelay(ctx context.Context, accountID, id string) (bool, error) {
 	deleted := false
 	if accountID == "" || h.accountManager == nil || h.accountManager.GetStore() == nil {
-		return false
+		return false, nil
 	}
 	if err := h.accountManager.GetStore().ExecuteInTransaction(ctx, func(transaction store.Store) error {
 		settings, err := transaction.GetAccountSettings(ctx, store.LockingStrengthUpdate, accountID)
@@ -768,8 +854,9 @@ func (h *Handler) deleteStoredRelay(ctx context.Context, accountID, id string) b
 		return transaction.SaveAccountSettings(ctx, accountID, settings)
 	}); err != nil {
 		log.WithContext(ctx).Warnf("failed to delete stored relay %s for account %s: %v", id, accountID, err)
+		return false, err
 	}
-	return deleted
+	return deleted, nil
 }
 
 func (h *Handler) registeredRelayStatus(ctx context.Context, r registeredRelay, registeredClients int) RelayStatus {
@@ -793,12 +880,15 @@ func (h *Handler) registeredRelayStatus(ctx context.Context, r registeredRelay, 
 	if status != "online" {
 		return result
 	}
+	probeStarted := time.Now()
 	if err := probeRelayWebsocket(ctx, r.Address); err != nil {
+		h.metrics.RecordProbe(ctx, "error", time.Since(probeStarted))
 		result.Status = "offline"
 		result.Error = err.Error()
 		result.ConnectedClients = nil
 		return result
 	}
+	h.metrics.RecordProbe(ctx, "success", time.Since(probeStarted))
 	if health, err := fetchHealth(ctx, r.Address); err == nil {
 		result.ConnectedClients = health.ConnectedPeers
 		if health.RelayID != "" {
@@ -883,8 +973,12 @@ func verifyRelaySetupToken(token, secret string) (string, error) {
 	if (len(payloadParts) != 3 && len(payloadParts) != 4) || payloadParts[0] != relaySetupTokenVersion {
 		return "", errors.New("invalid token payload")
 	}
-	if _, err := strconv.ParseInt(payloadParts[1], 10, 64); err != nil {
+	expiresAt, err := strconv.ParseInt(payloadParts[1], 10, 64)
+	if err != nil {
 		return "", err
+	}
+	if expiresAt != relaySetupTokenNeverExpires && time.Now().Unix() >= expiresAt {
+		return "", errors.New("relay setup token has expired")
 	}
 	if len(payloadParts) == 4 {
 		return payloadParts[3], nil
@@ -910,11 +1004,14 @@ func (h *Handler) probeRelay(ctx context.Context, server *nbconfig.RelayServer, 
 	}
 	h.enrichRelayLocation(&result)
 
+	probeStarted := time.Now()
 	if err := probeRelayWebsocket(ctx, server.Address); err != nil {
+		h.metrics.RecordProbe(ctx, "error", time.Since(probeStarted))
 		result.Error = err.Error()
 		return result
 	}
 
+	h.metrics.RecordProbe(ctx, "success", time.Since(probeStarted))
 	result.Status = "online"
 	if health, err := fetchHealth(ctx, server.Address); err == nil {
 		result.ConnectedClients = health.ConnectedPeers
@@ -974,7 +1071,8 @@ func probeRelayWebsocket(ctx context.Context, address string) error {
 		return err
 	}
 
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	client := &http.Client{CheckRedirect: rejectRelayProbeRedirect}
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: client})
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}
@@ -994,6 +1092,9 @@ func probeRelayWebsocket(ctx context.Context, address string) error {
 }
 
 func relayWebsocketURL(address string) (string, error) {
+	if err := validateRelayURL(address); err != nil {
+		return "", err
+	}
 	parsed, err := url.Parse(address)
 	if err != nil {
 		return "", fmt.Errorf("parse relay address: %w", err)
@@ -1025,7 +1126,8 @@ func fetchHealth(ctx context.Context, address string) (*healthResponse, error) {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{CheckRedirect: rejectRelayProbeRedirect}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1035,14 +1137,28 @@ func fetchHealth(ctx context.Context, address string) (*healthResponse, error) {
 		return nil, fmt.Errorf("relay health returned %s", resp.Status)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, relayHealthMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > relayHealthMaxBytes {
+		return nil, errors.New("relay health response is too large")
+	}
 	var health healthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+	if err := json.Unmarshal(body, &health); err != nil {
 		return nil, err
 	}
 	return &health, nil
 }
 
+func rejectRelayProbeRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func relayHealthURL(address string) (string, error) {
+	if err := validateRelayURL(address); err != nil {
+		return "", err
+	}
 	parsed, err := url.Parse(address)
 	if err != nil {
 		return "", err

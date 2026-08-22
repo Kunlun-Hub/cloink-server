@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"math/rand/v2"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,11 +27,20 @@ type connResult struct {
 	Err         error
 }
 
+type pickerConfig struct {
+	serverURLs    []string
+	serverWeights map[string]int
+	forcedURL     string
+}
+
 type ServerPicker struct {
-	TokenStore        *auth.TokenStore
+	TokenStore *auth.TokenStore
+	// These fields remain for compatibility with existing callers. Manager
+	// updates use config so selection observes one immutable snapshot.
 	ServerURLs        atomic.Value
 	ServerWeights     atomic.Value
 	ForcedServerURL   atomic.Pointer[string]
+	config            atomic.Value
 	PeerID            string
 	MTU               uint16
 	ConnectionTimeout time.Duration
@@ -37,13 +49,15 @@ type ServerPicker struct {
 
 	cooldownMu sync.Mutex
 	cooldowns  map[string]time.Time
+	failures   map[string]int
 }
 
 func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, sp.ConnectionTimeout)
 	defer cancel()
 
-	serverURLs := sp.availableServerURLs(sp.ServerURLs.Load().([]string), time.Now())
+	config := sp.loadConfig()
+	serverURLs := sp.availableServerURLs(config.serverURLs, time.Now())
 	totalServers := len(serverURLs)
 	if totalServers == 0 {
 		return nil, errors.New("failed to connect to any relay server: all attempts failed")
@@ -57,11 +71,11 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	startConnection := func(url string) {
 		concurrentLimiter <- struct{}{}
 		startedServers++
-		connectionCtx, connectionCancel := context.WithCancel(parentCtx)
+		connectionCtx, connectionCancel := context.WithTimeout(parentCtx, sp.ConnectionTimeout)
 		connectionCancels[url] = connectionCancel
 		go func(url string) {
 			defer func() { <-concurrentLimiter }()
-			sp.startConnection(connectionCtx, connResultChan, url)
+			sp.startConnection(connectionCtx, parentCtx, connResultChan, url)
 		}(url)
 	}
 
@@ -74,7 +88,7 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	}
 
 	log.Debugf("pick server from list: %v", serverURLs)
-	startedUpTo := sp.startNextPriorityGroup(serverURLs, 0, startConnection)
+	startedUpTo := sp.startNextPriorityGroupWithConfig(config, serverURLs, 0, startConnection)
 	receivedResults := 0
 	for receivedResults < startedServers || startedUpTo < totalServers {
 		select {
@@ -91,7 +105,7 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 			log.Tracef("failed to connect to Relay server: %s: %v", cr.Url, cr.Err)
 			sp.markServerFailure(cr.Url, time.Now(), cr.Err)
 			if receivedResults == startedServers && startedUpTo < totalServers {
-				startedUpTo = sp.startNextPriorityGroup(serverURLs, startedUpTo, startConnection)
+				startedUpTo = sp.startNextPriorityGroupWithConfig(config, serverURLs, startedUpTo, startConnection)
 			}
 		case <-ctx.Done():
 			cancelConnectionsExcept("")
@@ -123,55 +137,98 @@ func (sp *ServerPicker) availableServerURLs(serverURLs []string, now time.Time) 
 	return available
 }
 
-func (sp *ServerPicker) markServerFailure(relayURL string, now time.Time, _ error) {
-	if sp.CooldownDuration <= 0 || relayURL == "" {
+func (sp *ServerPicker) markServerFailure(relayURL string, now time.Time, err error) {
+	if sp.CooldownDuration <= 0 || relayURL == "" || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
 	sp.cooldownMu.Lock()
 	if sp.cooldowns == nil {
 		sp.cooldowns = make(map[string]time.Time)
 	}
-	sp.cooldowns[relayURL] = now.Add(sp.CooldownDuration)
+	if sp.failures == nil {
+		sp.failures = make(map[string]int)
+	}
+	sp.failures[relayURL]++
+	duration := sp.CooldownDuration
+	for range min(sp.failures[relayURL]-1, 6) {
+		duration = min(duration*2, 5*time.Minute)
+	}
+	duration += time.Duration(rand.Int64N(max(1, int64(duration/5))))
+	sp.cooldowns[relayURL] = now.Add(duration)
 	sp.cooldownMu.Unlock()
 }
 
 func (sp *ServerPicker) clearServerFailure(relayURL string) {
 	sp.cooldownMu.Lock()
 	delete(sp.cooldowns, relayURL)
+	delete(sp.failures, relayURL)
 	sp.cooldownMu.Unlock()
 }
 
 func (sp *ServerPicker) startNextPriorityGroup(serverURLs []string, startAt int, startConnection func(string)) int {
+	return sp.startNextPriorityGroupWithConfig(sp.loadConfig(), serverURLs, startAt, startConnection)
+}
+
+func (sp *ServerPicker) startNextPriorityGroupWithConfig(config pickerConfig, serverURLs []string, startAt int, startConnection func(string)) int {
 	if startAt >= len(serverURLs) {
 		return startAt
 	}
-	if forcedURL := sp.ForcedServerURL.Load(); forcedURL != nil && serverURLs[startAt] == *forcedURL {
+	if config.forcedURL != "" && serverURLs[startAt] == config.forcedURL {
 		startConnection(serverURLs[startAt])
 		return startAt + 1
 	}
-	weight := sp.relayURLWeight(serverURLs[startAt])
+	weight := config.weight(serverURLs[startAt])
 	idx := startAt
-	for capacity := maxConcurrentServers; idx < len(serverURLs) && sp.relayURLWeight(serverURLs[idx]) == weight && capacity > 0; capacity-- {
+	for capacity := maxConcurrentServers; idx < len(serverURLs) && config.weight(serverURLs[idx]) == weight && capacity > 0; capacity-- {
 		startConnection(serverURLs[idx])
 		idx++
 	}
 	return idx
 }
 
-func (sp *ServerPicker) relayURLWeight(relayURL string) int {
-	weights, ok := sp.ServerWeights.Load().(map[string]int)
-	if !ok || weights[relayURL] <= 0 {
+func (config pickerConfig) weight(relayURL string) int {
+	if config.serverWeights[relayURL] <= 0 {
 		return defaultRelayWeight
 	}
-	return weights[relayURL]
+	return config.serverWeights[relayURL]
+}
+
+func (sp *ServerPicker) loadConfig() pickerConfig {
+	if config, ok := sp.config.Load().(pickerConfig); ok {
+		return config
+	}
+	urls, _ := sp.ServerURLs.Load().([]string)
+	weights, _ := sp.ServerWeights.Load().(map[string]int)
+	forced := ""
+	if value := sp.ForcedServerURL.Load(); value != nil {
+		forced = *value
+	}
+	return pickerConfig{slices.Clone(urls), maps.Clone(weights), forced}
+}
+
+func (sp *ServerPicker) relayURLWeight(relayURL string) int {
+	return sp.loadConfig().weight(relayURL)
 }
 
 func (sp *ServerPicker) setForcedServerURL(relayURL string) {
-	if relayURL == "" {
+	config := sp.loadConfig()
+	config.forcedURL = relayURL
+	sp.storeConfig(config)
+}
+
+func (sp *ServerPicker) storeConfig(config pickerConfig) {
+	config.serverURLs = slices.Clone(config.serverURLs)
+	config.serverWeights = maps.Clone(config.serverWeights)
+	sp.config.Store(config)
+	// Keep legacy observability fields synchronized for callers outside picker.
+	sp.ServerURLs.Store(slices.Clone(config.serverURLs))
+	sp.ServerWeights.Store(maps.Clone(config.serverWeights))
+	if config.forcedURL == "" {
 		sp.ForcedServerURL.Store(nil)
-		return
+	} else {
+		forced := config.forcedURL
+		sp.ForcedServerURL.Store(&forced)
 	}
-	sp.ForcedServerURL.Store(&relayURL)
 }
 
 func (sp *ServerPicker) drainConnResults(resultChan <-chan connResult, receivedResults, startedServers int) {
@@ -183,11 +240,11 @@ func (sp *ServerPicker) drainConnResults(resultChan <-chan connResult, receivedR
 	}
 }
 
-func (sp *ServerPicker) startConnection(ctx context.Context, resultChan chan connResult, url string) {
+func (sp *ServerPicker) startConnection(connectCtx, lifecycleCtx context.Context, resultChan chan connResult, url string) {
 	log.Infof("try to connecting to relay server: %s", url)
 	relayClient := NewClient(url, sp.TokenStore, sp.PeerID, sp.MTU)
 	relayClient.SetTransportFallback(sp.TransportFallback)
-	err := relayClient.Connect(ctx)
+	err := relayClient.connectWithContexts(connectCtx, lifecycleCtx)
 	resultChan <- connResult{
 		RelayClient: relayClient,
 		Url:         url,

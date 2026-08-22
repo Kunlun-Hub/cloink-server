@@ -30,6 +30,7 @@ type MockAppMetrics struct {
 	UpdateChannelMetricsFunc     func() *UpdateChannelMetrics
 	AddAccountManagerMetricsFunc func() *AccountManagerMetrics
 	EphemeralPeersMetricsFunc    func() *EphemeralPeersMetrics
+	RelayMetricsFunc             func() *RelayMetrics
 }
 
 // GetMeter mocks the GetMeter function of the AppMetrics interface
@@ -112,6 +113,13 @@ func (mock *MockAppMetrics) EphemeralPeersMetrics() *EphemeralPeersMetrics {
 	return nil
 }
 
+func (mock *MockAppMetrics) RelayMetrics() *RelayMetrics {
+	if mock.RelayMetricsFunc != nil {
+		return mock.RelayMetricsFunc()
+	}
+	return nil
+}
+
 // AppMetrics is metrics interface
 type AppMetrics interface {
 	GetMeter() metric2.Meter
@@ -124,6 +132,7 @@ type AppMetrics interface {
 	UpdateChannelMetrics() *UpdateChannelMetrics
 	AccountManagerMetrics() *AccountManagerMetrics
 	EphemeralPeersMetrics() *EphemeralPeersMetrics
+	RelayMetrics() *RelayMetrics
 }
 
 // defaultAppMetrics are core application metrics based on OpenTelemetry https://opentelemetry.io/
@@ -140,6 +149,7 @@ type defaultAppMetrics struct {
 	updateChannelMetrics  *UpdateChannelMetrics
 	accountManagerMetrics *AccountManagerMetrics
 	ephemeralMetrics      *EphemeralPeersMetrics
+	relayMetrics          *RelayMetrics
 }
 
 // IDPMetrics returns metrics for the idp package
@@ -175,6 +185,10 @@ func (appMetrics *defaultAppMetrics) AccountManagerMetrics() *AccountManagerMetr
 // EphemeralPeersMetrics returns metrics for the ephemeral peer cleanup loop
 func (appMetrics *defaultAppMetrics) EphemeralPeersMetrics() *EphemeralPeersMetrics {
 	return appMetrics.ephemeralMetrics
+}
+
+func (appMetrics *defaultAppMetrics) RelayMetrics() *RelayMetrics {
+	return appMetrics.relayMetrics
 }
 
 // Close stop application metrics HTTP handler and closes listener.
@@ -265,6 +279,10 @@ func NewDefaultAppMetrics(ctx context.Context) (AppMetrics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize ephemeral peers metrics: %w", err)
 	}
+	relayMetrics, err := NewRelayMetrics(meter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize relay metrics: %w", err)
+	}
 
 	return &defaultAppMetrics{
 		Meter:                 meter,
@@ -276,6 +294,7 @@ func NewDefaultAppMetrics(ctx context.Context) (AppMetrics, error) {
 		updateChannelMetrics:  updateChannelMetrics,
 		accountManagerMetrics: accountManagerMetrics,
 		ephemeralMetrics:      ephemeralMetrics,
+		relayMetrics:          relayMetrics,
 	}, nil
 }
 
@@ -316,6 +335,10 @@ func NewAppMetricsWithMeter(ctx context.Context, meter metric2.Meter) (AppMetric
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize ephemeral peers metrics: %w", err)
 	}
+	relayMetrics, err := NewRelayMetrics(meter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize relay metrics: %w", err)
+	}
 
 	return &defaultAppMetrics{
 		Meter:                 meter,
@@ -328,5 +351,6 @@ func NewAppMetricsWithMeter(ctx context.Context, meter metric2.Meter) (AppMetric
 		updateChannelMetrics:  updateChannelMetrics,
 		accountManagerMetrics: accountManagerMetrics,
 		ephemeralMetrics:      ephemeralMetrics,
+		relayMetrics:          relayMetrics,
 	}, nil
 }

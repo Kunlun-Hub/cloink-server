@@ -6,6 +6,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestServerPickerForcedRelayFallsBackWhenRemoved(t *testing.T) {
+	picker := &ServerPicker{}
+	picker.ServerWeights.Store(map[string]int{
+		"rels://fallback.example": 100,
+	})
+	picker.setForcedServerURL("rels://removed.example")
+
+	var started []string
+	next := picker.startNextPriorityGroup([]string{
+		"rels://fallback.example",
+	}, 0, func(relayURL string) {
+		started = append(started, relayURL)
+	})
+
+	require.Equal(t, 1, next)
+	require.Equal(t, []string{"rels://fallback.example"}, started)
+}
+
 func TestServerPickerForcedRelayRunsAlone(t *testing.T) {
 	picker := &ServerPicker{}
 	picker.ServerWeights.Store(map[string]int{

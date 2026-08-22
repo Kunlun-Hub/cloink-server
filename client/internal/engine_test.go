@@ -42,6 +42,23 @@ import (
 	"github.com/netbirdio/netbird/util"
 )
 
+func TestParseRelayInfoPreservesPriorities(t *testing.T) {
+	response := &mgmtProto.LoginResponse{NetbirdConfig: &mgmtProto.NetbirdConfig{Relay: &mgmtProto.RelayConfig{
+		TokenPayload:   "payload",
+		TokenSignature: "signature",
+		Servers: []*mgmtProto.RelayServerConfig{
+			{Url: "rels://high", Priority: 80},
+			{Url: "rels://low", Priority: 20},
+		},
+	}}}
+
+	urls, weights, token := parseRelayInfo(response)
+
+	require.Equal(t, []string{"rels://high", "rels://low"}, urls)
+	require.Equal(t, map[string]int{"rels://high": 80, "rels://low": 20}, weights)
+	require.Equal(t, "payload", token.Payload)
+	require.Equal(t, "signature", token.Signature)
+}
 func TestRelayURLsAndWeights(t *testing.T) {
 	t.Run("legacy URLs fallback", func(t *testing.T) {
 		urls, weights := relayURLsAndWeights(&mgmtProto.RelayConfig{Urls: []string{"rels://legacy"}})

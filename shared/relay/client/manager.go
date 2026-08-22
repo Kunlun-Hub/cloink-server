@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -97,7 +98,7 @@ func WithRelayServerCooldown(d time.Duration) ManagerOption {
 type Manager struct {
 	ctx          context.Context
 	peerID       string
-	running      bool
+	running      atomic.Bool
 	tokenStore   *relayAuth.TokenStore
 	serverPicker *ServerPicker
 
@@ -161,8 +162,10 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 	m.serverPicker.CooldownDuration = m.relayServerCooldown
 	m.configuredRelayURLs = slices.Clone(serverURLs)
 	m.relayWeights = relayWeightsFromURLs(serverURLs)
-	m.serverPicker.ServerURLs.Store(m.effectiveRelayURLsLocked())
-	m.serverPicker.ServerWeights.Store(maps.Clone(m.relayWeights))
+	m.serverPicker.storeConfig(pickerConfig{
+		serverURLs:    m.effectiveRelayURLsLocked(),
+		serverWeights: maps.Clone(m.relayWeights),
+	})
 	m.reconnectGuard = NewGuard(m.serverPicker, m.maxBackoffInterval)
 	return m
 }
@@ -172,11 +175,10 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 // Additionally, it starts a cleanup loop to remove unused relay connections.
 // The manager will automatically reconnect to the relay server in case of disconnection.
 func (m *Manager) Serve() error {
-	if m.running {
+	if !m.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("manager already serving")
 	}
-	m.running = true
-	log.Debugf("starting relay client manager with %v relay servers", m.serverPicker.ServerURLs.Load())
+	log.Debugf("starting relay client manager with %v relay servers", m.serverPicker.loadConfig().serverURLs)
 
 	client, err := m.serverPicker.PickServer(m.ctx)
 	if err != nil {
@@ -292,7 +294,7 @@ func (m *Manager) RelayInstanceAddress() (string, netip.Addr, error) {
 
 // ServerURLs returns the addresses of the relay servers.
 func (m *Manager) ServerURLs() []string {
-	return m.serverPicker.ServerURLs.Load().([]string)
+	return slices.Clone(m.serverPicker.loadConfig().serverURLs)
 }
 
 // RelayConnectError returns the error from the most recent failed home relay
@@ -348,7 +350,7 @@ func (m *Manager) RelayStates() []RelayConnState {
 // HasRelayAddress returns true if the manager is serving. With this method can check if the peer can communicate with
 // Relay service.
 func (m *Manager) HasRelayAddress() bool {
-	return len(m.serverPicker.ServerURLs.Load().([]string)) > 0
+	return len(m.serverPicker.loadConfig().serverURLs) > 0
 }
 
 func (m *Manager) UpdateServerURLs(serverURLs []string) {
@@ -374,9 +376,11 @@ func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, relayWeights 
 	forcedURL := m.forcedRelayURL
 	m.relayConfigMu.Unlock()
 
-	m.serverPicker.ServerURLs.Store(effectiveURLs)
-	m.serverPicker.ServerWeights.Store(weights)
-	m.serverPicker.setForcedServerURL(forcedURL)
+	m.serverPicker.storeConfig(pickerConfig{
+		serverURLs:    effectiveURLs,
+		serverWeights: weights,
+		forcedURL:     forcedURL,
+	})
 	go m.switchHomeRelayIfNeeded(effectiveURLs)
 }
 
@@ -438,8 +442,11 @@ func (m *Manager) SetForcedRelay(identifier string) (string, error) {
 		m.forcedRelayURL = ""
 		effectiveURLs := m.effectiveRelayURLsLocked()
 		m.relayConfigMu.Unlock()
-		m.serverPicker.ServerURLs.Store(effectiveURLs)
-		m.serverPicker.setForcedServerURL("")
+		m.serverPicker.storeConfig(pickerConfig{
+			serverURLs:    effectiveURLs,
+			serverWeights: maps.Clone(m.relayWeights),
+			forcedURL:     "",
+		})
 		go m.switchHomeRelayIfNeeded(effectiveURLs)
 		return "", nil
 	}
@@ -452,8 +459,11 @@ func (m *Manager) SetForcedRelay(identifier string) (string, error) {
 	m.forcedRelayURL = relayURL
 	effectiveURLs := m.effectiveRelayURLsLocked()
 	m.relayConfigMu.Unlock()
-	m.serverPicker.ServerURLs.Store(effectiveURLs)
-	m.serverPicker.setForcedServerURL(relayURL)
+	m.serverPicker.storeConfig(pickerConfig{
+		serverURLs:    effectiveURLs,
+		serverWeights: maps.Clone(m.relayWeights),
+		forcedURL:     relayURL,
+	})
 	go m.switchHomeRelayIfNeeded(effectiveURLs)
 	return relayURL, nil
 }
@@ -530,13 +540,30 @@ func matchRelayURL(identifier string, relayURLs []string) (string, error) {
 }
 
 func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string) {
-	if len(serverURLs) == 0 {
-		return
-	}
 	m.switchMu.Lock()
 	defer m.switchMu.Unlock()
+
+	if len(serverURLs) == 0 {
+		m.relayClientMu.Lock()
+		if !m.running.Load() || m.relayClient == nil {
+			m.relayClientMu.Unlock()
+			return
+		}
+		oldClient := m.relayClient
+		oldURL := oldClient.connectionURL
+		oldClient.SetOnDisconnectListener(nil)
+		m.relayClient = nil
+		m.relayClientMu.Unlock()
+
+		log.Infof("closing home Relay server %s because no Relay servers are configured", oldURL)
+		if err := oldClient.Close(); err != nil {
+			log.Warnf("failed to close previous home Relay server %s: %v", oldURL, err)
+		}
+		return
+	}
+
 	m.relayClientMu.Lock()
-	if !m.running || m.relayClient == nil || m.currentRelayStillHighestPriorityLocked(serverURLs) {
+	if !m.running.Load() || m.relayClient == nil || m.currentRelayStillHighestPriorityLocked(serverURLs) {
 		m.relayClientMu.Unlock()
 		return
 	}
@@ -700,6 +727,10 @@ func (m *Manager) listenGuardEvent(ctx context.Context) {
 		case <-m.reconnectGuard.OnReconnected:
 			m.onServerConnected()
 		case rc := <-m.reconnectGuard.OnNewRelayClient:
+			if !m.reconnectGuard.isServerURLStillValid(rc) {
+				_ = rc.Close()
+				continue
+			}
 			m.storeClient(rc)
 			m.onServerConnected()
 		case <-ctx.Done():

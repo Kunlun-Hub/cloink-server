@@ -377,10 +377,11 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 
 		c.statusRecorder.MarkSignalConnected()
 
-		relayURLs, token := parseRelayInfo(loginResp)
+		relayURLs, relayWeights, token := parseRelayInfo(loginResp)
 		if override, ok := peer.OverrideRelayURLs(); ok {
 			log.Infof("overriding relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
 			relayURLs = override
+			relayWeights = nil
 		}
 		peerConfig := loginResp.GetPeerConfig()
 
@@ -397,6 +398,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 		}
 
 		relayManager := relayClient.NewManager(engineCtx, relayURLs, myPrivateKey.PublicKey().String(), engineConfig.MTU)
+		relayManager.UpdateServerURLsWithWeights(relayURLs, relayWeights)
 		c.statusRecorder.SetRelayMgr(relayManager)
 		if len(relayURLs) > 0 {
 			if token != nil {
@@ -490,18 +492,18 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 	return nil
 }
 
-func parseRelayInfo(loginResp *mgmProto.LoginResponse) ([]string, *hmac.Token) {
+func parseRelayInfo(loginResp *mgmProto.LoginResponse) ([]string, map[string]int, *hmac.Token) {
 	relayCfg := loginResp.GetNetbirdConfig().GetRelay()
 	if relayCfg == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	token := &hmac.Token{
 		Payload:   relayCfg.GetTokenPayload(),
 		Signature: relayCfg.GetTokenSignature(),
 	}
-
-	return relayCfg.GetUrls(), token
+	urls, weights := relayURLsAndWeights(relayCfg)
+	return urls, weights, token
 }
 
 func (c *ConnectClient) Engine() *Engine {
