@@ -113,7 +113,7 @@ func requirePrivilegeForDeregistration(ctx context.Context, cfg *profilemanager.
 
 	return denyPrivileged(ctx,
 		"deregistering this peer while the NetBird SSH server is enabled",
-		ipcauth.ElevatedCommand("netbird logout"))
+		ipcauth.ElevatedCommand("cloink logout"))
 }
 
 // denyPrivileged returns nil when the caller is privileged, and otherwise a
@@ -188,7 +188,7 @@ func unidentifiedSummary(action string) string {
 // callers can be identified.
 func reinstallCommand() string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("netbird service install --daemon-addr %s", daemonaddr.WindowsPipeAddr)
+		return fmt.Sprintf("cloink service install --daemon-addr %s", daemonaddr.WindowsPipeAddr)
 	}
 	return "sudo cloink service install --daemon-addr unix:///var/run/cloink.sock"
 }

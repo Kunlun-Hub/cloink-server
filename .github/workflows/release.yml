@@ -12,8 +12,8 @@ on:
 env:
   SIGN_PIPE_VER: "v0.1.8"
   GORELEASER_VER: "v2.16.0"
-  PRODUCT_NAME: "NetBird"
-  COPYRIGHT: "NetBird GmbH"
+  PRODUCT_NAME: "Cloink"
+  COPYRIGHT: "Cloink"
   flags: ""
   SKIP_PUBLISH: "true"
   SKIP_DOCKER_PUSH: "false"

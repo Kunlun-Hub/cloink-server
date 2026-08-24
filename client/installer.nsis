@@ -63,7 +63,7 @@ ShowInstDetails Show
 
 !if ${ARCH} == "amd64"
     !define MUI_FINISHPAGE_RUN
-    !define MUI_FINISHPAGE_RUN_TEXT "Start ${UI_APP_NAME}"
+    !define MUI_FINISHPAGE_RUN_TEXT "$(STR_RUN_APP)"
     !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchLink"
 !endif
 ######################################################################
@@ -92,6 +92,21 @@ UninstPage custom un.DeleteDataPage un.DeleteDataPageLeave
 !insertmacro MUI_UNPAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+
+; Custom translated strings
+LangString STR_ALREADY_INSTALLED ${LANG_ENGLISH} "Cloink is already installed and must be removed before upgrading. Proceed?"
+LangString STR_ALREADY_INSTALLED ${LANG_SIMPCHINESE} "检测到已安装 Cloink，升级前需要先卸载旧版本。是否继续？"
+LangString STR_UNINST_OPTIONS ${LANG_ENGLISH} "Uninstall Options"
+LangString STR_UNINST_OPTIONS ${LANG_SIMPCHINESE} "卸载选项"
+LangString STR_UNINST_CHOOSE ${LANG_ENGLISH} "Choose whether to delete ${APP_NAME} data."
+LangString STR_UNINST_CHOOSE ${LANG_SIMPCHINESE} "选择是否删除 ${APP_NAME} 的数据。"
+LangString STR_DELETE_DATA ${LANG_ENGLISH} "Delete all ${APP_NAME} configuration and state data (${CLOINK_DATA_DIR})"
+LangString STR_DELETE_DATA ${LANG_SIMPCHINESE} "删除 ${APP_NAME} 的全部配置与状态数据（${CLOINK_DATA_DIR}）"
+LangString STR_RUN_APP ${LANG_ENGLISH} "Start ${UI_APP_NAME}"
+LangString STR_RUN_APP ${LANG_SIMPCHINESE} "立即启动 ${UI_APP_NAME}"
+LangString STR_INSTALLING_WEBVIEW ${LANG_ENGLISH} "Installing: WebView2 Runtime"
+LangString STR_INSTALLING_WEBVIEW ${LANG_SIMPCHINESE} "正在安装：WebView2 运行时"
 
 ; Variables for uninstall data deletion option
 Var DeleteDataCheckbox
@@ -101,7 +116,7 @@ Var DeleteDataEnabled
 
 ; Function to create the uninstall data deletion page
 Function un.DeleteDataPage
-  !insertmacro MUI_HEADER_TEXT "Uninstall Options" "Choose whether to delete ${APP_NAME} data."
+  !insertmacro MUI_HEADER_TEXT "$(STR_UNINST_OPTIONS)" "$(STR_UNINST_CHOOSE)"
 
   nsDialogs::Create 1018
   Pop $0
@@ -110,7 +125,7 @@ Function un.DeleteDataPage
     Abort
   ${EndIf}
 
-  ${NSD_CreateCheckbox} 0 20u 100% 10u "Delete all ${APP_NAME} configuration and state data (${CLOINK_DATA_DIR})"
+  ${NSD_CreateCheckbox} 0 20u 100% 10u "$(STR_DELETE_DATA)"
   Pop $DeleteDataCheckbox
   ${NSD_Uncheck} $DeleteDataCheckbox
   StrCpy $DeleteDataEnabled "0"
@@ -183,7 +198,7 @@ ${If} $R0 != ""
     # if silent install jump to uninstall step
     IfSilent uninstall
 
-    MessageBox MB_YESNO|MB_ICONQUESTION "Cloink is already installed and must be removed before upgrading. Proceed?" IDNO done IDYES uninstall
+    MessageBox MB_YESNO|MB_ICONQUESTION "$(STR_ALREADY_INSTALLED)" IDNO done IDYES uninstall
 
     uninstall:
       !insertmacro UninstallPreviousNSIS $R0 "/NoMsgBox"
@@ -254,7 +269,7 @@ SectionEnd
     ${EndIf}
 
     SetDetailsPrint both
-    DetailPrint "Installing: WebView2 Runtime"
+    DetailPrint "$(STR_INSTALLING_WEBVIEW)"
     SetDetailsPrint listonly
 
     InitPluginsDir

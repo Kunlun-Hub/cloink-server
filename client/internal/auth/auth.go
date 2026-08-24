@@ -38,7 +38,7 @@ const peerLoginExpiredMsg = "peer login has expired"
 var errSetupKeyOnSSOExpiredPeer = status.Error(
 	codes.PermissionDenied,
 	"this peer was originally enrolled via SSO and its session has expired. "+
-		"Setup keys can only enrol new peers — run `netbird up` (interactive SSO) to re-login.",
+		"Setup keys can only enrol new peers — run `cloink up` (interactive SSO) to re-login.",
 )
 
 // Auth manages authentication operations with the management server
