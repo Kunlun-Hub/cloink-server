@@ -27,7 +27,7 @@ import type { AnonymizeLevel, DebugStage } from "@/contexts/DebugBundleContext";
 import { useDebugBundleContext } from "@/contexts/DebugBundleContext";
 import { SectionGroup, SettingsBottomBar } from "@/modules/settings/SettingsSection.tsx";
 
-const SUPPORT_DOCS_URL = "https://docs.netbird.io/help/report-bug-issues";
+const SUPPORT_DOCS_URL = "https://docs.cloink.4w.ink/#troubleshooting";
 
 export function SettingsTroubleshooting() {
     const { t } = useTranslation();
@@ -37,8 +37,6 @@ export function SettingsTroubleshooting() {
         setAnonymizeLevel,
         systemInfo,
         setSystemInfo,
-        upload,
-        setUpload,
         trace,
         setTrace,
         capture,
@@ -134,12 +132,6 @@ export function SettingsTroubleshooting() {
                 onChange={setSystemInfo}
                 label={t("settings.troubleshooting.systemInfo.label")}
                 helpText={t("settings.troubleshooting.systemInfo.help")}
-            />
-            <FancyToggleSwitch
-                value={upload}
-                onChange={setUpload}
-                label={t("settings.troubleshooting.upload.label")}
-                helpText={t("settings.troubleshooting.upload.help")}
             />
             <FancyToggleSwitch
                 value={trace}

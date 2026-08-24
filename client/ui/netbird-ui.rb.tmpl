@@ -1,29 +1,29 @@
 {{ $projectName := env.Getenv "PROJECT" }}{{ $amdFilePath := env.Getenv "AMD" }}{{ $armFilePath := env.Getenv "ARM" }}
 {{ $amdURL := env.Getenv "AMD_URL" }}{{ $armURL := env.Getenv "ARM_URL" }}
 {{ $amdFile := filepath.Base $amdFilePath }}{{ $armFile := filepath.Base $armFilePath }}{{ $amdFileBytes := file.Read $amdFilePath }}
-{{ $armFileBytes := file.Read $armFilePath }}# Netbird's UI Client Cask Formula
+{{ $armFileBytes := file.Read $armFilePath }}# Cloink's UI Client Cask Formula
 cask "{{ $projectName }}" do
   version "{{ env.Getenv "VERSION" }}"
 
   if Hardware::CPU.intel?
       url "{{ $amdURL }}"
       sha256 "{{ crypto.SHA256 $amdFileBytes }}"
-      app "netbird_ui_darwin", target: "Netbird UI.app"
+      app "cloink_ui_darwin", target: "Cloink UI.app"
   else
       url "{{ $armURL }}"
       sha256 "{{ crypto.SHA256 $armFileBytes }}"
-      app "netbird_ui_darwin", target: "Netbird UI.app"
+      app "cloink_ui_darwin", target: "Cloink UI.app"
   end
 
-  depends_on formula: "netbird"
+  depends_on formula: "cloink"
 
   postflight do
-    set_permissions "/Applications/Netbird UI.app/installer.sh", '0755'
-    set_permissions "/Applications/Netbird UI.app/uninstaller.sh", '0755'
+    set_permissions "/Applications/Cloink UI.app/installer.sh", '0755'
+    set_permissions "/Applications/Cloink UI.app/uninstaller.sh", '0755'
   end
 
   postflight do
-    system_command "#{appdir}/Netbird UI.app/installer.sh",
+    system_command "#{appdir}/Cloink UI.app/installer.sh",
                    args: ["#{version}"],
                    sudo: true
   end
@@ -31,14 +31,14 @@ cask "{{ $projectName }}" do
   uninstall_preflight do
     system_command "/bin/sh",
                    args: ["-c", <<~CMD],
-                     launchctl bootout system/netbird 2>/dev/null || \
-                       launchctl unload /Library/LaunchDaemons/netbird.plist 2>/dev/null || true
-                     rm -f /Library/LaunchDaemons/netbird.plist
+                     launchctl bootout system/cloink 2>/dev/null || \
+                       launchctl unload /Library/LaunchDaemons/cloink.plist 2>/dev/null || true
+                     rm -f /Library/LaunchDaemons/cloink.plist
                    CMD
                    sudo: true
   end
 
-  name "Netbird UI"
-  desc "Netbird UI Client"
-  homepage "https://www.netbird.io/"
+  name "Cloink UI"
+  desc "Cloink UI Client"
+  homepage "https://cloink.4w.ink/"
 end

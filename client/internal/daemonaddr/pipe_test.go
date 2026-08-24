@@ -28,3 +28,13 @@ func TestPipePaths_QualifiedPathIsUsedAsIs(t *testing.T) {
 		t.Errorf("PipePaths = %q, want just %q", got, path)
 	}
 }
+
+func TestMigrateLegacyWindowsPipeToCloink(t *testing.T) {
+	got, migrated := migrateLegacyForOS("windows", legacyWindowsPipeAddr)
+	if !migrated {
+		t.Fatal("expected legacy Windows pipe to be migrated")
+	}
+	if got != WindowsPipeAddr {
+		t.Errorf("migrated pipe = %q, want %q", got, WindowsPipeAddr)
+	}
+}

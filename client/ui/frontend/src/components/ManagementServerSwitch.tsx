@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import netbirdLogo from "@/assets/logos/netbird.svg";
+import netbirdLogo from "@/assets/logos/cloink.svg";
 import { SwitchItem } from "@/components/switches/SwitchItem";
 import { SwitchItemGroup } from "@/components/switches/SwitchItemGroup";
 import { ManagementMode } from "@/hooks/useManagementUrl.ts";

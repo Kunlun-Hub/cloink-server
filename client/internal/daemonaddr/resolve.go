@@ -10,17 +10,20 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var scanDir = "/var/run/netbird"
+var (
+	scanDir           = "/var/run/netbird"
+	defaultUnixSocket = UnixSocketAddr
+	legacyUnixSocket  = legacyUnixSocketAddr
+)
 
 // setScanDir overrides the scan directory (used by tests).
 func setScanDir(dir string) {
 	scanDir = dir
 }
 
-// ResolveUnixDaemonAddr checks whether the default Unix socket exists and, if not,
-// scans /var/run/netbird/ for a single .sock file to use instead. This handles the
-// mismatch between the netbird@.service template (which places the socket under
-// /var/run/netbird/<instance>.sock) and the CLI default (/var/run/netbird.sock).
+// ResolveUnixDaemonAddr checks the requested socket, the legacy NetBird default,
+// and then instance sockets under /var/run/netbird. Custom addresses never use
+// the legacy default implicitly.
 func ResolveUnixDaemonAddr(addr string) string {
 	if !strings.HasPrefix(addr, "unix://") {
 		return addr
@@ -29,6 +32,13 @@ func ResolveUnixDaemonAddr(addr string) string {
 	sockPath := strings.TrimPrefix(addr, "unix://")
 	if _, err := os.Stat(sockPath); err == nil {
 		return addr
+	}
+	if addr == defaultUnixSocket {
+		legacyPath := strings.TrimPrefix(legacyUnixSocket, "unix://")
+		if _, err := os.Stat(legacyPath); err == nil {
+			log.Infof("Cloink daemon socket is not available; using the legacy NetBird daemon socket during migration")
+			return legacyUnixSocket
+		}
 	}
 
 	entries, err := os.ReadDir(scanDir)

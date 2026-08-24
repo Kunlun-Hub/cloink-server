@@ -6,8 +6,8 @@ import { Version } from "@bindings/services";
 import { Button } from "@/components/buttons/Button";
 import { useStatus } from "@/contexts/StatusContext.tsx";
 
-const RELEASES_URL = "https://github.com/netbirdio/netbird/releases/latest";
-const RC_RELEASES_URL = "https://pkgs.netbird.io/releases/rc";
+const RELEASES_URL = "https://cloink.4w.ink/api/version-releases/public?channel=stable&latest=true";
+const RC_RELEASES_URL = "https://cloink.4w.ink/api/version-releases/public?channel=rc&latest=true";
 
 function openUrl(url: string) {
     Browser.OpenURL(url).catch(() => globalThis.open(url, "_blank"));

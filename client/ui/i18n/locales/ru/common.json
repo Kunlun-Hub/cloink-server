@@ -1,6 +1,6 @@
 {
     "tray.tooltip": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "tray.status.disconnected": {
         "message": "Отключено"
@@ -51,7 +51,7 @@
         "message": "{count} дней"
     },
     "tray.menu.open": {
-        "message": "Открыть NetBird"
+        "message": "Открыть Cloink"
     },
     "tray.menu.connect": {
         "message": "Подключиться"
@@ -105,19 +105,19 @@
         "message": "—"
     },
     "tray.menu.quit": {
-        "message": "Выйти из NetBird"
+        "message": "Выйти из Cloink"
     },
     "notify.daemonOutdated.title": {
-        "message": "Служба NetBird устарела"
+        "message": "Служба Cloink устарела"
     },
     "notify.daemonOutdated.body": {
-        "message": "Обновите службу NetBird, чтобы использовать это приложение."
+        "message": "Обновите службу Cloink, чтобы использовать это приложение."
     },
     "notify.update.title": {
-        "message": "Доступно обновление NetBird"
+        "message": "Доступно обновление Cloink"
     },
     "notify.update.body": {
-        "message": "Доступна версия NetBird {version}."
+        "message": "Доступна версия Cloink {version}."
     },
     "notify.update.enforcedSuffix": {
         "message": " Ваш администратор требует установить это обновление."
@@ -138,19 +138,19 @@
         "message": "Не удалось обновить выходной узел {name}"
     },
     "notify.sessionExpired.title": {
-        "message": "Сеанс NetBird истёк"
+        "message": "Сеанс Cloink истёк"
     },
     "notify.sessionExpired.body": {
-        "message": "Сеанс NetBird истёк. Пожалуйста, войдите снова."
+        "message": "Сеанс Cloink истёк. Пожалуйста, войдите снова."
     },
     "notify.sessionWarning.title": {
         "message": "Сеанс скоро истечёт"
     },
     "notify.sessionWarning.body": {
-        "message": "Сеанс NetBird истекает через {remaining}. Нажмите «Продлить сейчас», чтобы продлить сеанс."
+        "message": "Сеанс Cloink истекает через {remaining}. Нажмите «Продлить сейчас», чтобы продлить сеанс."
     },
     "notify.sessionWarning.bodyGeneric": {
-        "message": "Сеанс NetBird скоро истечёт. Нажмите «Продлить сейчас», чтобы продлить сеанс."
+        "message": "Сеанс Cloink скоро истечёт. Нажмите «Продлить сейчас», чтобы продлить сеанс."
     },
     "notify.sessionWarning.extend": {
         "message": "Продлить сейчас"
@@ -159,10 +159,10 @@
         "message": "Закрыть"
     },
     "notify.sessionWarning.failed": {
-        "message": "Не удалось продлить сеанс NetBird"
+        "message": "Не удалось продлить сеанс Cloink"
     },
     "notify.sessionWarning.successTitle": {
-        "message": "Сеанс NetBird продлён"
+        "message": "Сеанс Cloink продлён"
     },
     "notify.sessionWarning.successBody": {
         "message": "Сеанс обновлён."
@@ -174,10 +174,10 @@
         "message": "Сервер передал неверный срок действия сеанса. Пожалуйста, войдите снова."
     },
     "notify.mdm.policyApplied.title": {
-        "message": "Настройки NetBird обновлены"
+        "message": "Настройки Cloink обновлены"
     },
     "notify.mdm.policyApplied.body": {
-        "message": "Конфигурация NetBird была обновлена в соответствии с вашей ИТ-политикой."
+        "message": "Конфигурация Cloink была обновлена в соответствии с вашей ИТ-политикой."
     },
     "common.cancel": {
         "message": "Отмена"
@@ -225,7 +225,7 @@
         "message": "Загрузка…"
     },
     "common.netbird": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "common.noResults.title": {
         "message": "Ничего не найдено"
@@ -237,7 +237,7 @@
         "message": "Отключено"
     },
     "notConnected.description": {
-        "message": "Сначала подключитесь к NetBird, чтобы увидеть подробную информацию о пирах, сетевых ресурсах и выходных узлах."
+        "message": "Сначала подключитесь к Cloink, чтобы увидеть подробную информацию о пирах, сетевых ресурсах и выходных узлах."
     },
     "connect.status.disconnected": {
         "message": "Отключено"
@@ -351,7 +351,7 @@
         "message": "Введите имя профиля, например работа или дом"
     },
     "profile.dialog.managementHelp": {
-        "message": "Используйте NetBird Cloud или собственный сервер."
+        "message": "Используйте Cloink Cloud или собственный сервер."
     },
     "profile.dialog.urlUnreachable": {
         "message": "Не удалось связаться с сервером. Проверьте URL или всё равно добавьте профиль, если уверены, что он правильный."
@@ -375,7 +375,7 @@
         "message": "Сменить профиль"
     },
     "connect.toggle.label": {
-        "message": "Переключить подключение NetBird"
+        "message": "Переключить подключение Cloink"
     },
     "connect.localIp.label": {
         "message": "Локальные IP-адреса"
@@ -474,7 +474,7 @@
         "message": "Профили"
     },
     "settings.profiles.intro": {
-        "message": "Управляйте несколькими профилями NetBird параллельно — например, рабочими и личными учётными записями или разными серверами управления. Ниже можно добавлять профили, отменять их регистрацию и удалять их."
+        "message": "Управляйте несколькими профилями Cloink параллельно — например, рабочими и личными учётными записями или разными серверами управления. Ниже можно добавлять профили, отменять их регистрацию и удалять их."
     },
     "settings.profiles.addProfile": {
         "message": "Добавить профиль"
@@ -486,7 +486,7 @@
         "message": "Нет профилей"
     },
     "settings.profiles.emptyDescription": {
-        "message": "Создайте профиль, чтобы подключиться к серверу управления NetBird."
+        "message": "Создайте профиль, чтобы подключиться к серверу управления Cloink."
     },
     "settings.error.loadTitle": {
         "message": "Не удалось загрузить настройки"
@@ -543,10 +543,10 @@
         "message": "Показывать уведомления о новых обновлениях и событиях подключения."
     },
     "settings.general.autostart.label": {
-        "message": "Запускать интерфейс NetBird при входе"
+        "message": "Запускать интерфейс Cloink при входе"
     },
     "settings.general.autostart.help": {
-        "message": "Автоматически запускать интерфейс NetBird при входе в систему. Это влияет только на графический интерфейс, но не на фоновую службу."
+        "message": "Автоматически запускать интерфейс Cloink при входе в систему. Это влияет только на графический интерфейс, но не на фоновую службу."
     },
     "settings.general.autostart.errorTitle": {
         "message": "Не удалось изменить автозапуск"
@@ -556,14 +556,14 @@
         "description": "Toggle label: keep the VPN connection up after quitting the UI."
     },
     "settings.general.keepConnectedOnQuit.help": {
-        "message": "Соединение остаётся активным в фоне после закрытия NetBird. Оно прервётся, только когда вы отключите его сами.",
+        "message": "Соединение остаётся активным в фоне после закрытия Cloink. Оно прервётся, только когда вы отключите его сами.",
         "description": "Helper text for the stay-connected-after-quitting toggle."
     },
     "settings.general.language.label": {
         "message": "Язык интерфейса"
     },
     "settings.general.language.help": {
-        "message": "Выберите язык интерфейса NetBird."
+        "message": "Выберите язык интерфейса Cloink."
     },
     "settings.general.language.search": {
         "message": "Поиск языка…"
@@ -575,7 +575,7 @@
         "message": "Сервер управления"
     },
     "settings.general.management.help": {
-        "message": "Подключайтесь к NetBird Cloud или к собственному серверу управления. Изменения вызовут переподключение клиента."
+        "message": "Подключайтесь к Cloink Cloud или к собственному серверу управления. Изменения вызовут переподключение клиента."
     },
     "settings.general.management.cloud": {
         "message": "Cloud"
@@ -584,16 +584,16 @@
         "message": "Собственный сервер"
     },
     "settings.general.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlError": {
-        "message": "Введите корректный URL, например https://netbird.selfhosted.com:443"
+        "message": "Введите корректный URL, например https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlUnreachable": {
         "message": "Не удалось связаться с сервером. Проверьте URL или всё равно сохраните, если уверены, что он правильный."
     },
     "settings.general.management.switchCloudTitle": {
-        "message": "Переключиться на NetBird Cloud?"
+        "message": "Переключиться на Cloink Cloud?"
     },
     "settings.general.management.switchCloudMessage": {
         "message": "Это отключит ваш собственный сервер.\nВозможно, потребуется войти снова."
@@ -617,7 +617,7 @@
         "message": "Включить DNS"
     },
     "settings.network.dns.help": {
-        "message": "Применять управляемые NetBird настройки DNS к системному резолверу."
+        "message": "Применять управляемые Cloink настройки DNS к системному резолверу."
     },
     "settings.network.clientRoutes.label": {
         "message": "Включить клиентские маршруты"
@@ -635,7 +635,7 @@
         "message": "Включить IPv6"
     },
     "settings.network.ipv6.help": {
-        "message": "Использовать IPv6-адресацию для оверлейной сети NetBird."
+        "message": "Использовать IPv6-адресацию для оверлейной сети Cloink."
     },
     "settings.security.section.firewall": {
         "message": "Брандмауэр"
@@ -680,7 +680,7 @@
         "message": "Включить SSH-сервер"
     },
     "settings.ssh.server.help": {
-        "message": "Запускать SSH-сервер NetBird на этом хосте, чтобы другие пиры могли к нему подключаться."
+        "message": "Запускать SSH-сервер Cloink на этом хосте, чтобы другие пиры могли к нему подключаться."
     },
     "settings.ssh.root.label": {
         "message": "Разрешить вход под root"
@@ -755,7 +755,7 @@
         "message": "Общий ключ"
     },
     "settings.advanced.psk.help": {
-        "message": "Необязательный PSK WireGuard для дополнительного симметричного шифрования. Это не то же самое, что ключ установки NetBird. Вы будете обмениваться данными только с пирами, использующими тот же общий ключ."
+        "message": "Необязательный PSK WireGuard для дополнительного симметричного шифрования. Это не то же самое, что ключ установки Cloink. Вы будете обмениваться данными только с пирами, использующими тот же общий ключ."
     },
     "settings.troubleshooting.section.title": {
         "message": "Отладочный пакет"
@@ -785,10 +785,10 @@
         "message": "Включить ОС, ядро, сетевые интерфейсы и таблицы маршрутизации."
     },
     "settings.troubleshooting.upload.label": {
-        "message": "Загрузить пакет на серверы NetBird"
+        "message": "Загрузить пакет на серверы Cloink"
     },
     "settings.troubleshooting.upload.help": {
-        "message": "Возвращает ключ загрузки, который можно передать поддержке NetBird."
+        "message": "Возвращает ключ загрузки, который можно передать поддержке Cloink."
     },
     "settings.troubleshooting.trace.label": {
         "message": "Включить журналы TRACE"
@@ -833,7 +833,7 @@
         "message": "Пакет сохранён"
     },
     "settings.troubleshooting.done.uploadedDescription": {
-        "message": "Поделитесь ключом загрузки ниже с <docs>поддержкой NetBird</docs>. Локальная копия также сохранена на вашем устройстве."
+        "message": "Поделитесь ключом загрузки ниже с <docs>поддержкой Cloink</docs>. Локальная копия также сохранена на вашем устройстве."
     },
     "settings.troubleshooting.done.savedDescription": {
         "message": "Отладочный пакет сохранён локально."
@@ -854,7 +854,7 @@
         "message": "Не удалось загрузить. Пакет всё равно сохранён локально."
     },
     "settings.troubleshooting.stage.reconnecting": {
-        "message": "Переподключение NetBird…"
+        "message": "Переподключение Cloink…"
     },
     "settings.troubleshooting.stage.capturing": {
         "message": "Сбор отладочных журналов"
@@ -863,16 +863,16 @@
         "message": "Создание отладочного пакета…"
     },
     "settings.troubleshooting.stage.uploading": {
-        "message": "Загрузка в NetBird…"
+        "message": "Загрузка в Cloink…"
     },
     "settings.troubleshooting.stage.cancelling": {
         "message": "Отмена…"
     },
     "settings.about.client": {
-        "message": "Клиент NetBird v{version}"
+        "message": "Клиент Cloink v{version}"
     },
     "settings.about.clientName": {
-        "message": "Клиент NetBird"
+        "message": "Клиент Cloink"
     },
     "settings.about.development": {
         "message": "[Разработка]"
@@ -884,7 +884,7 @@
         "message": "GUI"
     },
     "settings.about.copyright": {
-        "message": "© {year} NetBird. Все права защищены."
+        "message": "© {year} Cloink. Все права защищены."
     },
     "settings.about.links.imprint": {
         "message": "Правовая информация"
@@ -914,7 +914,7 @@
         "message": "Обратная связь"
     },
     "update.banner.message": {
-        "message": "NetBird {version} готов к установке."
+        "message": "Cloink {version} готов к установке."
     },
     "update.banner.later": {
         "message": "Позже"
@@ -938,7 +938,7 @@
         "message": "Загрузить"
     },
     "update.card.autoCheckInterval": {
-        "message": "NetBird проверяет обновления в фоновом режиме."
+        "message": "Cloink проверяет обновления в фоновом режиме."
     },
     "update.card.changelog": {
         "message": "Список изменений"
@@ -950,13 +950,13 @@
         "message": "Доступно обновление"
     },
     "update.overlay.updatingVersion": {
-        "message": "Обновление NetBird до v{version}"
+        "message": "Обновление Cloink до v{version}"
     },
     "update.overlay.updating": {
-        "message": "Обновление NetBird"
+        "message": "Обновление Cloink"
     },
     "update.overlay.description": {
-        "message": "Доступна более новая версия, идёт её установка. NetBird автоматически перезапустится после завершения обновления."
+        "message": "Доступна более новая версия, идёт её установка. Cloink автоматически перезапустится после завершения обновления."
     },
     "update.overlay.error.timeoutTitle": {
         "message": "Обновление занимает слишком много времени"
@@ -1046,22 +1046,22 @@
         "message": "Обновление"
     },
     "window.title.welcome": {
-        "message": "Добро пожаловать в NetBird"
+        "message": "Добро пожаловать в Cloink"
     },
     "window.title.error": {
         "message": "Ошибка"
     },
     "welcome.title": {
-        "message": "Найдите NetBird в системном трее"
+        "message": "Найдите Cloink в системном трее"
     },
     "welcome.titleMac": {
-        "message": "Найдите NetBird в строке меню"
+        "message": "Найдите Cloink в строке меню"
     },
     "welcome.description": {
-        "message": "NetBird находится в системном трее. Нажмите на значок, чтобы подключиться, переключить профиль или открыть настройки."
+        "message": "Cloink находится в системном трее. Нажмите на значок, чтобы подключиться, переключить профиль или открыть настройки."
     },
     "welcome.descriptionMac": {
-        "message": "NetBird находится в строке меню. Нажмите на значок, чтобы подключиться, переключить профиль или открыть настройки."
+        "message": "Cloink находится в строке меню. Нажмите на значок, чтобы подключиться, переключить профиль или открыть настройки."
     },
     "welcome.continue": {
         "message": "Продолжить"
@@ -1070,13 +1070,13 @@
         "message": "Назад"
     },
     "welcome.management.title": {
-        "message": "Настройка NetBird"
+        "message": "Настройка Cloink"
     },
     "welcome.management.description": {
-        "message": "Нажмите «Продолжить», чтобы начать, или выберите «Собственный сервер», если у вас есть свой сервер NetBird."
+        "message": "Нажмите «Продолжить», чтобы начать, или выберите «Собственный сервер», если у вас есть свой сервер Cloink."
     },
     "welcome.management.cloud.title": {
-        "message": "NetBird Cloud"
+        "message": "Cloink Cloud"
     },
     "welcome.management.cloud.description": {
         "message": "Используйте наш облачный сервис. Настройка не требуется."
@@ -1091,10 +1091,10 @@
         "message": "URL сервера управления"
     },
     "welcome.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlInvalid": {
-        "message": "Введите корректный URL, например https://netbird.selfhosted.com:443"
+        "message": "Введите корректный URL, например https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlUnreachable": {
         "message": "Не удалось связаться с сервером. Проверьте URL или сеть, затем продолжите, если уверены, что он правильный."
@@ -1172,10 +1172,10 @@
         "message": "Домен"
     },
     "peers.details.netbirdIp": {
-        "message": "NetBird IP"
+        "message": "Cloink IP"
     },
     "peers.details.netbirdIpv6": {
-        "message": "NetBird IPv6"
+        "message": "Cloink IPv6"
     },
     "peers.details.publicKey": {
         "message": "Открытый ключ"
@@ -1310,7 +1310,7 @@
         "message": "Отключиться"
     },
     "daemon.unavailable.title": {
-        "message": "Служба NetBird не запущена"
+        "message": "Служба Cloink не запущена"
     },
     "daemon.unavailable.description": {
         "message": "Приложение автоматически переподключится, как только служба будет запущена."
@@ -1319,7 +1319,7 @@
         "message": "Документация"
     },
     "daemon.outdated.title": {
-        "message": "Клиент NetBird устарел"
+        "message": "Клиент Cloink устарел"
     },
     "daemon.outdated.description": {
         "message": "Новый GUI несовместим с вашим более старым клиентом. Обновите клиент, чтобы использовать новое приложение."
@@ -1346,7 +1346,7 @@
         "message": "Сервер отклонил вход."
     },
     "error.daemon_unreachable": {
-        "message": "Демон NetBird не отвечает. Проверьте, запущена ли служба."
+        "message": "Демон Cloink не отвечает. Проверьте, запущена ли служба."
     },
     "error.unknown": {
         "message": "Не удалось выполнить операцию."

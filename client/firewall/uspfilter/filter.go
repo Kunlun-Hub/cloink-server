@@ -61,7 +61,7 @@ const (
 	// EnvForceUserspaceRouter forces userspace routing even if native routing is available.
 	EnvForceUserspaceRouter = "NB_FORCE_USERSPACE_ROUTER"
 
-	// EnvEnableLocalForwarding enables forwarding of local traffic to the native stack for internal (non-NetBird) interfaces.
+	// EnvEnableLocalForwarding enables forwarding of local traffic to the native stack for internal (non-Cloink) interfaces.
 	// Default off as it might be security risk because sockets listening on localhost only will become accessible.
 	EnvEnableLocalForwarding = "NB_ENABLE_LOCAL_FORWARDING"
 
@@ -1857,13 +1857,13 @@ func (m *Manager) shouldForward(d *decoder, dstIP netip.Addr) bool {
 		return !m.hasMatchingNetstackService(d)
 	}
 
-	// traffic to our other local interfaces (not NetBird IP) - always forward
+	// traffic to our other local interfaces (not Cloink IP) - always forward
 	addr := m.wgIface.Address()
 	if dstIP != addr.IP && (!addr.IPv6.IsValid() || dstIP != addr.IPv6) {
 		return true
 	}
 
-	// traffic to our NetBird IP, not netstack mode - send to netstack listeners
+	// traffic to our Cloink IP, not netstack mode - send to netstack listeners
 	return false
 }
 

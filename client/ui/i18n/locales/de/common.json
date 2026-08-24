@@ -1,6 +1,6 @@
 {
     "tray.tooltip": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "tray.status.disconnected": {
         "message": "Nicht verbunden"
@@ -51,7 +51,7 @@
         "message": "{count} Tagen"
     },
     "tray.menu.open": {
-        "message": "NetBird öffnen"
+        "message": "Cloink öffnen"
     },
     "tray.menu.connect": {
         "message": "Verbinden"
@@ -105,19 +105,19 @@
         "message": "—"
     },
     "tray.menu.quit": {
-        "message": "NetBird beenden"
+        "message": "Cloink beenden"
     },
     "notify.daemonOutdated.title": {
-        "message": "NetBird-Dienst ist veraltet"
+        "message": "Cloink-Dienst ist veraltet"
     },
     "notify.daemonOutdated.body": {
-        "message": "Aktualisieren Sie den NetBird-Dienst, um diese App zu verwenden."
+        "message": "Aktualisieren Sie den Cloink-Dienst, um diese App zu verwenden."
     },
     "notify.update.title": {
-        "message": "NetBird-Update verfügbar"
+        "message": "Cloink-Update verfügbar"
     },
     "notify.update.body": {
-        "message": "NetBird {version} ist verfügbar."
+        "message": "Cloink {version} ist verfügbar."
     },
     "notify.update.enforcedSuffix": {
         "message": " Ihr Administrator verlangt dieses Update."
@@ -138,19 +138,19 @@
         "message": "Exit Node {name} konnte nicht aktualisiert werden"
     },
     "notify.sessionExpired.title": {
-        "message": "NetBird-Sitzung abgelaufen"
+        "message": "Cloink-Sitzung abgelaufen"
     },
     "notify.sessionExpired.body": {
-        "message": "Ihre NetBird-Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
+        "message": "Ihre Cloink-Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
     },
     "notify.sessionWarning.title": {
         "message": "Sitzung läuft bald ab"
     },
     "notify.sessionWarning.body": {
-        "message": "Ihre NetBird-Sitzung läuft in {remaining} ab. Klicken Sie auf Jetzt verlängern, um zu erneuern."
+        "message": "Ihre Cloink-Sitzung läuft in {remaining} ab. Klicken Sie auf Jetzt verlängern, um zu erneuern."
     },
     "notify.sessionWarning.bodyGeneric": {
-        "message": "Ihre NetBird-Sitzung läuft bald ab. Klicken Sie auf Jetzt verlängern, um zu erneuern."
+        "message": "Ihre Cloink-Sitzung läuft bald ab. Klicken Sie auf Jetzt verlängern, um zu erneuern."
     },
     "notify.sessionWarning.extend": {
         "message": "Jetzt verlängern"
@@ -159,10 +159,10 @@
         "message": "Verwerfen"
     },
     "notify.sessionWarning.failed": {
-        "message": "NetBird-Sitzung konnte nicht verlängert werden"
+        "message": "Cloink-Sitzung konnte nicht verlängert werden"
     },
     "notify.sessionWarning.successTitle": {
-        "message": "NetBird-Sitzung verlängert"
+        "message": "Cloink-Sitzung verlängert"
     },
     "notify.sessionWarning.successBody": {
         "message": "Ihre Sitzung wurde erneuert."
@@ -174,10 +174,10 @@
         "message": "Der Server hat eine ungültige Sitzungsablaufzeit übermittelt. Bitte melden Sie sich erneut an."
     },
     "notify.mdm.policyApplied.title": {
-        "message": "NetBird-Einstellungen aktualisiert"
+        "message": "Cloink-Einstellungen aktualisiert"
     },
     "notify.mdm.policyApplied.body": {
-        "message": "Ihre NetBird-Konfiguration wurde durch Ihre IT-Richtlinie aktualisiert."
+        "message": "Ihre Cloink-Konfiguration wurde durch Ihre IT-Richtlinie aktualisiert."
     },
     "common.cancel": {
         "message": "Abbrechen"
@@ -225,7 +225,7 @@
         "message": "Lädt…"
     },
     "common.netbird": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "common.noResults.title": {
         "message": "Keine Ergebnisse gefunden"
@@ -237,7 +237,7 @@
         "message": "Nicht verbunden"
     },
     "notConnected.description": {
-        "message": "Verbinden Sie sich zuerst mit NetBird, um detaillierte Informationen zu Ihren Peers, Netzwerkressourcen und Exit Nodes einzusehen."
+        "message": "Verbinden Sie sich zuerst mit Cloink, um detaillierte Informationen zu Ihren Peers, Netzwerkressourcen und Exit Nodes einzusehen."
     },
     "connect.status.disconnected": {
         "message": "Nicht verbunden"
@@ -351,7 +351,7 @@
         "message": "Bitte geben Sie einen Profilnamen ein, z. B. Arbeit, Privat"
     },
     "profile.dialog.managementHelp": {
-        "message": "NetBird Cloud oder Ihr eigener Server."
+        "message": "Cloink Cloud oder Ihr eigener Server."
     },
     "profile.dialog.urlUnreachable": {
         "message": "Server nicht erreichbar. Überprüfen Sie die URL, oder fügen Sie das Profil trotzdem hinzu, wenn Sie sicher sind, dass sie korrekt ist."
@@ -375,7 +375,7 @@
         "message": "Profil wechseln"
     },
     "connect.toggle.label": {
-        "message": "NetBird-Verbindung umschalten"
+        "message": "Cloink-Verbindung umschalten"
     },
     "connect.localIp.label": {
         "message": "Lokale IP-Adressen"
@@ -474,7 +474,7 @@
         "message": "Profile"
     },
     "settings.profiles.intro": {
-        "message": "Verwalten Sie mehrere NetBird-Profile parallel, zum Beispiel berufliche und private Konten oder verschiedene Management-Server. Fügen Sie unten Profile hinzu, melden Sie sie ab oder löschen Sie sie."
+        "message": "Verwalten Sie mehrere Cloink-Profile parallel, zum Beispiel berufliche und private Konten oder verschiedene Management-Server. Fügen Sie unten Profile hinzu, melden Sie sie ab oder löschen Sie sie."
     },
     "settings.profiles.addProfile": {
         "message": "Profil hinzufügen"
@@ -486,7 +486,7 @@
         "message": "Keine Profile"
     },
     "settings.profiles.emptyDescription": {
-        "message": "Erstellen Sie ein Profil, um sich mit einem NetBird-Management-Server zu verbinden."
+        "message": "Erstellen Sie ein Profil, um sich mit einem Cloink-Management-Server zu verbinden."
     },
     "settings.error.loadTitle": {
         "message": "Laden der Einstellungen fehlgeschlagen"
@@ -543,10 +543,10 @@
         "message": "Desktop-Benachrichtigungen für neue Updates und Verbindungsereignisse anzeigen."
     },
     "settings.general.autostart.label": {
-        "message": "NetBird-UI beim Anmelden starten"
+        "message": "Cloink-UI beim Anmelden starten"
     },
     "settings.general.autostart.help": {
-        "message": "Die NetBird-Oberfläche beim Anmelden automatisch starten. Dies betrifft nur die grafische Oberfläche, nicht den Hintergrunddienst."
+        "message": "Die Cloink-Oberfläche beim Anmelden automatisch starten. Dies betrifft nur die grafische Oberfläche, nicht den Hintergrunddienst."
     },
     "settings.general.autostart.errorTitle": {
         "message": "Ändern des Autostarts fehlgeschlagen"
@@ -556,14 +556,14 @@
         "description": "Toggle label: keep the VPN connection up after quitting the UI."
     },
     "settings.general.keepConnectedOnQuit.help": {
-        "message": "Die Verbindung bleibt im Hintergrund bestehen, nachdem Sie NetBird schließen. Sie endet erst, wenn Sie sie selbst trennen.",
+        "message": "Die Verbindung bleibt im Hintergrund bestehen, nachdem Sie Cloink schließen. Sie endet erst, wenn Sie sie selbst trennen.",
         "description": "Helper text for the stay-connected-after-quitting toggle."
     },
     "settings.general.language.label": {
         "message": "Anzeigesprache"
     },
     "settings.general.language.help": {
-        "message": "Wählen Sie die Sprache der NetBird-Oberfläche."
+        "message": "Wählen Sie die Sprache der Cloink-Oberfläche."
     },
     "settings.general.language.search": {
         "message": "Sprache suchen…"
@@ -575,7 +575,7 @@
         "message": "Management-Server"
     },
     "settings.general.management.help": {
-        "message": "Mit NetBird Cloud oder Ihrem eigenen self-hosted Management-Server verbinden. Änderungen lösen eine Neuverbindung des Clients aus."
+        "message": "Mit Cloink Cloud oder Ihrem eigenen self-hosted Management-Server verbinden. Änderungen lösen eine Neuverbindung des Clients aus."
     },
     "settings.general.management.cloud": {
         "message": "Cloud"
@@ -584,16 +584,16 @@
         "message": "Self-hosted"
     },
     "settings.general.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlError": {
-        "message": "Bitte geben Sie eine gültige URL ein, z. B. https://netbird.selfhosted.com:443"
+        "message": "Bitte geben Sie eine gültige URL ein, z. B. https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlUnreachable": {
         "message": "Server nicht erreichbar. Überprüfen Sie die URL, oder speichern Sie trotzdem, wenn Sie sicher sind, dass sie korrekt ist."
     },
     "settings.general.management.switchCloudTitle": {
-        "message": "Zu NetBird Cloud wechseln?"
+        "message": "Zu Cloink Cloud wechseln?"
     },
     "settings.general.management.switchCloudMessage": {
         "message": "Dies trennt die Verbindung zu Ihrem self-hosted Server.\nMöglicherweise müssen Sie sich erneut anmelden."
@@ -617,7 +617,7 @@
         "message": "DNS aktivieren"
     },
     "settings.network.dns.help": {
-        "message": "NetBird-verwaltete DNS-Einstellungen auf den Host-Resolver anwenden."
+        "message": "Cloink-verwaltete DNS-Einstellungen auf den Host-Resolver anwenden."
     },
     "settings.network.clientRoutes.label": {
         "message": "Client-Routen aktivieren"
@@ -635,7 +635,7 @@
         "message": "IPv6 aktivieren"
     },
     "settings.network.ipv6.help": {
-        "message": "IPv6-Adressierung für das NetBird-Overlay-Netzwerk verwenden."
+        "message": "IPv6-Adressierung für das Cloink-Overlay-Netzwerk verwenden."
     },
     "settings.security.section.firewall": {
         "message": "Firewall"
@@ -680,7 +680,7 @@
         "message": "SSH-Server aktivieren"
     },
     "settings.ssh.server.help": {
-        "message": "Den NetBird SSH-Server auf diesem Host ausführen, damit andere Peers sich verbinden können."
+        "message": "Den Cloink SSH-Server auf diesem Host ausführen, damit andere Peers sich verbinden können."
     },
     "settings.ssh.root.label": {
         "message": "Root-Login erlauben"
@@ -755,7 +755,7 @@
         "message": "Pre-shared Key"
     },
     "settings.advanced.psk.help": {
-        "message": "Optionaler WireGuard-PSK für zusätzliche symmetrische Verschlüsselung. Nicht identisch mit einem NetBird Setup-Key. Sie kommunizieren nur mit Peers, die denselben Pre-shared Key verwenden."
+        "message": "Optionaler WireGuard-PSK für zusätzliche symmetrische Verschlüsselung. Nicht identisch mit einem Cloink Setup-Key. Sie kommunizieren nur mit Peers, die denselben Pre-shared Key verwenden."
     },
     "settings.troubleshooting.section.title": {
         "message": "Debug-Paket"
@@ -785,10 +785,10 @@
         "message": "OS, Kernel, Netzwerkschnittstellen und Routing-Tabellen einschließen."
     },
     "settings.troubleshooting.upload.label": {
-        "message": "Paket an NetBird-Server hochladen"
+        "message": "Paket an Cloink-Server hochladen"
     },
     "settings.troubleshooting.upload.help": {
-        "message": "Gibt einen Upload-Schlüssel zurück, den Sie mit dem NetBird-Support teilen können."
+        "message": "Gibt einen Upload-Schlüssel zurück, den Sie mit dem Cloink-Support teilen können."
     },
     "settings.troubleshooting.trace.label": {
         "message": "Trace-Logs aktivieren"
@@ -833,7 +833,7 @@
         "message": "Paket gespeichert"
     },
     "settings.troubleshooting.done.uploadedDescription": {
-        "message": "Teilen Sie den unten angezeigten Upload-Schlüssel mit dem <docs>NetBird-Support</docs>. Eine lokale Kopie wurde ebenfalls auf Ihrem Gerät gespeichert."
+        "message": "Teilen Sie den unten angezeigten Upload-Schlüssel mit dem <docs>Cloink-Support</docs>. Eine lokale Kopie wurde ebenfalls auf Ihrem Gerät gespeichert."
     },
     "settings.troubleshooting.done.savedDescription": {
         "message": "Ihr Debug-Paket wurde lokal gespeichert."
@@ -854,7 +854,7 @@
         "message": "Upload fehlgeschlagen. Das Paket wurde trotzdem lokal gespeichert."
     },
     "settings.troubleshooting.stage.reconnecting": {
-        "message": "NetBird wird neu verbunden…"
+        "message": "Cloink wird neu verbunden…"
     },
     "settings.troubleshooting.stage.capturing": {
         "message": "Debug-Logs werden erfasst"
@@ -863,16 +863,16 @@
         "message": "Debug-Paket wird erstellt…"
     },
     "settings.troubleshooting.stage.uploading": {
-        "message": "Wird zu NetBird hochgeladen…"
+        "message": "Wird zu Cloink hochgeladen…"
     },
     "settings.troubleshooting.stage.cancelling": {
         "message": "Wird abgebrochen…"
     },
     "settings.about.client": {
-        "message": "NetBird Client v{version}"
+        "message": "Cloink Client v{version}"
     },
     "settings.about.clientName": {
-        "message": "NetBird Client"
+        "message": "Cloink Client"
     },
     "settings.about.development": {
         "message": "[Entwicklung]"
@@ -884,7 +884,7 @@
         "message": "GUI"
     },
     "settings.about.copyright": {
-        "message": "© {year} NetBird. Alle Rechte vorbehalten."
+        "message": "© {year} Cloink. Alle Rechte vorbehalten."
     },
     "settings.about.links.imprint": {
         "message": "Impressum"
@@ -914,7 +914,7 @@
         "message": "Feedback"
     },
     "update.banner.message": {
-        "message": "NetBird {version} ist installationsbereit."
+        "message": "Cloink {version} ist installationsbereit."
     },
     "update.banner.later": {
         "message": "Später"
@@ -938,7 +938,7 @@
         "message": "Herunterladen"
     },
     "update.card.autoCheckInterval": {
-        "message": "NetBird sucht im Hintergrund nach Updates."
+        "message": "Cloink sucht im Hintergrund nach Updates."
     },
     "update.card.changelog": {
         "message": "Changelog"
@@ -950,13 +950,13 @@
         "message": "Update verfügbar"
     },
     "update.overlay.updatingVersion": {
-        "message": "NetBird wird auf v{version} aktualisiert"
+        "message": "Cloink wird auf v{version} aktualisiert"
     },
     "update.overlay.updating": {
-        "message": "NetBird wird aktualisiert"
+        "message": "Cloink wird aktualisiert"
     },
     "update.overlay.description": {
-        "message": "Eine neuere Version ist verfügbar und wird installiert. NetBird startet nach Abschluss des Updates automatisch neu."
+        "message": "Eine neuere Version ist verfügbar und wird installiert. Cloink startet nach Abschluss des Updates automatisch neu."
     },
     "update.overlay.error.timeoutTitle": {
         "message": "Update dauert zu lange"
@@ -1046,22 +1046,22 @@
         "message": "Aktualisierung"
     },
     "window.title.welcome": {
-        "message": "Willkommen bei NetBird"
+        "message": "Willkommen bei Cloink"
     },
     "window.title.error": {
         "message": "Fehler"
     },
     "welcome.title": {
-        "message": "Suchen Sie NetBird in der Taskleiste"
+        "message": "Suchen Sie Cloink in der Taskleiste"
     },
     "welcome.titleMac": {
-        "message": "Suchen Sie NetBird in der Menüleiste"
+        "message": "Suchen Sie Cloink in der Menüleiste"
     },
     "welcome.description": {
-        "message": "NetBird läuft in Ihrer Taskleiste. Klicken Sie auf das Symbol, um sich zu verbinden, Profile zu wechseln oder die Einstellungen zu öffnen."
+        "message": "Cloink läuft in Ihrer Taskleiste. Klicken Sie auf das Symbol, um sich zu verbinden, Profile zu wechseln oder die Einstellungen zu öffnen."
     },
     "welcome.descriptionMac": {
-        "message": "NetBird läuft in Ihrer Menüleiste. Klicken Sie auf das Symbol, um sich zu verbinden, Profile zu wechseln oder die Einstellungen zu öffnen."
+        "message": "Cloink läuft in Ihrer Menüleiste. Klicken Sie auf das Symbol, um sich zu verbinden, Profile zu wechseln oder die Einstellungen zu öffnen."
     },
     "welcome.continue": {
         "message": "Weiter"
@@ -1070,13 +1070,13 @@
         "message": "Zurück"
     },
     "welcome.management.title": {
-        "message": "NetBird einrichten"
+        "message": "Cloink einrichten"
     },
     "welcome.management.description": {
-        "message": "Klicken Sie auf „Weiter“, um loszulegen, oder wählen Sie „Self-hosted“, wenn Sie einen eigenen NetBird-Server haben."
+        "message": "Klicken Sie auf „Weiter“, um loszulegen, oder wählen Sie „Self-hosted“, wenn Sie einen eigenen Cloink-Server haben."
     },
     "welcome.management.cloud.title": {
-        "message": "NetBird Cloud"
+        "message": "Cloink Cloud"
     },
     "welcome.management.cloud.description": {
         "message": "Nutzen Sie unseren gehosteten Dienst. Keine Einrichtung nötig."
@@ -1091,10 +1091,10 @@
         "message": "URL des Management-Servers"
     },
     "welcome.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlInvalid": {
-        "message": "Bitte geben Sie eine gültige URL ein, z. B. https://netbird.selfhosted.com:443"
+        "message": "Bitte geben Sie eine gültige URL ein, z. B. https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlUnreachable": {
         "message": "Server nicht erreichbar. Überprüfen Sie die URL oder Ihr Netzwerk und fahren Sie fort, wenn Sie sicher sind, dass sie korrekt ist."
@@ -1172,10 +1172,10 @@
         "message": "Domain"
     },
     "peers.details.netbirdIp": {
-        "message": "NetBird-IP"
+        "message": "Cloink-IP"
     },
     "peers.details.netbirdIpv6": {
-        "message": "NetBird-IPv6"
+        "message": "Cloink-IPv6"
     },
     "peers.details.publicKey": {
         "message": "Öffentlicher Schlüssel"
@@ -1310,7 +1310,7 @@
         "message": "Trennen"
     },
     "daemon.unavailable.title": {
-        "message": "NetBird-Dienst läuft nicht"
+        "message": "Cloink-Dienst läuft nicht"
     },
     "daemon.unavailable.description": {
         "message": "Die App stellt automatisch die Verbindung wieder her, sobald der Dienst läuft."
@@ -1319,7 +1319,7 @@
         "message": "Dokumentation"
     },
     "daemon.outdated.title": {
-        "message": "NetBird Client ist veraltet"
+        "message": "Cloink Client ist veraltet"
     },
     "daemon.outdated.description": {
         "message": "Die neue GUI ist nicht mit Ihrem älteren Client kompatibel. Aktualisieren Sie Ihren Client, um die neue Anwendung zu verwenden."
@@ -1346,7 +1346,7 @@
         "message": "Die Anmeldung wurde vom Server abgelehnt."
     },
     "error.daemon_unreachable": {
-        "message": "Der NetBird-Dienst antwortet nicht. Bitte prüfen Sie, ob der Dienst läuft."
+        "message": "Der Cloink-Dienst antwortet nicht. Bitte prüfen Sie, ob der Dienst läuft."
     },
     "error.unknown": {
         "message": "Vorgang fehlgeschlagen."

@@ -1,48 +1,48 @@
 <Wix
 	xmlns="http://wixtoolset.org/schemas/v4/wxs"
 	xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-	<Package Name="NetBird" Version="$(env.NETBIRD_VERSION)" Manufacturer="NetBird GmbH" Language="1033" UpgradeCode="6456ec4e-3ad6-4b9b-a2be-98e81cb21ccf"
+	<Package Name="Cloink" Version="$(env.CLOINK_VERSION)" Manufacturer="Cloink" Language="1033" UpgradeCode="91038674-1468-4b19-b5ef-645da38b2080"
         InstallerVersion="500" Compressed="yes"  Codepage="utf-8" >
 
 
 		<MediaTemplate EmbedCab="yes" />
 
-		<Feature Id="NetbirdFeature" Title="Netbird" Level="1">
+		<Feature Id="NetbirdFeature" Title="Cloink" Level="1">
 			<ComponentGroupRef Id="NetbirdFilesComponent" />
 		</Feature>
 
 		<MajorUpgrade AllowSameVersionUpgrades='yes' DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit."/>
 
 		<StandardDirectory Id="ProgramFiles64Folder">
-			<Directory Id="NetbirdInstallDir" Name="Netbird">
+			<Directory Id="NetbirdInstallDir" Name="Cloink">
 				<Component Id="NetbirdFiles" Guid="db3165de-cc6e-4922-8396-9d892950e23e" Bitness="always64">
-					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\netbird_windows_$(var.ArchSuffix)\netbird.exe" KeyPath="yes" />
-					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\netbird_windows_$(var.ArchSuffix)\netbird-ui.exe">
-						<Shortcut Id="NetbirdDesktopShortcut" Directory="DesktopFolder" Name="NetBird" WorkingDirectory="NetbirdInstallDir" Icon="NetbirdIcon">
-							<ShortcutProperty Key="System.AppUserModel.ID" Value="NetBird" />
+					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\cloink_windows_$(var.ArchSuffix)\cloink.exe" KeyPath="yes" />
+					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\cloink_windows_$(var.ArchSuffix)\cloink-ui.exe">
+						<Shortcut Id="NetbirdDesktopShortcut" Directory="DesktopFolder" Name="Cloink" WorkingDirectory="NetbirdInstallDir" Icon="NetbirdIcon">
+							<ShortcutProperty Key="System.AppUserModel.ID" Value="Cloink" />
 							<ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID" Value="{0E1B4DE7-E148-432B-9814-544F941826EC}" />
 						</Shortcut>
-						<Shortcut Id="NetbirdStartMenuShortcut" Directory="StartMenuFolder" Name="NetBird" WorkingDirectory="NetbirdInstallDir" Icon="NetbirdIcon">
-							<ShortcutProperty Key="System.AppUserModel.ID" Value="NetBird" />
+						<Shortcut Id="NetbirdStartMenuShortcut" Directory="StartMenuFolder" Name="Cloink" WorkingDirectory="NetbirdInstallDir" Icon="NetbirdIcon">
+							<ShortcutProperty Key="System.AppUserModel.ID" Value="Cloink" />
 							<ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID" Value="{0E1B4DE7-E148-432B-9814-544F941826EC}" />
 						</Shortcut>
 					</File>
-					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\netbird_windows_$(var.ArchSuffix)\wintun.dll" />
-					<File Id="NetbirdToastIcon" Name="netbird.png" Source=".\client\ui\assets\netbird.png" />
+					<File ProcessorArchitecture="$(var.ProcessorArchitecture)" Source=".\dist\cloink_windows_$(var.ArchSuffix)\wintun.dll" />
+					<File Id="NetbirdToastIcon" Name="cloink.png" Source=".\client\ui\assets\netbird.png" />
 
 					<ServiceInstall
                                      Id="NetBirdService"
-                                     Name="NetBird"
-                                     DisplayName="NetBird"
-                                     Description="Connect your devices into a secure WireGuard-based overlay network with SSO, MFA and granular access controls."
+							 Name="Cloink"
+							 DisplayName="Cloink"
+							 Description="Cloink secure VPN access client."
                                      Start="auto" Type="ownProcess"
                                      ErrorControl="normal"
                                      Account="LocalSystem"
                                      Vital="yes"
                                      Interactive="no"
-                                     Arguments='service run config [CommonAppDataFolder]Netbird\config.json log-level info'
+							 Arguments='service run config [CommonAppDataFolder]Cloink\config.json log-level info'
                         />
-					<ServiceControl Id="NetBirdService" Name="NetBird" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+					<ServiceControl Id="NetBirdService" Name="Cloink" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
 
 					<Environment Id="UpdatePath" Name="PATH" Value="[NetbirdInstallDir]" Part="last" Action="set" System="yes" />
 
@@ -54,7 +54,7 @@
 		     the per-machine NetbirdFiles component to satisfy ICE57. -->
 		<StandardDirectory Id="ProgramMenuFolder">
 			<Component Id="NetbirdAumidRegistry" Guid="*">
-				<RegistryKey Root="HKCU" Key="Software\Classes\AppUserModelId\NetBird" ForceDeleteOnUninstall="yes">
+				<RegistryKey Root="HKCU" Key="Software\Classes\AppUserModelId\Cloink" ForceDeleteOnUninstall="yes">
 					<RegistryValue Name="InstalledByMSI" Type="integer" Value="1" KeyPath="yes" />
 					<!-- Pre-seed the CLSID the Wails notifications service reads on
 					     first startup (notifications_windows.go:getGUID looks for
@@ -73,8 +73,8 @@
 			<ComponentRef Id="NetbirdAumidRegistry" />
 		</ComponentGroup>
 
-		<util:CloseApplication Id="CloseNetBird" CloseMessage="no" Target="netbird.exe" RebootPrompt="no" />
-		<util:CloseApplication Id="CloseNetBirdUI" CloseMessage="no" Target="netbird-ui.exe" RebootPrompt="no" TerminateProcess="0" />
+		<util:CloseApplication Id="CloseNetBird" CloseMessage="no" Target="cloink.exe" RebootPrompt="no" />
+		<util:CloseApplication Id="CloseNetBirdUI" CloseMessage="no" Target="cloink-ui.exe" RebootPrompt="no" TerminateProcess="0" />
 
 		<!-- WebView2 evergreen runtime detection.
 		     Probe both the per-machine and per-user EdgeUpdate keys; if either

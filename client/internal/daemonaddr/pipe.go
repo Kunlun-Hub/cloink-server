@@ -15,7 +15,9 @@ const (
 	// carries the connecting process's token, which loopback TCP does not, so
 	// it is the only Windows transport on which the daemon can tell who is
 	// calling it.
-	WindowsPipeAddr = "npipe://netbird"
+	WindowsPipeAddr = "npipe://cloink"
+
+	legacyWindowsPipeAddr = "npipe://netbird"
 
 	// legacyWindowsAddr is the loopback-TCP address the Windows daemon used
 	// before named-pipe support.
@@ -43,7 +45,7 @@ func DialTarget(addr string) (string, []grpc.DialOption) {
 		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return dialPipePaths(ctx, paths)
 		}))
-		return "passthrough:///netbird-daemon-pipe", opts
+		return "passthrough:///cloink-daemon-pipe", opts
 	}
 
 	return strings.TrimPrefix(addr, "tcp://"), opts
@@ -96,7 +98,7 @@ func MigrateLegacy(addr string) (string, bool) {
 }
 
 func migrateLegacyForOS(goos, addr string) (string, bool) {
-	if goos == "windows" && addr == legacyWindowsAddr {
+	if goos == "windows" && (addr == legacyWindowsAddr || addr == legacyWindowsPipeAddr) {
 		return WindowsPipeAddr, true
 	}
 	return addr, false

@@ -7,7 +7,7 @@ import { Button } from "@/components/buttons/Button";
 import { useClientVersion } from "@/contexts/ClientVersionContext";
 import { cn } from "@/lib/cn";
 
-const GITHUB_RELEASES = "https://github.com/netbirdio/netbird/releases/latest";
+const CLOINK_RELEASES = "https://cloink.4w.ink/api/version-releases/public?channel=stable&latest=true";
 
 function openUrl(url: string) {
     Browser.OpenURL(url).catch(() => {
@@ -18,7 +18,7 @@ function openUrl(url: string) {
 function openInstallerDownload() {
     UpdateSvc.DownloadURL()
         .then(openUrl)
-        .catch(() => openUrl(GITHUB_RELEASES));
+        .catch(() => openUrl(CLOINK_RELEASES));
 }
 
 export function UpdateVersionCard() {
@@ -33,9 +33,7 @@ export function UpdateVersionCard() {
             <Card className={"max-w-lg"}>
                 <div>
                     <Title>{t(titleKey, { version: updateVersion })}</Title>
-                    <Link
-                        url={`https://github.com/netbirdio/netbird/releases/tag/v${updateVersion}`}
-                    >
+                    <Link url={CLOINK_RELEASES}>
                         {t("update.card.whatsNew")}
                     </Link>
                 </div>
@@ -59,7 +57,7 @@ export function UpdateVersionCard() {
                 <Title>{t("update.card.onLatestVersion")}</Title>
                 <p className={"text-sm text-nb-gray-300"}>{t("update.card.autoCheckInterval")}</p>
             </div>
-            <Button variant={"primary"} size={"xs"} onClick={() => openUrl(GITHUB_RELEASES)}>
+            <Button variant={"primary"} size={"xs"} onClick={() => openUrl(CLOINK_RELEASES)}>
                 <NotepadText size={14} />
                 {t("update.card.changelog")}
             </Button>

@@ -676,7 +676,7 @@ func (s *DefaultServer) applyConfiguration(update nbdns.Config) error {
 
 	if s.service.RuntimePort() != DefaultPort && !s.hostManager.supportCustomPort() {
 		log.Warnf("the DNS manager of this peer doesn't support custom port. Disabling primary DNS setup. " +
-			"Learn more at: https://docs.netbird.io/how-to/manage-dns-in-your-network#local-resolver")
+			"Learn more at: https://docs.cloink.4w.ink/how-to/manage-dns-in-your-network#local-resolver")
 		s.currentConfig.RouteAll = false
 	}
 

@@ -233,7 +233,7 @@ func requestNotificationAuthorization(notifier *Notifier) {
 func parseFlagsAndInitLog() (string, bool) {
 	daemonAddr := flag.String("daemon-addr", DaemonAddr(), "Daemon gRPC address: unix:///path or tcp://host:port")
 	logFiles := &stringList{}
-	flag.Var(logFiles, "log-file", "Log destination. Repeat to log to multiple targets at once, e.g. `--log-file console --log-file Y:/netbird-ui.log`. Each value is one of: console, syslog, or a file path. File destinations are rotated by lumberjack (same as the daemon). Defaults to console. Passing any value disables the daemon-debug-driven gui-client.log.")
+	flag.Var(logFiles, "log-file", "Log destination. Repeat to log to multiple targets at once, e.g. `--log-file console --log-file Y:/cloink-ui.log`. Each value is one of: console, syslog, or a file path. File destinations are rotated by lumberjack (same as the daemon). Defaults to console. Passing any value disables the daemon-debug-driven gui-client.log.")
 	logLevel := flag.String("log-level", "info", "Log level: trace|debug|info|warn|error.")
 	flag.Parse()
 
@@ -264,12 +264,12 @@ func newApplication(onSecondInstance func()) *application.App {
 		// On Windows, Name is the AppUserModelID for toast notifications and
 		// the HKCU\Software\Classes\AppUserModelId\ registry path. It must
 		// match the System.AppUserModel.ID the MSI sets on the Start Menu
-		// shortcut (client/netbird.wxs) and the AppUserModelId key the
+		// shortcut (client/cloink.wxs) and the AppUserModelId key the
 		// installer pre-populates with the toast activator CLSID; otherwise
 		// toasts show under a different identity and the MSI's CustomActivator
 		// value is orphaned.
-		Name:        "NetBird",
-		Description: "NetBird desktop client",
+		Name:        "Cloink",
+		Description: "Cloink desktop client",
 		Icon:        appIcon,
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -279,13 +279,13 @@ func newApplication(onSecondInstance func()) *application.App {
 			ActivationPolicy: application.ActivationPolicyAccessory,
 		},
 		Linux: application.LinuxOptions{
-			ProgramName: "netbird",
+			ProgramName: "cloink-ui",
 		},
 		Windows: application.WindowsOptions{
 			WndProcInterceptor: endSessionInterceptor(),
 		},
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "io.netbird.ui",
+			UniqueID: "io.cloink.client",
 			OnSecondInstanceLaunch: func(_ application.SecondInstanceData) {
 				onSecondInstance()
 			},
@@ -349,7 +349,7 @@ func newMainWindow(app *application.App, prefStore *preferences.Store) *applicat
 	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
-		Title:  "NetBird",
+		Title:  "Cloink",
 		Width:  initialWidth,
 		Height: services.WindowHeight,
 		// Center on first show; minimal WMs (fluxbox, the XEmbed tray path)

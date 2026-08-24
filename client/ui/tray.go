@@ -33,8 +33,8 @@ const (
 
 	quitDownTimeout = 5 * time.Second
 
-	urlGitHubRepo = "https://github.com/netbirdio/netbird"
-	urlDocs       = "https://docs.netbird.io"
+	urlGitHubRepo = "https://github.com/Kunlun-Hub/cloink"
+	urlDocs       = "https://docs.cloink.4w.ink"
 )
 
 // TrayServices bundles the services the tray menu needs, grouped so NewTray

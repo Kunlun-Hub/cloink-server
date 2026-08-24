@@ -1,6 +1,6 @@
 {
     "tray.tooltip": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "tray.status.disconnected": {
         "message": "已断开连接"
@@ -51,7 +51,7 @@
         "message": "{count} 天"
     },
     "tray.menu.open": {
-        "message": "打开 NetBird"
+        "message": "打开 Cloink"
     },
     "tray.menu.connect": {
         "message": "连接"
@@ -105,19 +105,19 @@
         "message": "—"
     },
     "tray.menu.quit": {
-        "message": "退出 NetBird"
+        "message": "退出 Cloink"
     },
     "notify.daemonOutdated.title": {
-        "message": "NetBird 服务版本过旧"
+        "message": "Cloink 服务版本过旧"
     },
     "notify.daemonOutdated.body": {
-        "message": "请更新 NetBird 服务以使用此应用。"
+        "message": "请更新 Cloink 服务以使用此应用。"
     },
     "notify.update.title": {
-        "message": "NetBird 有可用更新"
+        "message": "Cloink 有可用更新"
     },
     "notify.update.body": {
-        "message": "NetBird {version} 已可用。"
+        "message": "Cloink {version} 已可用。"
     },
     "notify.update.enforcedSuffix": {
         "message": " 您的管理员要求进行此次更新。"
@@ -138,19 +138,19 @@
         "message": "更新出口节点 {name} 失败"
     },
     "notify.sessionExpired.title": {
-        "message": "NetBird 会话已过期"
+        "message": "Cloink 会话已过期"
     },
     "notify.sessionExpired.body": {
-        "message": "您的 NetBird 会话已过期。请重新登录。"
+        "message": "您的 Cloink 会话已过期。请重新登录。"
     },
     "notify.sessionWarning.title": {
         "message": "会话即将过期"
     },
     "notify.sessionWarning.body": {
-        "message": "您的 NetBird 会话将在 {remaining} 后过期。点击“立即延长”以续期。"
+        "message": "您的 Cloink 会话将在 {remaining} 后过期。点击“立即延长”以续期。"
     },
     "notify.sessionWarning.bodyGeneric": {
-        "message": "您的 NetBird 会话即将过期。点击“立即延长”以续期。"
+        "message": "您的 Cloink 会话即将过期。点击“立即延长”以续期。"
     },
     "notify.sessionWarning.extend": {
         "message": "立即延长"
@@ -159,10 +159,10 @@
         "message": "忽略"
     },
     "notify.sessionWarning.failed": {
-        "message": "延长 NetBird 会话失败"
+        "message": "延长 Cloink 会话失败"
     },
     "notify.sessionWarning.successTitle": {
-        "message": "NetBird 会话已延长"
+        "message": "Cloink 会话已延长"
     },
     "notify.sessionWarning.successBody": {
         "message": "您的会话已刷新。"
@@ -174,10 +174,10 @@
         "message": "服务器发送了无效的会话截止时间。请重新登录。"
     },
     "notify.mdm.policyApplied.title": {
-        "message": "NetBird 设置已更新"
+        "message": "Cloink 设置已更新"
     },
     "notify.mdm.policyApplied.body": {
-        "message": "您的 NetBird 配置已根据 IT 策略更新。"
+        "message": "您的 Cloink 配置已根据 IT 策略更新。"
     },
     "common.cancel": {
         "message": "取消"
@@ -225,7 +225,7 @@
         "message": "正在加载…"
     },
     "common.netbird": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "common.noResults.title": {
         "message": "未找到任何结果"
@@ -237,7 +237,7 @@
         "message": "已断开连接"
     },
     "notConnected.description": {
-        "message": "请先连接到 NetBird，以查看有关对等节点、网络资源和出口节点的详细信息。"
+        "message": "请先连接到 Cloink，以查看有关对等节点、网络资源和出口节点的详细信息。"
     },
     "connect.status.disconnected": {
         "message": "已断开连接"
@@ -351,7 +351,7 @@
         "message": "请输入配置文件名称，例如：工作、家庭"
     },
     "profile.dialog.managementHelp": {
-        "message": "使用 NetBird Cloud 或您自己的服务器。"
+        "message": "使用 Cloink Cloud 或您自己的服务器。"
     },
     "profile.dialog.urlUnreachable": {
         "message": "无法连接到此服务器。请检查 URL，如果确认无误，也可以照常添加该配置文件。"
@@ -375,7 +375,7 @@
         "message": "切换配置文件"
     },
     "connect.toggle.label": {
-        "message": "切换 NetBird 连接"
+        "message": "切换 Cloink 连接"
     },
     "connect.localIp.label": {
         "message": "本地 IP 地址"
@@ -474,7 +474,7 @@
         "message": "配置文件"
     },
     "settings.profiles.intro": {
-        "message": "并行保留多个独立的 NetBird 身份，例如工作和个人账户，或不同的管理服务器。可在下方添加、注销或删除配置文件。"
+        "message": "并行保留多个独立的 Cloink 身份，例如工作和个人账户，或不同的管理服务器。可在下方添加、注销或删除配置文件。"
     },
     "settings.profiles.addProfile": {
         "message": "添加配置文件"
@@ -486,7 +486,7 @@
         "message": "无配置文件"
     },
     "settings.profiles.emptyDescription": {
-        "message": "创建一个配置文件以连接到 NetBird 管理服务器。"
+        "message": "创建一个配置文件以连接到 Cloink 管理服务器。"
     },
     "settings.error.loadTitle": {
         "message": "加载设置失败"
@@ -543,10 +543,10 @@
         "message": "显示有关新更新和连接事件的桌面通知。"
     },
     "settings.general.autostart.label": {
-        "message": "登录时启动 NetBird 界面"
+        "message": "登录时启动 Cloink 界面"
     },
     "settings.general.autostart.help": {
-        "message": "在您登录时自动启动 NetBird 界面。此设置仅影响图形界面，不影响后台服务。"
+        "message": "在您登录时自动启动 Cloink 界面。此设置仅影响图形界面，不影响后台服务。"
     },
     "settings.general.autostart.errorTitle": {
         "message": "更改自启动设置失败"
@@ -556,14 +556,14 @@
         "description": "Toggle label: keep the VPN connection up after quitting the UI."
     },
     "settings.general.keepConnectedOnQuit.help": {
-        "message": "关闭 NetBird 后，连接会在后台保持。只有你自己断开时才会停止。",
+        "message": "关闭 Cloink 后，连接会在后台保持。只有你自己断开时才会停止。",
         "description": "Helper text for the stay-connected-after-quitting toggle."
     },
     "settings.general.language.label": {
         "message": "显示语言"
     },
     "settings.general.language.help": {
-        "message": "选择 NetBird 界面的语言。"
+        "message": "选择 Cloink 界面的语言。"
     },
     "settings.general.language.search": {
         "message": "搜索语言…"
@@ -575,7 +575,7 @@
         "message": "管理服务器"
     },
     "settings.general.management.help": {
-        "message": "连接到 NetBird Cloud 或您自己的自托管管理服务器。更改将使客户端重新连接。"
+        "message": "连接到 Cloink Cloud 或您自己的自托管管理服务器。更改将使客户端重新连接。"
     },
     "settings.general.management.cloud": {
         "message": "Cloud"
@@ -584,16 +584,16 @@
         "message": "自托管"
     },
     "settings.general.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlError": {
-        "message": "请输入有效的 URL，例如：https://netbird.selfhosted.com:443"
+        "message": "请输入有效的 URL，例如：https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlUnreachable": {
         "message": "无法连接到此服务器。请检查 URL，如果确认无误，也可以照常保存。"
     },
     "settings.general.management.switchCloudTitle": {
-        "message": "切换到 NetBird Cloud？"
+        "message": "切换到 Cloink Cloud？"
     },
     "settings.general.management.switchCloudMessage": {
         "message": "这将断开您的自托管服务器。\n您可能需要重新登录。"
@@ -617,7 +617,7 @@
         "message": "启用 DNS"
     },
     "settings.network.dns.help": {
-        "message": "将 NetBird 管理的 DNS 设置应用到主机解析器。"
+        "message": "将 Cloink 管理的 DNS 设置应用到主机解析器。"
     },
     "settings.network.clientRoutes.label": {
         "message": "启用客户端路由"
@@ -635,7 +635,7 @@
         "message": "启用 IPv6"
     },
     "settings.network.ipv6.help": {
-        "message": "为 NetBird 叠加网络使用 IPv6 寻址。"
+        "message": "为 Cloink 叠加网络使用 IPv6 寻址。"
     },
     "settings.security.section.firewall": {
         "message": "防火墙"
@@ -680,7 +680,7 @@
         "message": "启用 SSH 服务器"
     },
     "settings.ssh.server.help": {
-        "message": "在此主机上运行 NetBird SSH 服务器，以便其他对等节点可以连接到它。"
+        "message": "在此主机上运行 Cloink SSH 服务器，以便其他对等节点可以连接到它。"
     },
     "settings.ssh.root.label": {
         "message": "允许 root 登录"
@@ -755,7 +755,7 @@
         "message": "预共享密钥"
     },
     "settings.advanced.psk.help": {
-        "message": "可选的 WireGuard PSK，用于额外的对称加密。它与 NetBird 设置密钥不同。您将只能与使用相同预共享密钥的对等节点通信。"
+        "message": "可选的 WireGuard PSK，用于额外的对称加密。它与 Cloink 设置密钥不同。您将只能与使用相同预共享密钥的对等节点通信。"
     },
     "settings.troubleshooting.section.title": {
         "message": "调试包"
@@ -797,10 +797,10 @@
         "message": "包含操作系统、内核、网络接口和路由表。"
     },
     "settings.troubleshooting.upload.label": {
-        "message": "将调试包上传到 NetBird 服务器"
+        "message": "将调试包上传到 Cloink 服务器"
     },
     "settings.troubleshooting.upload.help": {
-        "message": "返回一个上传密钥，供您分享给 NetBird 支持团队。"
+        "message": "返回一个上传密钥，供您分享给 Cloink 支持团队。"
     },
     "settings.troubleshooting.trace.label": {
         "message": "启用跟踪日志"
@@ -845,7 +845,7 @@
         "message": "调试包已保存"
     },
     "settings.troubleshooting.done.uploadedDescription": {
-        "message": "请将下方的上传密钥分享给 <docs>NetBird 支持团队</docs>。本地也已保存了一份副本。"
+        "message": "请将下方的上传密钥分享给 <docs>Cloink 支持团队</docs>。本地也已保存了一份副本。"
     },
     "settings.troubleshooting.done.savedDescription": {
         "message": "您的调试包已保存在本地。"
@@ -866,7 +866,7 @@
         "message": "上传失败。调试包仍已保存在本地。"
     },
     "settings.troubleshooting.stage.reconnecting": {
-        "message": "正在重新连接 NetBird…"
+        "message": "正在重新连接 Cloink…"
     },
     "settings.troubleshooting.stage.capturing": {
         "message": "正在捕获调试日志"
@@ -875,16 +875,16 @@
         "message": "正在生成调试包…"
     },
     "settings.troubleshooting.stage.uploading": {
-        "message": "正在上传到 NetBird…"
+        "message": "正在上传到 Cloink…"
     },
     "settings.troubleshooting.stage.cancelling": {
         "message": "正在取消…"
     },
     "settings.about.client": {
-        "message": "NetBird 客户端 v{version}"
+        "message": "Cloink 客户端 v{version}"
     },
     "settings.about.clientName": {
-        "message": "NetBird 客户端"
+        "message": "Cloink 客户端"
     },
     "settings.about.development": {
         "message": "[开发版]"
@@ -896,7 +896,7 @@
         "message": "GUI"
     },
     "settings.about.copyright": {
-        "message": "© {year} NetBird。保留所有权利。"
+        "message": "© {year} Cloink。保留所有权利。"
     },
     "settings.about.links.imprint": {
         "message": "法律声明"
@@ -926,7 +926,7 @@
         "message": "反馈"
     },
     "update.banner.message": {
-        "message": "NetBird {version} 已准备好安装。"
+        "message": "Cloink {version} 已准备好安装。"
     },
     "update.banner.later": {
         "message": "稍后"
@@ -950,7 +950,7 @@
         "message": "下载"
     },
     "update.card.autoCheckInterval": {
-        "message": "NetBird 会在后台检查更新。"
+        "message": "Cloink 会在后台检查更新。"
     },
     "update.card.changelog": {
         "message": "更新日志"
@@ -962,13 +962,13 @@
         "message": "有可用更新"
     },
     "update.overlay.updatingVersion": {
-        "message": "正在将 NetBird 更新到 v{version}"
+        "message": "正在将 Cloink 更新到 v{version}"
     },
     "update.overlay.updating": {
-        "message": "正在更新 NetBird"
+        "message": "正在更新 Cloink"
     },
     "update.overlay.description": {
-        "message": "有更新的版本可用，正在安装。更新完成后，NetBird 将自动重启。"
+        "message": "有更新的版本可用，正在安装。更新完成后，Cloink 将自动重启。"
     },
     "update.overlay.error.timeoutTitle": {
         "message": "更新耗时过长"
@@ -1058,22 +1058,22 @@
         "message": "正在更新"
     },
     "window.title.welcome": {
-        "message": "欢迎使用 NetBird"
+        "message": "欢迎使用 Cloink"
     },
     "window.title.error": {
         "message": "错误"
     },
     "welcome.title": {
-        "message": "在托盘中查找 NetBird"
+        "message": "在托盘中查找 Cloink"
     },
     "welcome.titleMac": {
-        "message": "在菜单栏中查找 NetBird"
+        "message": "在菜单栏中查找 Cloink"
     },
     "welcome.description": {
-        "message": "NetBird 驻留在您的托盘中。点击图标即可连接、切换配置文件或打开设置。"
+        "message": "Cloink 驻留在您的托盘中。点击图标即可连接、切换配置文件或打开设置。"
     },
     "welcome.descriptionMac": {
-        "message": "NetBird 驻留在您的菜单栏中。点击图标即可连接、切换配置文件或打开设置。"
+        "message": "Cloink 驻留在您的菜单栏中。点击图标即可连接、切换配置文件或打开设置。"
     },
     "welcome.continue": {
         "message": "继续"
@@ -1082,13 +1082,13 @@
         "message": "返回"
     },
     "welcome.management.title": {
-        "message": "设置 NetBird"
+        "message": "设置 Cloink"
     },
     "welcome.management.description": {
-        "message": "点击“继续”即可开始；如果您有自己的 NetBird 服务器，请选择“自托管”。"
+        "message": "点击“继续”即可开始；如果您有自己的 Cloink 服务器，请选择“自托管”。"
     },
     "welcome.management.cloud.title": {
-        "message": "NetBird Cloud"
+        "message": "Cloink Cloud"
     },
     "welcome.management.cloud.description": {
         "message": "使用我们的托管服务。无需任何设置。"
@@ -1103,10 +1103,10 @@
         "message": "管理服务器 URL"
     },
     "welcome.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlInvalid": {
-        "message": "请输入有效的 URL，例如：https://netbird.selfhosted.com:443"
+        "message": "请输入有效的 URL，例如：https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlUnreachable": {
         "message": "无法连接到此服务器。请检查 URL 或您的网络，如果确认无误，再继续。"
@@ -1184,10 +1184,10 @@
         "message": "域名"
     },
     "peers.details.netbirdIp": {
-        "message": "NetBird IP"
+        "message": "Cloink IP"
     },
     "peers.details.netbirdIpv6": {
-        "message": "NetBird IPv6"
+        "message": "Cloink IPv6"
     },
     "peers.details.publicKey": {
         "message": "公钥"
@@ -1322,7 +1322,7 @@
         "message": "断开连接"
     },
     "daemon.unavailable.title": {
-        "message": "NetBird 服务未运行"
+        "message": "Cloink 服务未运行"
     },
     "daemon.unavailable.description": {
         "message": "服务运行后，应用将自动重新连接。"
@@ -1331,7 +1331,7 @@
         "message": "文档"
     },
     "daemon.outdated.title": {
-        "message": "NetBird 客户端版本过旧"
+        "message": "Cloink 客户端版本过旧"
     },
     "daemon.outdated.description": {
         "message": "新版 GUI 与您较旧的客户端不兼容。请更新客户端以使用新应用。"
@@ -1358,7 +1358,7 @@
         "message": "登录被服务器拒绝。"
     },
     "error.daemon_unreachable": {
-        "message": "NetBird 守护进程无响应。请检查服务是否正在运行。"
+        "message": "Cloink 守护进程无响应。请检查服务是否正在运行。"
     },
     "error.unknown": {
         "message": "操作失败。"

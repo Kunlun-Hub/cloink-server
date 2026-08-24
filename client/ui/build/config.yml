@@ -5,11 +5,11 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "NetBird GmbH" # The name of the company
-  productName: "NetBird" # The name of the application
-  productIdentifier: "io.netbird.client" # The unique product identifier
-  description: "NetBird desktop client" # The application description
-  copyright: "NetBird GmbH" # Copyright text
+  companyName: "Cloink" # The name of the company
+  productName: "Cloink" # The name of the application
+  productIdentifier: "io.cloink.client" # The unique product identifier
+  description: "Cloink desktop client" # The application description
+  copyright: "Cloink" # Copyright text
   comments: "Some Product Comments" # Comments
   version: "0.0.1" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)

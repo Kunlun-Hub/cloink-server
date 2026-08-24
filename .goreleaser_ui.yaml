@@ -1,7 +1,7 @@
 version: 2
 env:
   - SKIP_PUBLISH={{ if index .Env "SKIP_PUBLISH" }}{{ .Env.SKIP_PUBLISH }}{{ else }}true{{ end }}
-project_name: netbird-ui
+project_name: cloink-ui
 
 before:
   hooks:
@@ -12,9 +12,9 @@ before:
     - sh -c 'cd client/ui/frontend && pnpm install --frozen-lockfile && pnpm build'
 
 builds:
-  - id: netbird-ui
+  - id: cloink-ui
     dir: client/ui
-    binary: netbird-ui
+    binary: cloink-ui
     env:
       - CGO_ENABLED=1
     goos:
@@ -27,9 +27,9 @@ builds:
     tags:
       - production
 
-  - id: netbird-ui-windows-amd64
+  - id: cloink-ui-windows-amd64
     dir: client/ui
-    binary: netbird-ui
+    binary: cloink-ui
     env:
       - CGO_ENABLED=1
       - CC=x86_64-w64-mingw32-gcc
@@ -44,9 +44,9 @@ builds:
     tags:
       - production
 
-  - id: netbird-ui-windows-arm64
+  - id: cloink-ui-windows-arm64
     dir: client/ui
-    binary: netbird-ui
+    binary: cloink-ui
     env:
       - CGO_ENABLED=1
       - CC=aarch64-w64-mingw32-clang
@@ -66,58 +66,58 @@ archives:
   - id: linux-arch
     name_template: "{{ .ProjectName }}-linux_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
-      - netbird-ui
+      - cloink-ui
   - id: windows-arch
     name_template: "{{ .ProjectName }}-windows_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
-      - netbird-ui-windows-amd64
-      - netbird-ui-windows-arm64
+      - cloink-ui-windows-amd64
+      - cloink-ui-windows-arm64
 
 nfpms:
-  - maintainer: Netbird <dev@netbird.io>
-    description: Netbird client UI.
-    homepage: https://netbird.io/
+  - maintainer: Kunlun-Hub <674904341@qq.com>
+    description: Cloink desktop client.
+    homepage: https://github.com/Kunlun-Hub
     license: BSD-3-Clause
-    vendor: NetBird
-    id: netbird_ui_deb
-    package_name: netbird-ui
+    vendor: Cloink
+    id: cloink_ui_deb
+    package_name: cloink-ui
     builds:
-      - netbird-ui
+      - cloink-ui
     formats:
       - deb
     scripts:
       postinstall: "release_files/ui-post-install.sh"
     contents:
-      - src: client/ui/build/linux/netbird.desktop
-        dst: /usr/share/applications/org.wails.netbird.desktop
+      - src: client/ui/build/linux/cloink-ui.desktop
+        dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
-        dst: /usr/share/pixmaps/netbird.png
+        dst: /usr/share/pixmaps/cloink-ui.png
     dependencies:
-      - netbird (>= 0.75.0)
+      - cloink (>= 0.77.0)
       - libgtk-4-1 (>= 4.14)
       - libwebkitgtk-6.0-4
       - xdg-utils
 
-  - maintainer: Netbird <dev@netbird.io>
-    description: Netbird client UI.
-    homepage: https://netbird.io/
+  - maintainer: Kunlun-Hub <674904341@qq.com>
+    description: Cloink desktop client.
+    homepage: https://github.com/Kunlun-Hub
     license: BSD-3-Clause
-    vendor: NetBird
-    id: netbird_ui_rpm
-    package_name: netbird-ui
+    vendor: Cloink
+    id: cloink_ui_rpm
+    package_name: cloink-ui
     builds:
-      - netbird-ui
+      - cloink-ui
     formats:
       - rpm
     scripts:
       postinstall: "release_files/ui-post-install.sh"
     contents:
-      - src: client/ui/build/linux/netbird.desktop
-        dst: /usr/share/applications/org.wails.netbird.desktop
+      - src: client/ui/build/linux/cloink-ui.desktop
+        dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
-        dst: /usr/share/pixmaps/netbird.png
+        dst: /usr/share/pixmaps/cloink-ui.png
     dependencies:
-      - netbird >= 0.75.0
+      - cloink >= 0.77.0
       - (gtk4 >= 4.14 or libgtk-4-1 >= 4.14)
       - (webkitgtk6.0 or libwebkitgtk-6_0-4)
       - xdg-utils
@@ -126,29 +126,10 @@ nfpms:
       signature:
         key_file: '{{ if index .Env "GPG_RPM_KEY_FILE" }}{{ .Env.GPG_RPM_KEY_FILE }}{{ end }}'
 
-uploads:
-  - name: debian
-    skip: "{{ .Env.SKIP_PUBLISH }}"
-    ids:
-      - netbird_ui_deb
-    mode: archive
-    target: https://pkgs.wiretrustee.com/debian/pool/{{ .ArtifactName }};deb.distribution=stable;deb.component=main;deb.architecture={{ if .Arm }}armhf{{ else }}{{ .Arch }}{{ end }};deb.package=
-    username: dev@wiretrustee.com
-    method: PUT
-
-  - name: yum
-    skip: "{{ .Env.SKIP_PUBLISH }}"
-    ids:
-      - netbird_ui_rpm
-    mode: archive
-    target: https://pkgs.wiretrustee.com/yum/{{ .Arch }}{{ if .Arm }}{{ .Arm }}{{ end }}
-    username: dev@wiretrustee.com
-    method: PUT
-
 release:
   # Uploads into the release created by the main .goreleaser.yaml run.
   # make_latest stays false everywhere: the signing pipeline
-  # (netbirdio/sign-pipelines) marks the release latest after the Windows
+  # The Cloink signing pipeline marks the release latest after the Windows
   # and macOS artifacts are signed.
   make_latest: false
   prerelease: auto

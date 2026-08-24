@@ -116,7 +116,7 @@ func authenticateWithDeviceCodeFlow(ctx context.Context, config *profilemanager.
 		case ok && s.Code() == codes.NotFound:
 			return nil, fmt.Errorf("no SSO provider returned from management. " +
 				"Please proceed with setting up this device using setup keys " +
-				"https://docs.netbird.io/how-to/register-machines-using-setup-keys")
+				"https://docs.cloink.4w.ink/how-to/register-machines-using-setup-keys")
 		case ok && s.Code() == codes.Unimplemented:
 			return nil, fmt.Errorf("the management server, %s, does not support SSO providers, "+
 				"please update your server or use Setup Keys to login", config.ManagementURL)

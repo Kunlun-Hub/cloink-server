@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	uninstallKeyPath64 = `SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Netbird`
-	uninstallKeyPath32 = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Netbird`
+	uninstallKeyPath64 = `SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Cloink`
+	uninstallKeyPath32 = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Cloink`
 )
 
 var (
@@ -35,7 +35,7 @@ func TypeOfInstaller(_ context.Context) Type {
 
 	}
 
-	log.Debug("No registry entry found for Netbird, assuming MSI installation")
+	log.Debug("No registry entry found for Cloink, assuming MSI installation")
 	return TypeMSI
 }
 

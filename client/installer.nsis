@@ -1,11 +1,11 @@
-!define APP_NAME "Netbird"
-!define COMP_NAME "Netbird"
-!define WEB_SITE "Netbird.io"
+!define APP_NAME "Cloink"
+!define COMP_NAME "Cloink"
+!define WEB_SITE "Cloink"
 !define VERSION $%APPVER%
-!define COPYRIGHT "Netbird Authors, 2022"
+!define COPYRIGHT "Cloink"
 !define DESCRIPTION "Connect your devices into a secure WireGuard-based overlay network with SSO, MFA, and granular access controls."
-!define INSTALLER_NAME "netbird-installer.exe"
-!define MAIN_APP_EXE "Netbird"
+!define INSTALLER_NAME "cloink-installer.exe"
+!define MAIN_APP_EXE "cloink"
 !define ICON "ui\\build\\windows\\icon.ico"
 !define BANNER "ui\\build\\banner.bmp"
 !define LICENSE_DATA "..\\LICENSE"
@@ -16,13 +16,13 @@
 !define REG_APP_PATH "Software\Microsoft\Windows\CurrentVersion\App Paths\${MAIN_APP_EXE}"
 !define UNINSTALL_PATH "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
 
-!define UI_APP_NAME "Netbird UI"
-!define UI_APP_EXE "Netbird-ui"
+!define UI_APP_NAME "Cloink"
+!define UI_APP_EXE "cloink-ui"
 
 !define UI_REG_APP_PATH "Software\Microsoft\Windows\CurrentVersion\App Paths\${UI_APP_EXE}"
 !define UI_UNINSTALL_PATH "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UI_APP_NAME}"
 
-!define NETBIRD_DATA_DIR "$COMMONPROGRAMDATA\Netbird"
+!define CLOINK_DATA_DIR "$COMMONPROGRAMDATA\Cloink"
 
 Unicode True
 
@@ -110,7 +110,7 @@ Function un.DeleteDataPage
     Abort
   ${EndIf}
 
-  ${NSD_CreateCheckbox} 0 20u 100% 10u "Delete all ${APP_NAME} configuration and state data (${NETBIRD_DATA_DIR})"
+  ${NSD_CreateCheckbox} 0 20u 100% 10u "Delete all ${APP_NAME} configuration and state data (${CLOINK_DATA_DIR})"
   Pop $DeleteDataCheckbox
   ${NSD_Uncheck} $DeleteDataCheckbox
   StrCpy $DeleteDataEnabled "0"
@@ -183,7 +183,7 @@ ${If} $R0 != ""
     # if silent install jump to uninstall step
     IfSilent uninstall
 
-    MessageBox MB_YESNO|MB_ICONQUESTION "NetBird is already installed. We must remove it before installing upgrading NetBird. Proceed?" IDNO done IDYES uninstall
+    MessageBox MB_YESNO|MB_ICONQUESTION "Cloink is already installed and must be removed before upgrading. Proceed?" IDNO done IDYES uninstall
 
     uninstall:
       !insertmacro UninstallPreviousNSIS $R0 "/NoMsgBox"
@@ -205,21 +205,21 @@ Section -MainProgram
     !endif
 
     !if ${ARCH} == "arm64"
-        File /r "..\\dist\\netbird_windows_arm64\\"
+        File /r "..\\dist\\cloink_windows_arm64\\"
     !else
-        File /r "..\\dist\\netbird_windows_amd64\\"
+        File /r "..\\dist\\cloink_windows_amd64\\"
     !endif
-    File "..\\client\\ui\\assets\\netbird.png"
+    File /oname=cloink.png "..\\client\\ui\\assets\\netbird.png"
 SectionEnd
 ######################################################################
 
 Section -Icons_Reg
 SetOutPath "$INSTDIR"
-WriteUninstaller "$INSTDIR\netbird_uninstall.exe"
+WriteUninstaller "$INSTDIR\cloink_uninstall.exe"
 
 WriteRegStr ${REG_ROOT} "${REG_APP_PATH}" "" "$INSTDIR\${MAIN_APP_EXE}"
 WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "DisplayName" "${APP_NAME}"
-WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "UninstallString" "$INSTDIR\netbird_uninstall.exe"
+WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "UninstallString" "$INSTDIR\cloink_uninstall.exe"
 WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "DisplayIcon" "$INSTDIR\${MAIN_APP_EXE}"
 WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "DisplayVersion" "${VERSION}"
 WriteRegStr ${REG_ROOT} "${UNINSTALL_PATH}"  "Publisher" "${COMP_NAME}"
@@ -282,25 +282,25 @@ SectionEnd
 Section Uninstall
 ${INSTALL_TYPE}
 
-DetailPrint "Stopping Netbird service..."
+DetailPrint "Stopping Cloink service..."
 ExecWait '"$INSTDIR\${MAIN_APP_EXE}" service stop'
-DetailPrint "Uninstalling Netbird service..."
+DetailPrint "Uninstalling Cloink service..."
 ExecWait '"$INSTDIR\${MAIN_APP_EXE}" service uninstall'
 
-DetailPrint "Terminating Netbird UI process..."
+DetailPrint "Terminating Cloink UI process..."
 ExecWait `taskkill /im ${UI_APP_EXE}.exe /f`
 
 ; Handle data deletion based on checkbox
 DetailPrint "Checking if user requested data deletion..."
 ${If} $DeleteDataEnabled == "1"
-    DetailPrint "User opted to delete Netbird data. Removing ${NETBIRD_DATA_DIR}..."
+    DetailPrint "User opted to delete Cloink data. Removing ${CLOINK_DATA_DIR}..."
     ClearErrors
-    RMDir /r "${NETBIRD_DATA_DIR}"
+    RMDir /r "${CLOINK_DATA_DIR}"
     IfErrors 0 +2 ; If no errors, jump over the message
-    DetailPrint "Error deleting Netbird data directory. It might be in use or already removed."
-    DetailPrint "Netbird data directory removal complete."
+    DetailPrint "Error deleting Cloink data directory. It might be in use or already removed."
+    DetailPrint "Cloink data directory removal complete."
 ${Else}
-    DetailPrint "User did not opt to delete Netbird data."
+    DetailPrint "User did not opt to delete Cloink data."
 ${EndIf}
 
 # wait the service uninstall take unblock the executable

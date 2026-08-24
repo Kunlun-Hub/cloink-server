@@ -445,8 +445,8 @@ func (s *Server) SetConfig(callerCtx context.Context, msg *proto.SetConfigReques
 
 	// Skip the update-settings gate when the request carries no actual
 	// overrides: the CLI builds a SetConfigRequest unconditionally on
-	// every `netbird up` (setupSetConfigReq in cmd/up.go), so a plain
-	// `netbird up` would otherwise always trip the gate and surface a
+	// every `cloink up` (setupSetConfigReq in cmd/up.go), so a plain
+	// `cloink up` would otherwise always trip the gate and surface a
 	// misleading "setConfig method is not available" warning, even when
 	// the user did not pass any config flag.
 	if setConfigRequestHasConfigOverrides(msg) {
@@ -585,7 +585,7 @@ func (s *Server) Login(callerCtx context.Context, msg *proto.LoginRequest) (*pro
 	// Config-override gates. LoginRequest carries the same surface as
 	// SetConfigRequest (managementUrl, PSK, ssh/rosenpass/port toggles,
 	// ...), so the same protections must apply. Without these the CLI
-	// command `netbird up --management-url=X` (which falls through to
+	// command `cloink up --management-url=X` (which falls through to
 	// Login when SetConfig is rejected — see cmd/up.go) would silently
 	// bypass `--disable-update-settings` and any MDM policy.
 	if loginRequestHasConfigOverrides(msg) {
@@ -743,7 +743,7 @@ func (s *Server) Login(callerCtx context.Context, msg *proto.LoginRequest) (*pro
 //
 // The daemon holds StatusNeedsLogin for the whole browser wait (set on
 // entry): the login is not done until the token returns, so a client that
-// (re)attaches mid-wait — a restarted UI, a second `netbird up` — reads
+// (re)attaches mid-wait — a restarted UI, a second `cloink up` — reads
 // "login required" and offers the affordance, instead of a Connecting that
 // never resolves. The wait is also tied to the caller's context (see the
 // goroutine below), so a client that goes away cancels the wait instead of
@@ -824,7 +824,7 @@ func (s *Server) WaitSSOLogin(callerCtx context.Context, msg *proto.WaitSSOLogin
 
 	// Hold NeedsLogin for the whole browser wait — the login is not done
 	// until the token returns, so a client that (re)attaches mid-wait
-	// (restarted UI, second `netbird up`) reads "login required" and offers
+	// (restarted UI, second `cloink up`) reads "login required" and offers
 	// the affordance instead of a Connecting that never resolves.
 	state.Set(internal.StatusNeedsLogin)
 
@@ -945,7 +945,7 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
 	// engine's own StatusConnecting → StatusConnected progression starts from a
 	// clean slate. Without this, the first Up after an SSO login fails with
 	// "up already in progress" and the user has to trigger Up a second time
-	// (CLI: re-run `netbird up`; GUI: click Connect again).
+	// (CLI: re-run `cloink up`; GUI: click Connect again).
 	if status == internal.StatusNeedsLogin {
 		status = internal.StatusIdle
 		state.Set(internal.StatusIdle)
@@ -1941,12 +1941,12 @@ func (s *Server) DismissSessionWarning(
 	return &proto.DismissSessionWarningResponse{}, nil
 }
 
-// ExposeService exposes a local port via the NetBird reverse proxy.
+// ExposeService exposes a local port via the Cloink reverse proxy.
 func (s *Server) ExposeService(req *proto.ExposeServiceRequest, srv proto.DaemonService_ExposeServiceServer) error {
 	s.mutex.Lock()
 	if !s.clientRunning {
 		s.mutex.Unlock()
-		return gstatus.Errorf(codes.FailedPrecondition, "client is not running, run 'netbird up' first")
+		return gstatus.Errorf(codes.FailedPrecondition, "client is not running, run 'cloink up' first")
 	}
 	connectClient := s.connectClient
 	s.mutex.Unlock()
@@ -2462,9 +2462,9 @@ func parseEnvDuration(envVar string, defaultDuration time.Duration) time.Duratio
 }
 
 // sendTerminalNotification sends a terminal notification message
-// to inform the user that the NetBird connection session has expired.
+// to inform the user that the Cloink connection session has expired.
 func sendTerminalNotification() error {
-	message := "NetBird connection session expired\n\nPlease re-authenticate to connect to the network."
+	message := "Cloink connection session expired\n\nPlease re-authenticate to connect to the network."
 	echoCmd := exec.Command("echo", message)
 	wallCmd := exec.Command("sudo", "wall")
 

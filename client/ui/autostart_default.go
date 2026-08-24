@@ -32,7 +32,7 @@ func shouldEnableAutostartDefault(s autostartDefaultState) (bool, string) {
 	case s.mdmDisabled:
 		return false, "autostart disabled by MDM policy"
 	case s.priorInstall:
-		return false, "existing NetBird installation"
+		return false, "existing Cloink installation"
 	}
 	return true, ""
 }
@@ -48,7 +48,7 @@ func autostartDisabledByMDM(policy *mdm.Policy) bool {
 	return !ok || disabled
 }
 
-// netbirdFootprintExists reports whether the machine already carries NetBird
+// netbirdFootprintExists reports whether the machine already carries Cloink
 // daemon config or state, meaning this is not a genuinely fresh install. It is
 // the update-safety gate for the autostart default: upgrading users always
 // have a footprint, so an update can never trigger a autostart entry write.

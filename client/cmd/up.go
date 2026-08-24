@@ -59,8 +59,8 @@ var (
 
 	upCmd = &cobra.Command{
 		Use:   "up",
-		Short: "Connect to the NetBird network",
-		Long:  "Connect to the NetBird network using the provided setup key or SSO auth. This command will bring up the WireGuard interface, connect to the management server, and establish peer-to-peer connections with other peers in the network if required.",
+		Short: "Connect to the Cloink network",
+		Long:  "Connect to the Cloink network using the provided setup key or SSO auth. This command will bring up the WireGuard interface, connect to the management server, and establish peer-to-peer connections with other peers in the network if required.",
 		RunE:  upFunc,
 	}
 )
@@ -88,7 +88,7 @@ func init() {
 	upCmd.PersistentFlags().BoolVar(&noBrowser, noBrowserFlag, false, noBrowserDesc)
 	upCmd.PersistentFlags().BoolVar(&showQR, showQRFlag, false, showQRDesc)
 	upCmd.PersistentFlags().StringVar(&profileName, profileNameFlag, "", profileNameDesc)
-	upCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "(DEPRECATED) NetBird config file location. ")
+	upCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "(DEPRECATED) Cloink config file location. ")
 
 }
 
@@ -149,7 +149,7 @@ func upFunc(cmd *cobra.Command, args []string) error {
 
 // switchOrCreateProfile switches the active profile to the one identified by
 // handle, creating it first when it does not exist yet. This restores the
-// pre-0.73 behaviour where `netbird up --profile <name>` auto-creates a
+// pre-0.73 behaviour where `cloink up --profile <name>` auto-creates a
 // missing profile instead of failing.
 func switchOrCreateProfile(ctx context.Context, pm *profilemanager.ProfileManager, handle, username string) error {
 	resolvedID, err := switchProfile(ctx, handle, username)
@@ -186,7 +186,7 @@ func createProfile(ctx context.Context, profileName, username string) (profilema
 		//nolint
 		return "", fmt.Errorf("failed to connect to daemon error: %v\n"+
 			"If the daemon is not running please run: "+
-			"\nnetbird service install \nnetbird service start\n", err)
+			"\ncloink service install \ncloink service start\n", err)
 	}
 	defer conn.Close()
 
@@ -270,7 +270,7 @@ func runInForegroundMode(ctx context.Context, cmd *cobra.Command, activeProf *pr
 func runInDaemonMode(ctx context.Context, cmd *cobra.Command, pm *profilemanager.ProfileManager, activeProf *profilemanager.Profile, profileSwitched bool) error {
 	// Check if deprecated config flag is set and show warning
 	if cmd.Flag("config").Changed && configPath != "" {
-		cmd.PrintErrf("Warning: Config flag is deprecated on up command, it should be set as a service argument with $NB_CONFIG environment or with \"-config\" flag; netbird service reconfigure --service-env=\"NB_CONFIG=<file_path>\" or netbird service run --config=<file_path>\n")
+		cmd.PrintErrf("Warning: Config flag is deprecated on up command, it should be set as a service argument with $NB_CONFIG environment or with \"-config\" flag; cloink service reconfigure --service-env=\"NB_CONFIG=<file_path>\" or cloink service run --config=<file_path>\n")
 	}
 
 	customDNSAddressConverted, err := parseCustomDNSAddress(cmd.Flag(dnsResolverAddress).Changed)
@@ -283,7 +283,7 @@ func runInDaemonMode(ctx context.Context, cmd *cobra.Command, pm *profilemanager
 		//nolint
 		return fmt.Errorf("failed to connect to daemon error: %v\n"+
 			"If the daemon is not running please run: "+
-			"\nnetbird service install \nnetbird service start\n", err)
+			"\ncloink service install \ncloink service start\n", err)
 	}
 	defer func() {
 		err := conn.Close()

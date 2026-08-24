@@ -8,27 +8,27 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="netbird-ui"
+        Path="cloink-ui.exe"
         Arguments=""
-        InstallLocation="C:\Program Files\NetBird\NetBird">
+        InstallLocation="C:\Program Files\Cloink">
     </Installer>
     <PackageInformation
-        PackageName="NetBird"
-        PackageDisplayName="NetBird"
-        PublisherName="CN=NetBird"
-        PublisherDisplayName="NetBird"
+        PackageName="Cloink"
+        PackageDisplayName="Cloink"
+        PublisherName="CN=Cloink"
+        PublisherDisplayName="Cloink"
         Version="0.0.1.0"
-        PackageDescription="NetBird desktop client">
+        PackageDescription="Cloink desktop client">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="io.netbird.client"
-                Description="NetBird desktop client"
-                DisplayName="NetBird"
-                ExecutableName="netbird-ui"
+                Id="io.cloink.client"
+                Description="Cloink desktop client"
+                DisplayName="Cloink"
+                ExecutableName="cloink-ui.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -41,13 +41,13 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>NetBird</DisplayName>
-            <PublisherDisplayName>NetBird</PublisherDisplayName>
-            <Description>NetBird desktop client</Description>
+            <DisplayName>Cloink</DisplayName>
+            <PublisherDisplayName>Cloink</PublisherDisplayName>
+            <Description>Cloink desktop client</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="netbird-ui.msix" />
+    <SaveLocation PackagePath="cloink-ui.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

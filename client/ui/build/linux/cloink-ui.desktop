@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Cloink
+Comment=Cloink desktop client
+Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 /usr/bin/cloink-ui
+Icon=cloink-ui
+Type=Application
+Terminal=false
+Categories=Network;Utility;
+Keywords=cloink;vpn;network;
+StartupWMClass=io.cloink.client

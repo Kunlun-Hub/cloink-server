@@ -19,9 +19,9 @@ Unicode true
 ####
 ## The following information is taken from the wails_tools.nsh file, but they can be overwritten here.
 ####
-## !define INFO_PROJECTNAME    "my-project" # Default "netbird-ui"
-## !define INFO_COMPANYNAME    "My Company" # Default "NetBird"
-## !define INFO_PRODUCTNAME    "My Product Name" # Default "NetBird"
+## !define INFO_PROJECTNAME    "my-project" # Default "cloink"
+## !define INFO_COMPANYNAME    "My Company" # Default "Cloink"
+## !define INFO_PRODUCTNAME    "My Product Name" # Default "Cloink"
 ## !define INFO_PRODUCTVERSION "1.0.0"     # Default "0.0.1"
 ## !define INFO_COPYRIGHT      "(c) Now, My Company" # Default "© 2026, My Company"
 ###

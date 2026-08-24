@@ -4,7 +4,7 @@ import { Browser } from "@wailsio/runtime";
 import { Button } from "@/components/buttons/Button";
 import { useStatus } from "@/contexts/StatusContext.tsx";
 
-const DOCS_URL = "https://docs.netbird.io/how-to/installation";
+const DOCS_URL = "https://docs.cloink.4w.ink/#quickstart";
 
 function openUrl(url: string) {
     Browser.OpenURL(url).catch(() => globalThis.open(url, "_blank"));

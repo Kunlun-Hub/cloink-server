@@ -64,7 +64,7 @@ func (e *ErrAmbiguousHandle) Error() string {
 
 func init() {
 
-	DefaultConfigPathDir = "/var/lib/netbird/"
+	DefaultConfigPathDir = "/var/lib/cloink/"
 	oldDefaultConfigPathDir = "/etc/netbird/"
 
 	if stateDir := os.Getenv("NB_STATE_DIR"); stateDir != "" {

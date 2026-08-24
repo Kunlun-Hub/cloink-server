@@ -9,7 +9,7 @@ import (
 var (
 	versionCmd = &cobra.Command{
 		Use:   "version",
-		Short: "Print the NetBird's client application version",
+		Short: "Print the Cloink's client application version",
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.SetOut(cmd.OutOrStdout())
 			out := version.NetbirdVersion()

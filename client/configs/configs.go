@@ -20,10 +20,10 @@ func init() {
 	}
 	switch runtime.GOOS {
 	case "windows":
-		StateDir = filepath.Join(os.Getenv("PROGRAMDATA"), "Netbird")
+		StateDir = filepath.Join(os.Getenv("PROGRAMDATA"), "Cloink")
 	case "darwin", "linux":
-		StateDir = "/var/lib/netbird"
+		StateDir = "/var/lib/cloink"
 	case "freebsd", "openbsd", "netbsd", "dragonfly":
-		StateDir = "/var/db/netbird"
+		StateDir = "/var/db/cloink"
 	}
 }

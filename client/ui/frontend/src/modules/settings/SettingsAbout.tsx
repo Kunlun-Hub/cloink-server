@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from "react";
 import { useTranslation } from "react-i18next";
 import { Browser } from "@wailsio/runtime";
 import { BookOpen, MessageSquareText, MessagesSquare } from "lucide-react";
-import netbirdFull from "@/assets/logos/netbird-full.svg";
+import netbirdFull from "@/assets/logos/cloink-full.svg";
 
 // Brand glyphs from simpleicons.org (lucide deprecated its brand icons).
 const GithubIcon = (props: SVGProps<SVGSVGElement>) => (
@@ -50,38 +50,38 @@ export function SettingsAbout() {
     }[] = [
         {
             label: t("settings.about.community.github"),
-            url: "https://github.com/netbirdio/netbird",
+            url: "https://github.com/Kunlun-Hub/cloink",
             Icon: GithubIcon,
             iconClassName: "h-3 w-3",
         },
         {
             label: t("settings.about.community.slack"),
-            url: "https://docs.netbird.io/slack-url",
+            url: "https://docs.cloink.4w.ink/",
             Icon: SlackIcon,
             iconClassName: "h-3 w-3",
         },
         {
             label: t("settings.about.community.forum"),
-            url: "https://forum.netbird.io",
+            url: "https://cloink.4w.ink/",
             Icon: MessagesSquare,
         },
         {
             label: t("settings.about.community.documentation"),
-            url: "https://docs.netbird.io",
+            url: "https://docs.cloink.4w.ink/",
             Icon: BookOpen,
         },
         {
             label: t("settings.about.community.feedback"),
-            url: "https://forms.gle/TeLw2zrXEdw6RcQ36",
+            url: "https://cloink.4w.ink/feedback",
             Icon: MessageSquareText,
         },
     ];
 
     const LEGAL_LINKS: { label: string; url: string }[] = [
-        { label: t("settings.about.links.imprint"), url: "https://netbird.io/imprint" },
-        { label: t("settings.about.links.privacy"), url: "https://netbird.io/privacy" },
-        { label: t("settings.about.links.cla"), url: "https://netbird.io/cla" },
-        { label: t("settings.about.links.terms"), url: "https://netbird.io/terms" },
+        { label: t("settings.about.links.imprint"), url: "https://cloink.4w.ink/legal/imprint" },
+        { label: t("settings.about.links.privacy"), url: "https://cloink.4w.ink/legal/privacy" },
+        { label: t("settings.about.links.cla"), url: "https://cloink.4w.ink/legal/cla" },
+        { label: t("settings.about.links.terms"), url: "https://cloink.4w.ink/legal/terms" },
     ];
 
     return (

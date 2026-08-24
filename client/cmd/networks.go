@@ -15,7 +15,7 @@ var appendFlag bool
 var networksCMD = &cobra.Command{
 	Use:     "networks",
 	Aliases: []string{"routes"},
-	Short:   "Manage connections to NetBird Networks and Resources",
+	Short:   "Manage connections to Cloink Networks and Resources",
 	Long:    `Commands to list, select, or deselect networks. Replaces the "routes" command.`,
 }
 
@@ -23,7 +23,7 @@ var routesListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List networks",
-	Example: "  netbird networks list",
+	Example: "  cloink networks list",
 	Long:    "List all available network routes.",
 	RunE:    networksList,
 }
@@ -32,7 +32,7 @@ var routesSelectCmd = &cobra.Command{
 	Use:     "select network...|all",
 	Short:   "Select network",
 	Long:    "Select a list of networks by identifiers or 'all' to clear all selections and to accept all (including new) networks.\nDefault mode is replace, use -a to append to already selected networks.",
-	Example: "  netbird networks select all\n  netbird networks select route1 route2\n  netbird routes select -a route3",
+	Example: "  cloink networks select all\n  cloink networks select route1 route2\n  cloink routes select -a route3",
 	Args:    cobra.MinimumNArgs(1),
 	RunE:    networksSelect,
 }
@@ -41,7 +41,7 @@ var routesDeselectCmd = &cobra.Command{
 	Use:     "deselect network...|all",
 	Short:   "Deselect networks",
 	Long:    "Deselect previously selected networks by identifiers or 'all' to disable accepting any networks.",
-	Example: "  netbird networks deselect all\n  netbird networks deselect route1 route2",
+	Example: "  cloink networks deselect all\n  cloink networks deselect route1 route2",
 	Args:    cobra.MinimumNArgs(1),
 	RunE:    networksDeselect,
 }

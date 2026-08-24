@@ -1,7 +1,7 @@
 version: 2
 env:
   - SKIP_PUBLISH={{ if index .Env "SKIP_PUBLISH" }}{{ .Env.SKIP_PUBLISH }}{{ else }}true{{ end }}
-project_name: netbird-ui
+project_name: cloink-ui
 
 before:
   hooks:
@@ -20,9 +20,9 @@ builds:
   # Wails Linux backend to the GTK3 stack and swaps our GTK4-only XEmbed
   # tray host for the pure-Go stub (client/ui/xembed_host_gtk3_linux.go).
   # Must be built on the oldest supported glibc (ubuntu-22.04 runner).
-  - id: netbird-ui-gtk3
+  - id: cloink-ui-gtk3
     dir: client/ui
-    binary: netbird-ui
+    binary: cloink-ui
     env:
       - CGO_ENABLED=1
     goos:
@@ -40,66 +40,66 @@ archives:
   - id: linux-gtk3-arch
     name_template: "{{ .ProjectName }}-linux-gtk3_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
-      - netbird-ui-gtk3
+      - cloink-ui-gtk3
 
 nfpms:
-  # Mutually-exclusive alternative to the GTK4 netbird-ui package -- both
-  # ship the same /usr/bin/netbird-ui from the shared stable/yum repos, so
+  # Mutually-exclusive alternative to the GTK4 cloink-ui package -- both
+  # ship the same /usr/bin/cloink-ui from the shared stable/yum repos, so
   # this one carries its own name and conflicts with the GTK4 package.
-  - maintainer: Netbird <dev@netbird.io>
-    description: Netbird client UI.
-    homepage: https://netbird.io/
+  - maintainer: Kunlun-Hub <674904341@qq.com>
+    description: Cloink desktop client.
+    homepage: https://github.com/Kunlun-Hub
     license: BSD-3-Clause
-    vendor: NetBird
-    id: netbird_ui_deb_gtk3
-    package_name: netbird-ui-gtk3
+    vendor: Cloink
+    id: cloink_ui_deb_gtk3
+    package_name: cloink-ui-gtk3
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
-      - netbird-ui-gtk3
+      - cloink-ui-gtk3
     formats:
       - deb
     scripts:
       postinstall: "release_files/ui-post-install.sh"
     contents:
-      - src: client/ui/build/linux/netbird.desktop
-        dst: /usr/share/applications/org.wails.netbird.desktop
+      - src: client/ui/build/linux/cloink-ui.desktop
+        dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
-        dst: /usr/share/pixmaps/netbird.png
+        dst: /usr/share/pixmaps/cloink-ui.png
     conflicts:
-      - netbird-ui
+      - cloink-ui
     replaces:
-      - netbird-ui
+      - cloink-ui
     dependencies:
-      - netbird (>= 0.75.0)
+      - cloink (>= 0.77.0)
       - libgtk-3-0
       - libwebkit2gtk-4.1-0
       - xdg-utils
 
-  - maintainer: Netbird <dev@netbird.io>
-    description: Netbird client UI.
-    homepage: https://netbird.io/
+  - maintainer: Kunlun-Hub <674904341@qq.com>
+    description: Cloink desktop client.
+    homepage: https://github.com/Kunlun-Hub
     license: BSD-3-Clause
-    vendor: NetBird
-    id: netbird_ui_rpm_gtk3
-    package_name: netbird-ui-gtk3
+    vendor: Cloink
+    id: cloink_ui_rpm_gtk3
+    package_name: cloink-ui-gtk3
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
-      - netbird-ui-gtk3
+      - cloink-ui-gtk3
     formats:
       - rpm
     scripts:
       postinstall: "release_files/ui-post-install.sh"
     contents:
-      - src: client/ui/build/linux/netbird.desktop
-        dst: /usr/share/applications/org.wails.netbird.desktop
+      - src: client/ui/build/linux/cloink-ui.desktop
+        dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
-        dst: /usr/share/pixmaps/netbird.png
+        dst: /usr/share/pixmaps/cloink-ui.png
     # No `replaces` here: nfpm maps it to rpm Obsoletes, which would make
-    # dnf swap installed GTK4 netbird-ui packages for this one on upgrade.
+    # dnf swap installed GTK4 cloink-ui packages for this one on upgrade.
     conflicts:
-      - netbird-ui
+      - cloink-ui
     dependencies:
-      - netbird >= 0.75.0
+      - cloink >= 0.77.0
       - (gtk3 or libgtk-3-0)
       - (webkit2gtk4.1 or libwebkit2gtk-4_1-0)
       - xdg-utils
@@ -116,29 +116,10 @@ checksum:
 changelog:
   disable: true
 
-uploads:
-  - name: debian
-    skip: "{{ .Env.SKIP_PUBLISH }}"
-    ids:
-      - netbird_ui_deb_gtk3
-    mode: archive
-    target: https://pkgs.wiretrustee.com/debian/pool/{{ .ArtifactName }};deb.distribution=stable;deb.component=main;deb.architecture={{ if .Arm }}armhf{{ else }}{{ .Arch }}{{ end }};deb.package=
-    username: dev@wiretrustee.com
-    method: PUT
-
-  - name: yum
-    skip: "{{ .Env.SKIP_PUBLISH }}"
-    ids:
-      - netbird_ui_rpm_gtk3
-    mode: archive
-    target: https://pkgs.wiretrustee.com/yum/{{ .Arch }}{{ if .Arm }}{{ .Arm }}{{ end }}
-    username: dev@wiretrustee.com
-    method: PUT
-
 release:
   # Uploads into the release created by the main .goreleaser.yaml run.
   # make_latest stays false everywhere: the signing pipeline
-  # (netbirdio/sign-pipelines) marks the release latest after the Windows
+  # The Cloink signing pipeline marks the release latest after the Windows
   # and macOS artifacts are signed.
   make_latest: false
   prerelease: auto

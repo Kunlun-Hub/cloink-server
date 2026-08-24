@@ -30,6 +30,46 @@ func TestResolveUnixDaemonAddr_DefaultExists(t *testing.T) {
 	}
 }
 
+func TestResolveUnixDaemonAddr_FallsBackToLegacySocket(t *testing.T) {
+	tmp := t.TempDir()
+	defaultPath := filepath.Join(tmp, "cloink.sock")
+	legacyPath := filepath.Join(tmp, "netbird.sock")
+	createSockFile(t, legacyPath)
+
+	originalDefaultSocket := defaultUnixSocket
+	originalLegacySocket := legacyUnixSocket
+	defaultUnixSocket = "unix://" + defaultPath
+	legacyUnixSocket = "unix://" + legacyPath
+	t.Cleanup(func() {
+		defaultUnixSocket = originalDefaultSocket
+		legacyUnixSocket = originalLegacySocket
+	})
+
+	got := ResolveUnixDaemonAddr(defaultUnixSocket)
+	if got != legacyUnixSocket {
+		t.Errorf("expected legacy socket %s, got %s", legacyUnixSocket, got)
+	}
+}
+
+func TestResolveUnixDaemonAddr_CustomSocketDoesNotUseLegacyDefault(t *testing.T) {
+	tmp := t.TempDir()
+	legacyPath := filepath.Join(tmp, "netbird.sock")
+	createSockFile(t, legacyPath)
+
+	originalLegacySocket := legacyUnixSocket
+	legacyUnixSocket = "unix://" + legacyPath
+	t.Cleanup(func() { legacyUnixSocket = originalLegacySocket })
+	originalScanDir := scanDir
+	setScanDir(filepath.Join(tmp, "empty"))
+	t.Cleanup(func() { setScanDir(originalScanDir) })
+
+	customAddr := "unix://" + filepath.Join(tmp, "custom.sock")
+	got := ResolveUnixDaemonAddr(customAddr)
+	if got != customAddr {
+		t.Errorf("expected custom socket %s, got %s", customAddr, got)
+	}
+}
+
 func TestResolveUnixDaemonAddr_SingleDiscovered(t *testing.T) {
 	tmp := t.TempDir()
 

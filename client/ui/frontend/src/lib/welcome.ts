@@ -8,14 +8,13 @@ const ART = `
 
 export function welcome() {
     const message = `%c${ART}%c
-NetBird — The Only Secure Access Platform You'll Ever Need.
+	Cloink — secure VPN access for your organization.
 
-WEBSITE:      https://netbird.io/
-WE'RE HIRING: https://netbird.io/careers
-OPEN SOURCE:  https://github.com/netbirdio/netbird
+WEBSITE:      https://cloink.4w.ink/
+DOCUMENTATION: https://docs.cloink.4w.ink/
 `;
 
-    // Intentional NetBird ASCII banner in the devtools console.
+    // Intentional Cloink banner in the devtools console.
     // eslint-disable-next-line no-console
     console.log(
         message,

@@ -28,7 +28,7 @@ var (
 
 func handlePanicLog() error {
 	// TODO: move this to a central location
-	logDir := path.Join(os.Getenv("PROGRAMDATA"), "Netbird")
+	logDir := path.Join(os.Getenv("PROGRAMDATA"), "Cloink")
 	logPath := path.Join(logDir, "netbird.err")
 
 	if err := os.MkdirAll(logDir, 0750); err != nil {

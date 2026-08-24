@@ -15,10 +15,9 @@ import (
 // listening answers immediately and one that is not fails immediately.
 const probeTimeout = 300 * time.Millisecond
 
-// ResolveDaemonAddr keeps a client on the named pipe and never silently moves it
-// off. When the pipe does not answer it checks the legacy loopback TCP address, so
-// a client meeting a daemon that has not restarted since the upgrade can say what
-// is wrong, but it does not connect there.
+// ResolveDaemonAddr prefers the Cloink named pipe and falls back to the old
+// NetBird named pipe during the migration window. It never silently moves a
+// client onto the legacy loopback TCP transport.
 //
 // Using that address automatically would be a downgrade the user never asked for:
 // any local process can bind 127.0.0.1 while the daemon is not listening, and the
@@ -36,15 +35,21 @@ func ResolveDaemonAddr(addr string) string {
 		return addr
 	}
 
-	for _, path := range PipePaths("netbird") {
+	for _, path := range PipePaths(strings.TrimPrefix(WindowsPipeAddr, pipeScheme)) {
 		if pipeAvailable(path) {
 			return addr
+		}
+	}
+	for _, path := range PipePaths(strings.TrimPrefix(legacyWindowsPipeAddr, pipeScheme)) {
+		if pipeAvailable(path) {
+			log.Infof("Cloink daemon pipe is not available; using the legacy NetBird daemon pipe during migration")
+			return legacyWindowsPipeAddr
 		}
 	}
 
 	if tcpAvailable(legacyWindowsAddr) {
 		log.Warnf("the daemon is not serving %s, but something is listening on the legacy %s. "+
-			"Restart the NetBird service so it serves the pipe. That address is not used automatically: "+
+			"Restart the Cloink service so it serves the pipe. That address is not used automatically: "+
 			"any local user can bind it and it carries no caller identity, so pass --daemon-addr %s "+
 			"explicitly if you accept that",
 			WindowsPipeAddr, legacyWindowsAddr, legacyWindowsAddr)

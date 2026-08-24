@@ -82,7 +82,7 @@ var (
 	networksDisabled       bool
 
 	rootCmd = &cobra.Command{
-		Use:          "netbird",
+		Use:          "cloink",
 		Short:        "",
 		Long:         "",
 		SilenceUsage: true,
@@ -120,21 +120,21 @@ func Execute() error {
 // maps, custom DNS resolver address, Rosenpass options, auto-connect
 // disabling, lazy connection).
 func init() {
-	defaultConfigPathDir = "/etc/netbird/"
-	defaultLogFileDir = "/var/log/netbird/"
+	defaultConfigPathDir = "/etc/cloink/"
+	defaultLogFileDir = "/var/log/cloink/"
 
 	oldDefaultConfigPathDir = "/etc/wiretrustee/"
 	oldDefaultLogFileDir = "/var/log/wiretrustee/"
 
 	switch runtime.GOOS {
 	case "windows":
-		defaultConfigPathDir = os.Getenv("PROGRAMDATA") + "\\Netbird\\"
-		defaultLogFileDir = os.Getenv("PROGRAMDATA") + "\\Netbird\\"
+		defaultConfigPathDir = os.Getenv("PROGRAMDATA") + "\\Cloink\\"
+		defaultLogFileDir = os.Getenv("PROGRAMDATA") + "\\Cloink\\"
 
 		oldDefaultConfigPathDir = os.Getenv("PROGRAMDATA") + "\\Wiretrustee\\"
 		oldDefaultLogFileDir = os.Getenv("PROGRAMDATA") + "\\Wiretrustee\\"
 	case "freebsd":
-		defaultConfigPathDir = "/var/db/netbird/"
+		defaultConfigPathDir = "/var/db/cloink/"
 	}
 
 	defaultConfigPath = defaultConfigPathDir + "config.json"
@@ -143,7 +143,7 @@ func init() {
 	oldDefaultConfigPath = oldDefaultConfigPathDir + "config.json"
 	oldDefaultLogFile = oldDefaultLogFileDir + "client.log"
 
-	defaultDaemonAddr := "unix:///var/run/netbird.sock"
+	defaultDaemonAddr := daddr.UnixSocketAddr
 	if runtime.GOOS == "windows" {
 		defaultDaemonAddr = daddr.WindowsPipeAddr
 	}
@@ -151,14 +151,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&daemonAddr, "daemon-addr", defaultDaemonAddr, "Daemon service address to serve CLI requests [unix|tcp|npipe]://[path|host:port|name]")
 	rootCmd.PersistentFlags().StringVarP(&managementURL, "management-url", "m", "", fmt.Sprintf("Management Service URL [http|https]://[host]:[port] (default \"%s\")", profilemanager.DefaultManagementURL))
 	rootCmd.PersistentFlags().StringVar(&adminURL, "admin-url", "", fmt.Sprintf("Admin Panel URL [http|https]://[host]:[port] (default \"%s\")", profilemanager.DefaultAdminURL))
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "info", "sets NetBird log level")
-	rootCmd.PersistentFlags().StringSliceVar(&logFiles, "log-file", []string{defaultLogFile}, "sets NetBird log paths written to simultaneously. If `console` is specified the log will be output to stdout. If `syslog` is specified the log will be sent to syslog daemon. You can pass the flag multiple times or separate entries by `,` character")
+	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "info", "sets Cloink log level")
+	rootCmd.PersistentFlags().StringSliceVar(&logFiles, "log-file", []string{defaultLogFile}, "sets Cloink log paths written to simultaneously. If `console` is specified the log will be output to stdout. If `syslog` is specified the log will be sent to syslog daemon. You can pass the flag multiple times or separate entries by `,` character")
 	rootCmd.PersistentFlags().StringVarP(&setupKey, "setup-key", "k", "", "Setup key obtained from the Management Service Dashboard (used to register peer)")
 	rootCmd.PersistentFlags().StringVar(&setupKeyPath, "setup-key-file", "", "The path to a setup key obtained from the Management Service Dashboard (used to register peer) This is ignored if the setup-key flag is provided.")
 	rootCmd.MarkFlagsMutuallyExclusive("setup-key", "setup-key-file")
 	rootCmd.PersistentFlags().StringVar(&preSharedKey, preSharedKeyFlag, "", "Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.")
 	rootCmd.PersistentFlags().StringVarP(&hostName, "hostname", "n", "", "Sets a custom hostname for the device")
-	rootCmd.PersistentFlags().BoolVarP(&anonymizeFlag, "anonymize", "A", false, "anonymize public IP addresses, MAC addresses, and non-netbird.io domains in logs and status output; private, CGNAT, and link-local IP ranges are kept (see --anonymize-level strict)")
+	rootCmd.PersistentFlags().BoolVarP(&anonymizeFlag, "anonymize", "A", false, "anonymize public IP addresses, MAC addresses, and non-Cloink domains in logs and status output; private, CGNAT, and link-local IP ranges are kept (see --anonymize-level strict)")
 	rootCmd.PersistentFlags().StringVar(&anonymizeLevelFlag, "anonymize-level", "", "anonymization level: \"default\" or \"strict\"; strict also anonymizes private, CGNAT, and link-local IP ranges, peer names, and WireGuard public keys. Setting this flag implies --anonymize")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", profilemanager.DefaultConfigPath, "Overrides the default profile file location")
 
@@ -209,7 +209,7 @@ func init() {
 			`or --external-ip-map ""`,
 	)
 	upCmd.PersistentFlags().StringVar(&customDNSAddress, dnsResolverAddress, "",
-		`Sets a custom address for NetBird's local DNS resolver. `+
+		`Sets a custom address for Cloink's local DNS resolver. `+
 			`If set, the agent won't attempt to discover the best ip and port to listen on. `+
 			`An empty string "" clears the previous configuration. `+
 			`E.g. --dns-resolver-address 127.0.0.1:5053 or --dns-resolver-address ""`,
@@ -443,7 +443,7 @@ func getClient(cmd *cobra.Command) (*grpc.ClientConn, error) {
 		//nolint
 		return nil, fmt.Errorf("failed to connect to daemon error: %v\n"+
 			"If the daemon is not running please run: "+
-			"\nnetbird service install \nnetbird service start\n", err)
+			"\ncloink service install \ncloink service start\n", err)
 	}
 
 	return conn, nil

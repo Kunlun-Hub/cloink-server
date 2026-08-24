@@ -23,14 +23,14 @@ var profileListShowID bool
 
 var profileCmd = &cobra.Command{
 	Use:   "profile",
-	Short: "Manage NetBird client profiles",
+	Short: "Manage Cloink client profiles",
 	Long:  `Commands to list, add, remove, and switch profiles. Profiles allow you to maintain different accounts in one client app.`,
 }
 
 var profileListCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all profiles",
-	Long:    `List all available profiles in the NetBird client.`,
+	Long:    `List all available profiles in the Cloink client.`,
 	Aliases: []string{"ls"},
 	RunE:    listProfilesFunc,
 }
@@ -160,7 +160,7 @@ func addProfileFunc(cmd *cobra.Command, args []string) error {
 	dupCount, _ := countProfilesWithName(cmd.Context(), daemonClient, currUser.Username, profileName)
 	if dupCount > 1 {
 		cmd.Printf("Warning: %d other profile(s) already use the name %q.\n", dupCount-1, profileName)
-		cmd.Println("Use `netbird profile list --show-id` to disambiguate later.")
+		cmd.Println("Use `cloink profile list --show-id` to disambiguate later.")
 	}
 
 	cmd.Printf("Profile added: %s  %s\n", id.ShortID(), profilemanager.StripCtrlChars(profileName))
@@ -200,7 +200,7 @@ func renameProfileFunc(cmd *cobra.Command, args []string) error {
 	dupCount, _ := countProfilesWithName(cmd.Context(), daemonClient, currUser.Username, newProfilename)
 	if dupCount > 1 {
 		cmd.Printf("Warning: %d other profile(s) already use the name %q.\n", dupCount-1, newProfilename)
-		cmd.Println("Use `netbird profile list --show-id` to disambiguate later.")
+		cmd.Println("Use `cloink profile list --show-id` to disambiguate later.")
 	}
 
 	cmd.Printf("Profile renamed from %s to %s\n", profilemanager.StripCtrlChars(resp.OldProfileName), profilemanager.StripCtrlChars(newProfilename))
@@ -319,7 +319,7 @@ func wrapAmbiguityError(err error, handle string) error {
 	case codes.InvalidArgument:
 		msg := st.Message()
 		if strings.Contains(msg, "ambiguous") {
-			return errors.New(msg + "\nRun `netbird profile list --show-id` to see IDs, then select by ID prefix:\n  netbird profile select|remove <id-prefix>")
+			return errors.New(msg + "\nRun `cloink profile list --show-id` to see IDs, then select by ID prefix:\n  cloink profile select|remove <id-prefix>")
 		}
 	case codes.NotFound:
 		return fmt.Errorf("profile %q not found", handle)
@@ -329,7 +329,7 @@ func wrapAmbiguityError(err error, handle string) error {
 
 // addProfileOnDaemon issues the AddProfile RPC on an existing daemon client
 // and returns the new profile's ID. It is the single entry point for profile
-// creation, shared by `netbird profile add` and the `netbird up --profile
+// creation, shared by `cloink profile add` and the `cloink up --profile
 // <name>` auto-create path.
 func addProfileOnDaemon(ctx context.Context, client proto.DaemonServiceClient, profileName, username string) (profilemanager.ID, error) {
 	resp, err := client.AddProfile(ctx, &proto.AddProfileRequest{

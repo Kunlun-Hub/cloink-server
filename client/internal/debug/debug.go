@@ -37,10 +37,10 @@ import (
 const readmeContent = `This debug bundle contains the following files.
 If anonymization is enabled (--anonymize / --anonymize-level), the files are anonymized to protect sensitive information.
 
-status.txt: Anonymized status information of the NetBird client.
-client.log: Most recent, anonymized client log file of the NetBird client.
-netbird.err: Most recent, anonymized stderr log file of the NetBird client.
-netbird.out: Most recent, anonymized stdout log file of the NetBird client.
+status.txt: Anonymized status information of the Cloink client.
+client.log: Most recent, anonymized client log file of the Cloink client.
+cloink.err: Most recent, anonymized stderr log file of the Cloink client.
+cloink.out: Most recent, anonymized stdout log file of the Cloink client.
 routes.txt: Detailed system routing table in tabular format including destination, gateway, interface, metrics, and protocol information, if --system-info flag was provided.
 interfaces.txt: Anonymized network interface information, if --system-info flag was provided.
 ip_rules.txt: Detailed IP routing rules in tabular format including priority, source, destination, interfaces, table, and action information (Linux only), if --system-info flag was provided.
@@ -48,14 +48,14 @@ iptables.txt: Anonymized iptables (IPv4) rules with packet counters, if --system
 ip6tables.txt: Anonymized ip6tables (IPv6) rules with packet counters, if --system-info flag was provided.
 ipset.txt: Anonymized ipset list output, if --system-info flag was provided.
 nftables.txt: Anonymized nftables rules with packet counters across all families (ip, ip6, inet, etc.), if --system-info flag was provided.
-sysctls.txt: Forwarding, reverse-path filter, source-validation, and conntrack accounting sysctl values that the NetBird client may read or modify, if --system-info flag was provided (Linux only).
+sysctls.txt: Forwarding, reverse-path filter, source-validation, and conntrack accounting sysctl values that the Cloink client may read or modify, if --system-info flag was provided (Linux only).
 resolv.conf: DNS resolver configuration from /etc/resolv.conf (Unix systems only), if --system-info flag was provided.
 scutil_dns.txt: DNS configuration from scutil --dns (macOS only), if --system-info flag was provided.
 dns_windows.txt: Anonymized NRPT rules and policy table in effect, DNS client policy, and per-interface and per-adapter DNS configuration (Windows only), if --system-info flag was provided.
 resolved_domains.txt: Anonymized resolved domain IP addresses from the status recorder.
-config.txt: Anonymized configuration information of the NetBird client.
+config.txt: Anonymized configuration information of the Cloink client.
 network_map.json: Anonymized sync response containing peer configurations, routes, DNS settings, and firewall rules.
-state.json: Anonymized client state dump containing netbird states for the active profile.
+state.json: Anonymized client state dump containing cloink states for the active profile.
 service_params.json: Sanitized service install parameters (service.json). Sensitive environment variable values are masked. Only present when service.json exists.
 metrics.txt: Buffered client metrics in InfluxDB line protocol format. Only present when metrics collection is enabled. Peer identifiers are anonymized.
 mutex.prof: Mutex profiling information.
@@ -84,7 +84,7 @@ Strict level (--anonymize-level strict), in addition to the default level:
 - Private (RFC 1918), CGNAT (100.64.0.0/10), and link-local (169.254.0.0/16, fe80::/10) addresses are anonymized too.
 - Internal IPv4 addresses are replaced with addresses starting from 198.18.0.0 and internal IPv6 addresses with addresses starting from 2001:db8:1::, so internal addresses remain distinguishable from public ones.
 - Addresses are mapped in order of first appearance: subnet structure, allocation scheme, and gateway conventions are not preserved. Prefix lengths of networks are preserved.
-- Peer names in front of NetBird domains are replaced with numbered placeholders (e.g. peer-1.netbird.cloud), and subdomain labels of other domains with host-N placeholders.
+- Peer names in front of Cloink domains are replaced with numbered placeholders (e.g. peer-1.cloink.cloud), and subdomain labels of other domains with host-N placeholders.
 - WireGuard public keys are replaced with consistent placeholder keys.
 
 Reoccuring IP addresses are replaced with the same anonymized address.
@@ -95,9 +95,9 @@ MAC Addresses
 MAC addresses are replaced at every anonymization level with consistent placeholders counting up from 02:00:00:00:00:01. Broadcast, multicast, and all-zero addresses are kept. At the default level a preserved IPv6 link-local address may still embed a MAC address (EUI-64); the strict level anonymizes those addresses.
 
 Domains
-All domain names (except for the netbird domains) are replaced with randomly generated strings ending in ".domain". Anonymized domains are consistent across all files in the bundle.
+All domain names (except for the cloink domains) are replaced with randomly generated strings ending in ".domain". Anonymized domains are consistent across all files in the bundle.
 Reoccuring domain names are replaced with the same anonymized domain.
-At the strict level, the peer name labels in front of netbird domains are anonymized as well.
+At the strict level, the peer name labels in front of cloink domains are anonymized as well.
 
 Sync Response
 The network_map.json file contains the following anonymized information:
@@ -110,7 +110,7 @@ The network_map.json file contains the following anonymized information:
 SSH keys in the sync response are replaced with a placeholder value. All IP addresses and domains in the sync response follow the same anonymization rules as described above.
 
 State File
-The state.json file contains anonymized internal state information of the NetBird client, including:
+The state.json file contains anonymized internal state information of the Cloink client, including:
 - DNS settings and configuration
 - Firewall rules
 - Exclusion routes
@@ -123,7 +123,7 @@ The state file follows the same anonymization rules as other files:
 - Technical identifiers and non-sensitive data remain unchanged
 
 Mutex, Goroutines, Block, and Heap Profiling Files
-The goroutine, block, mutex, and heap profiling files contain process information that might help the NetBird team diagnose performance or memory issues. The information in these files doesn't contain personal data.
+The goroutine, block, mutex, and heap profiling files contain process information that might help the Cloink team diagnose performance or memory issues. The information in these files doesn't contain personal data.
 You can check each using the following go command:
 
 go tool pprof -http=:8088 <profile_name>.prof
@@ -146,14 +146,14 @@ The routes.txt file contains detailed routing table information in a tabular for
 - Protocol: Routing protocol (kernel, static, dhcp, etc.)
 - Scope: Route scope (global, link, host, etc.)
 - Type: Route type (unicast, local, broadcast, etc.)
-- Table: Routing table name (main, local, netbird, etc.)
+- Table: Routing table name (main, local, cloink, etc.)
 
 The table format provides a comprehensive view of the system's routing configuration, including information from multiple routing tables on Linux systems. This is valuable for troubleshooting routing issues and understanding traffic flow.
 
 For anonymized routes, IP addresses are replaced as described above. The prefix length remains unchanged. Note that for prefixes, the anonymized IP might not be a network address, but the prefix length is still correct. Interface names are anonymized using string anonymization.
 
 Resolved Domains
-The resolved_domains.txt file contains information about domain names that have been resolved to IP addresses by NetBird's DNS resolver. This includes:
+The resolved_domains.txt file contains information about domain names that have been resolved to IP addresses by Cloink's DNS resolver. This includes:
 - Original domain patterns that were configured for routing
 - Resolved domain names that matched those patterns
 - IP address prefixes that were resolved for each domain
@@ -172,7 +172,7 @@ The interfaces.txt file contains information about network interfaces, including
 The IP addresses in the interfaces file are anonymized using the same process as described above. Interface names, indexes, MTUs, and flags are not anonymized.
 
 Configuration
-The config.txt file contains anonymized configuration information of the NetBird client. Sensitive information such as private keys and SSH keys are excluded. The following fields are anonymized:
+The config.txt file contains anonymized configuration information of the Cloink client. Sensitive information such as private keys and SSH keys are excluded. The following fields are anonymized:
 - ManagementURL
 - AdminURL
 - NATExternalIPs
@@ -205,7 +205,7 @@ nftables.txt:
 - All IP addresses are anonymized; chain/table names remain unchanged
 
 sysctls.txt:
-- Forwarding (IPv4 + IPv6, global and per-interface), reverse-path filter, source-validation, conntrack accounting, and TCP-related sysctls that netbird may read or modify
+- Forwarding (IPv4 + IPv6, global and per-interface), reverse-path filter, source-validation, conntrack accounting, and TCP-related sysctls that cloink may read or modify
 - Per-interface keys are enumerated from /proc/sys/net/ipv{4,6}/conf
 - Interface names anonymized when --anonymize is set
 
@@ -217,7 +217,7 @@ The ip_rules.txt file contains detailed IP routing rule information:
 - To: Destination IP prefix or "all" if unspecified
 - IIF: Input interface name or "-" if unspecified
 - OIF: Output interface name or "-" if unspecified
-- Table: Target routing table name (main, local, netbird, etc.)
+- Table: Target routing table name (main, local, cloink, etc.)
 - Action: Rule action (lookup, goto, blackhole, etc.)
 - Mark: Firewall mark value in hex format or "-" if unspecified
 
@@ -249,8 +249,8 @@ dns_windows.txt (Windows only):
 
 const (
 	clientLogFile = "client.log"
-	errorLogFile  = "netbird.err"
-	stdoutLogFile = "netbird.out"
+	errorLogFile  = "cloink.err"
+	stdoutLogFile = "cloink.out"
 
 	// Rotated-log glob prefixes (base log name without extension) passed to
 	// addRotatedLogFiles. The daemon's own log and the GUI log live in the same
@@ -258,8 +258,8 @@ const (
 	clientLogPrefix = "client"
 	uiLogPrefix     = "gui-client"
 
-	darwinErrorLogPath  = "/var/log/netbird.out.log"
-	darwinStdoutLogPath = "/var/log/netbird.err.log"
+	darwinErrorLogPath  = "/var/log/cloink.out.log"
+	darwinStdoutLogPath = "/var/log/cloink.err.log"
 )
 
 // MetricsExporter is an interface for exporting metrics
@@ -381,7 +381,7 @@ func NewBundleGenerator(deps GeneratorDependencies, cfg BundleConfig) *BundleGen
 
 // Generate creates a debug bundle and returns the location.
 func (g *BundleGenerator) Generate() (resp string, err error) {
-	bundlePath, err := os.CreateTemp(g.tempDir, "netbird.debug.*.zip")
+	bundlePath, err := os.CreateTemp(g.tempDir, "cloink.debug.*.zip")
 	if err != nil {
 		return "", fmt.Errorf("create zip file: %w", err)
 	}
@@ -517,7 +517,7 @@ func (g *BundleGenerator) addReadme() error {
 	if g.anonymize {
 		level = g.anonymizeLevel.String()
 	}
-	header := fmt.Sprintf("Netbird debug bundle\nAnonymization level applied to this bundle: %s\n", level)
+	header := fmt.Sprintf("Cloink debug bundle\nAnonymization level applied to this bundle: %s\n", level)
 
 	readmeReader := strings.NewReader(header + readmeContent)
 	if err := g.addFileToZip(readmeReader, "README.txt"); err != nil {
@@ -596,7 +596,7 @@ func (g *BundleGenerator) addConfig() error {
 	// Surface the set of MDM-enforced keys so a support engineer reading
 	// the bundle can tell which field values are user-set vs MDM-overridden.
 	// Same semantics as the mDMManagedFields list returned by the
-	// GetConfig RPC consumed by `netbird debug config`.
+	// GetConfig RPC consumed by `cloink debug config`.
 	if managed := g.internalConfig.Policy().ManagedKeys(); len(managed) > 0 {
 		configContent.WriteString(fmt.Sprintf("MDMManagedFields: %v\n", managed))
 	}
@@ -694,7 +694,7 @@ func isSensitiveEnvVar(key string) bool {
 }
 
 func (g *BundleGenerator) addCommonConfigFields(configContent *strings.Builder) {
-	configContent.WriteString("NetBird Client Configuration:\n\n")
+	configContent.WriteString("Cloink Client Configuration:\n\n")
 
 	if key, err := wgtypes.ParseKey(g.internalConfig.PrivateKey); err == nil {
 		configContent.WriteString(fmt.Sprintf("PublicKey: %s\n", g.anonymizer.AnonymizeWGKey(key.PublicKey().String())))

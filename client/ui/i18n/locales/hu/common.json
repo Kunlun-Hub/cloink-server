@@ -1,6 +1,6 @@
 {
     "tray.tooltip": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "tray.status.disconnected": {
         "message": "Lecsatlakozva"
@@ -51,7 +51,7 @@
         "message": "{count} nap"
     },
     "tray.menu.open": {
-        "message": "NetBird megnyitása"
+        "message": "Cloink megnyitása"
     },
     "tray.menu.connect": {
         "message": "Csatlakozás"
@@ -105,19 +105,19 @@
         "message": "—"
     },
     "tray.menu.quit": {
-        "message": "NetBird bezárása"
+        "message": "Cloink bezárása"
     },
     "notify.daemonOutdated.title": {
-        "message": "A NetBird szolgáltatás elavult"
+        "message": "A Cloink szolgáltatás elavult"
     },
     "notify.daemonOutdated.body": {
-        "message": "Frissítsd a NetBird szolgáltatást az alkalmazás használatához."
+        "message": "Frissítsd a Cloink szolgáltatást az alkalmazás használatához."
     },
     "notify.update.title": {
-        "message": "NetBird frissítés elérhető"
+        "message": "Cloink frissítés elérhető"
     },
     "notify.update.body": {
-        "message": "Elérhető a NetBird {version}."
+        "message": "Elérhető a Cloink {version}."
     },
     "notify.update.enforcedSuffix": {
         "message": " A rendszergazda kötelezővé tette ezt a frissítést."
@@ -138,19 +138,19 @@
         "message": "Az Exit Node frissítése sikertelen: {name}"
     },
     "notify.sessionExpired.title": {
-        "message": "NetBird munkamenet lejárt"
+        "message": "Cloink munkamenet lejárt"
     },
     "notify.sessionExpired.body": {
-        "message": "A NetBird munkamenet lejárt. Kérjük, jelentkezzen be újra."
+        "message": "A Cloink munkamenet lejárt. Kérjük, jelentkezzen be újra."
     },
     "notify.sessionWarning.title": {
         "message": "Munkamenet hamarosan lejár"
     },
     "notify.sessionWarning.body": {
-        "message": "A NetBird munkamenet {remaining} múlva lejár. Kattintson a Meghosszabbítás gombra a megújításhoz."
+        "message": "A Cloink munkamenet {remaining} múlva lejár. Kattintson a Meghosszabbítás gombra a megújításhoz."
     },
     "notify.sessionWarning.bodyGeneric": {
-        "message": "A NetBird munkamenet hamarosan lejár. Kattintson a Meghosszabbítás gombra a megújításhoz."
+        "message": "A Cloink munkamenet hamarosan lejár. Kattintson a Meghosszabbítás gombra a megújításhoz."
     },
     "notify.sessionWarning.extend": {
         "message": "Meghosszabbítás"
@@ -159,10 +159,10 @@
         "message": "Elvetés"
     },
     "notify.sessionWarning.failed": {
-        "message": "A NetBird munkamenet meghosszabbítása sikertelen"
+        "message": "A Cloink munkamenet meghosszabbítása sikertelen"
     },
     "notify.sessionWarning.successTitle": {
-        "message": "NetBird munkamenet meghosszabbítva"
+        "message": "Cloink munkamenet meghosszabbítva"
     },
     "notify.sessionWarning.successBody": {
         "message": "A munkamenet frissítve."
@@ -174,10 +174,10 @@
         "message": "A szerver érvénytelen munkamenet-határidőt küldött. Kérjük, jelentkezzen be újra."
     },
     "notify.mdm.policyApplied.title": {
-        "message": "NetBird beállítások frissítve"
+        "message": "Cloink beállítások frissítve"
     },
     "notify.mdm.policyApplied.body": {
-        "message": "A NetBird konfigurációt az IT-szabályzat frissítette."
+        "message": "A Cloink konfigurációt az IT-szabályzat frissítette."
     },
     "common.cancel": {
         "message": "Mégse"
@@ -225,7 +225,7 @@
         "message": "Betöltés…"
     },
     "common.netbird": {
-        "message": "NetBird"
+        "message": "Cloink"
     },
     "common.noResults.title": {
         "message": "Nincs találat"
@@ -237,7 +237,7 @@
         "message": "Lecsatlakozva"
     },
     "notConnected.description": {
-        "message": "Csatlakozzon először a NetBirdhöz, hogy részletes információkat láthasson a Peerekről, a hálózati erőforrásokról és az Exit Node-okról."
+        "message": "Csatlakozzon először a Cloinkhöz, hogy részletes információkat láthasson a Peerekről, a hálózati erőforrásokról és az Exit Node-okról."
     },
     "connect.status.disconnected": {
         "message": "Lecsatlakozva"
@@ -351,7 +351,7 @@
         "message": "Adjon meg egy profilnevet, pl. Munka, Otthon"
     },
     "profile.dialog.managementHelp": {
-        "message": "NetBird Cloud vagy saját kiszolgáló."
+        "message": "Cloink Cloud vagy saját kiszolgáló."
     },
     "profile.dialog.urlUnreachable": {
         "message": "A szerver nem érhető el. Ellenőrizze az URL-t, vagy adja hozzá a profilt, ha biztos benne, hogy helyes."
@@ -375,7 +375,7 @@
         "message": "Profilváltás"
     },
     "connect.toggle.label": {
-        "message": "NetBird-kapcsolat be/ki"
+        "message": "Cloink-kapcsolat be/ki"
     },
     "connect.localIp.label": {
         "message": "Helyi IP-címek"
@@ -474,7 +474,7 @@
         "message": "Profilok"
     },
     "settings.profiles.intro": {
-        "message": "Kezeljen több NetBird-profilt párhuzamosan, például munkahelyi és személyes fiókokat, vagy különböző felügyeleti szervereket. Lent hozzáadhat, leválaszthat vagy törölhet profilokat."
+        "message": "Kezeljen több Cloink-profilt párhuzamosan, például munkahelyi és személyes fiókokat, vagy különböző felügyeleti szervereket. Lent hozzáadhat, leválaszthat vagy törölhet profilokat."
     },
     "settings.profiles.addProfile": {
         "message": "Profil hozzáadása"
@@ -486,7 +486,7 @@
         "message": "Nincsenek profilok"
     },
     "settings.profiles.emptyDescription": {
-        "message": "Hozzon létre egy profilt a NetBird felügyeleti szerverhez való csatlakozáshoz."
+        "message": "Hozzon létre egy profilt a Cloink felügyeleti szerverhez való csatlakozáshoz."
     },
     "settings.error.loadTitle": {
         "message": "Beállítások betöltése sikertelen"
@@ -543,10 +543,10 @@
         "message": "Asztali értesítések megjelenítése új frissítésekről és kapcsolati eseményekről."
     },
     "settings.general.autostart.label": {
-        "message": "NetBird UI indítása bejelentkezéskor"
+        "message": "Cloink UI indítása bejelentkezéskor"
     },
     "settings.general.autostart.help": {
-        "message": "A NetBird felület automatikus indítása bejelentkezéskor. Ez csak a grafikus felületet érinti, a háttérszolgáltatást nem."
+        "message": "A Cloink felület automatikus indítása bejelentkezéskor. Ez csak a grafikus felületet érinti, a háttérszolgáltatást nem."
     },
     "settings.general.autostart.errorTitle": {
         "message": "Az automatikus indítás módosítása sikertelen"
@@ -556,14 +556,14 @@
         "description": "Toggle label: keep the VPN connection up after quitting the UI."
     },
     "settings.general.keepConnectedOnQuit.help": {
-        "message": "A kapcsolat a háttérben megmarad, miután bezárod a NetBirdöt. Csak akkor szakad meg, ha te magad bontod.",
+        "message": "A kapcsolat a háttérben megmarad, miután bezárod a Cloinköt. Csak akkor szakad meg, ha te magad bontod.",
         "description": "Helper text for the stay-connected-after-quitting toggle."
     },
     "settings.general.language.label": {
         "message": "Megjelenítési nyelv"
     },
     "settings.general.language.help": {
-        "message": "Válassza ki a NetBird felület nyelvét."
+        "message": "Válassza ki a Cloink felület nyelvét."
     },
     "settings.general.language.search": {
         "message": "Nyelv keresése…"
@@ -575,7 +575,7 @@
         "message": "Felügyeleti szerver"
     },
     "settings.general.management.help": {
-        "message": "Csatlakozás a NetBird Cloudhoz vagy saját üzemeltetésű felügyeleti szerverhez. A módosítások újracsatlakozást váltanak ki."
+        "message": "Csatlakozás a Cloink Cloudhoz vagy saját üzemeltetésű felügyeleti szerverhez. A módosítások újracsatlakozást váltanak ki."
     },
     "settings.general.management.cloud": {
         "message": "Felhő"
@@ -584,16 +584,16 @@
         "message": "Saját üzemeltetésű"
     },
     "settings.general.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlError": {
-        "message": "Adjon meg egy érvényes URL-t, pl. https://netbird.selfhosted.com:443"
+        "message": "Adjon meg egy érvényes URL-t, pl. https://cloink.selfhosted.com:443"
     },
     "settings.general.management.urlUnreachable": {
         "message": "A szerver nem érhető el. Ellenőrizze az URL-t, vagy mentse el, ha biztos benne, hogy helyes."
     },
     "settings.general.management.switchCloudTitle": {
-        "message": "Átváltás a NetBird Cloudra?"
+        "message": "Átváltás a Cloink Cloudra?"
     },
     "settings.general.management.switchCloudMessage": {
         "message": "Ez leválasztja a saját üzemeltetésű kiszolgálót.\nLehet, hogy újra be kell jelentkeznie."
@@ -617,7 +617,7 @@
         "message": "DNS engedélyezése"
     },
     "settings.network.dns.help": {
-        "message": "A NetBird által kezelt DNS-beállítások alkalmazása a gazda DNS-feloldójára."
+        "message": "A Cloink által kezelt DNS-beállítások alkalmazása a gazda DNS-feloldójára."
     },
     "settings.network.clientRoutes.label": {
         "message": "Kliens útvonalak engedélyezése"
@@ -635,7 +635,7 @@
         "message": "IPv6 engedélyezése"
     },
     "settings.network.ipv6.help": {
-        "message": "IPv6-címzés használata a NetBird overlay hálózathoz."
+        "message": "IPv6-címzés használata a Cloink overlay hálózathoz."
     },
     "settings.security.section.firewall": {
         "message": "Tűzfal"
@@ -680,7 +680,7 @@
         "message": "SSH szerver engedélyezése"
     },
     "settings.ssh.server.help": {
-        "message": "Futtassa a NetBird SSH szervert ezen a gazdán, hogy más Peerek csatlakozhassanak."
+        "message": "Futtassa a Cloink SSH szervert ezen a gazdán, hogy más Peerek csatlakozhassanak."
     },
     "settings.ssh.root.label": {
         "message": "Root bejelentkezés engedélyezése"
@@ -755,7 +755,7 @@
         "message": "Pre-shared kulcs"
     },
     "settings.advanced.psk.help": {
-        "message": "Opcionális WireGuard PSK további szimmetrikus titkosításhoz. Nem azonos a NetBird telepítőkulccsal. Csak olyan Peerekkel kommunikál, akik ugyanazt a pre-shared kulcsot használják."
+        "message": "Opcionális WireGuard PSK további szimmetrikus titkosításhoz. Nem azonos a Cloink telepítőkulccsal. Csak olyan Peerekkel kommunikál, akik ugyanazt a pre-shared kulcsot használják."
     },
     "settings.troubleshooting.section.title": {
         "message": "Hibakeresési csomag"
@@ -785,10 +785,10 @@
         "message": "Tartalmazza az OS-t, a kernelt, a hálózati interfészeket és az útválasztási táblákat."
     },
     "settings.troubleshooting.upload.label": {
-        "message": "Csomag feltöltése a NetBird szerverekre"
+        "message": "Csomag feltöltése a Cloink szerverekre"
     },
     "settings.troubleshooting.upload.help": {
-        "message": "Egy feltöltési kulcsot ad vissza, amelyet megoszthat a NetBird támogatással."
+        "message": "Egy feltöltési kulcsot ad vissza, amelyet megoszthat a Cloink támogatással."
     },
     "settings.troubleshooting.trace.label": {
         "message": "Trace naplók engedélyezése"
@@ -833,7 +833,7 @@
         "message": "Csomag elmentve"
     },
     "settings.troubleshooting.done.uploadedDescription": {
-        "message": "Ossza meg az alábbi feltöltési kulcsot a <docs>NetBird támogatással</docs>. A helyi másolat is elmentve van az eszközén."
+        "message": "Ossza meg az alábbi feltöltési kulcsot a <docs>Cloink támogatással</docs>. A helyi másolat is elmentve van az eszközén."
     },
     "settings.troubleshooting.done.savedDescription": {
         "message": "A hibakeresési csomag helyileg elmentve."
@@ -854,7 +854,7 @@
         "message": "Feltöltés sikertelen. A csomag továbbra is el van mentve helyileg."
     },
     "settings.troubleshooting.stage.reconnecting": {
-        "message": "NetBird újracsatlakoztatása…"
+        "message": "Cloink újracsatlakoztatása…"
     },
     "settings.troubleshooting.stage.capturing": {
         "message": "Hibakeresési naplók rögzítése"
@@ -863,16 +863,16 @@
         "message": "Hibakeresési csomag generálása…"
     },
     "settings.troubleshooting.stage.uploading": {
-        "message": "Feltöltés a NetBirdhöz…"
+        "message": "Feltöltés a Cloinkhöz…"
     },
     "settings.troubleshooting.stage.cancelling": {
         "message": "Megszakítás…"
     },
     "settings.about.client": {
-        "message": "NetBird Kliens v{version}"
+        "message": "Cloink Kliens v{version}"
     },
     "settings.about.clientName": {
-        "message": "NetBird Kliens"
+        "message": "Cloink Kliens"
     },
     "settings.about.development": {
         "message": "[Fejlesztés]"
@@ -884,7 +884,7 @@
         "message": "GUI"
     },
     "settings.about.copyright": {
-        "message": "© {year} NetBird. Minden jog fenntartva."
+        "message": "© {year} Cloink. Minden jog fenntartva."
     },
     "settings.about.links.imprint": {
         "message": "Impresszum"
@@ -914,7 +914,7 @@
         "message": "Visszajelzés"
     },
     "update.banner.message": {
-        "message": "A NetBird {version} telepítésre kész."
+        "message": "A Cloink {version} telepítésre kész."
     },
     "update.banner.later": {
         "message": "Később"
@@ -938,7 +938,7 @@
         "message": "Letöltés"
     },
     "update.card.autoCheckInterval": {
-        "message": "A NetBird a háttérben keres frissítéseket."
+        "message": "A Cloink a háttérben keres frissítéseket."
     },
     "update.card.changelog": {
         "message": "Változásnapló"
@@ -950,13 +950,13 @@
         "message": "Frissítés elérhető"
     },
     "update.overlay.updatingVersion": {
-        "message": "NetBird frissítése a következőre: v{version}"
+        "message": "Cloink frissítése a következőre: v{version}"
     },
     "update.overlay.updating": {
-        "message": "NetBird frissítése"
+        "message": "Cloink frissítése"
     },
     "update.overlay.description": {
-        "message": "Egy újabb verzió elérhető és települ. A NetBird automatikusan újraindul a frissítés befejeztével."
+        "message": "Egy újabb verzió elérhető és települ. A Cloink automatikusan újraindul a frissítés befejeztével."
     },
     "update.overlay.error.timeoutTitle": {
         "message": "A frissítés túl sokáig tart"
@@ -1046,22 +1046,22 @@
         "message": "Frissítés"
     },
     "window.title.welcome": {
-        "message": "Üdvözli a NetBird"
+        "message": "Üdvözli a Cloink"
     },
     "window.title.error": {
         "message": "Hiba"
     },
     "welcome.title": {
-        "message": "Keresse a NetBirdöt a tálcán"
+        "message": "Keresse a Cloinköt a tálcán"
     },
     "welcome.titleMac": {
-        "message": "Keresse a NetBirdöt a menüsorban"
+        "message": "Keresse a Cloinköt a menüsorban"
     },
     "welcome.description": {
-        "message": "A NetBird a tálcán fut. Kattintson az ikonra a csatlakozáshoz, profilváltáshoz vagy a beállítások megnyitásához."
+        "message": "A Cloink a tálcán fut. Kattintson az ikonra a csatlakozáshoz, profilváltáshoz vagy a beállítások megnyitásához."
     },
     "welcome.descriptionMac": {
-        "message": "A NetBird a menüsorban fut. Kattintson az ikonra a csatlakozáshoz, profilváltáshoz vagy a beállítások megnyitásához."
+        "message": "A Cloink a menüsorban fut. Kattintson az ikonra a csatlakozáshoz, profilváltáshoz vagy a beállítások megnyitásához."
     },
     "welcome.continue": {
         "message": "Folytatás"
@@ -1070,13 +1070,13 @@
         "message": "Vissza"
     },
     "welcome.management.title": {
-        "message": "NetBird beállítása"
+        "message": "Cloink beállítása"
     },
     "welcome.management.description": {
-        "message": "Kattintson a Folytatás gombra a kezdéshez, vagy válassza a „Saját üzemeltetésű” lehetőséget, ha saját NetBird-szervere van."
+        "message": "Kattintson a Folytatás gombra a kezdéshez, vagy válassza a „Saját üzemeltetésű” lehetőséget, ha saját Cloink-szervere van."
     },
     "welcome.management.cloud.title": {
-        "message": "NetBird Cloud"
+        "message": "Cloink Cloud"
     },
     "welcome.management.cloud.description": {
         "message": "Használja az általunk üzemeltetett szolgáltatást. Nincs szükség beállításra."
@@ -1091,10 +1091,10 @@
         "message": "Felügyeleti szerver URL"
     },
     "welcome.management.urlPlaceholder": {
-        "message": "https://netbird.selfhosted.com:443"
+        "message": "https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlInvalid": {
-        "message": "Adjon meg egy érvényes URL-t, pl. https://netbird.selfhosted.com:443"
+        "message": "Adjon meg egy érvényes URL-t, pl. https://cloink.selfhosted.com:443"
     },
     "welcome.management.urlUnreachable": {
         "message": "A szerver nem érhető el. Ellenőrizze az URL-t vagy a hálózatot, majd folytassa, ha biztos benne, hogy helyes."
@@ -1172,10 +1172,10 @@
         "message": "Domain"
     },
     "peers.details.netbirdIp": {
-        "message": "NetBird IP"
+        "message": "Cloink IP"
     },
     "peers.details.netbirdIpv6": {
-        "message": "NetBird IPv6"
+        "message": "Cloink IPv6"
     },
     "peers.details.publicKey": {
         "message": "Nyilvános kulcs"
@@ -1310,7 +1310,7 @@
         "message": "Bontás"
     },
     "daemon.unavailable.title": {
-        "message": "A NetBird szolgáltatás nem fut"
+        "message": "A Cloink szolgáltatás nem fut"
     },
     "daemon.unavailable.description": {
         "message": "Az alkalmazás automatikusan újracsatlakozik, amint a szolgáltatás újra elérhető."
@@ -1319,7 +1319,7 @@
         "message": "Dokumentáció"
     },
     "daemon.outdated.title": {
-        "message": "A NetBird Kliens elavult"
+        "message": "A Cloink Kliens elavult"
     },
     "daemon.outdated.description": {
         "message": "Az új GUI nem kompatibilis a régebbi klienseddel. Frissítsd a klienst az új alkalmazás használatához."
@@ -1346,7 +1346,7 @@
         "message": "A szerver elutasította a bejelentkezést."
     },
     "error.daemon_unreachable": {
-        "message": "A NetBird szolgáltatás nem válaszol. Kérjük, ellenőrizze, hogy fut-e a szolgáltatás."
+        "message": "A Cloink szolgáltatás nem válaszol. Kérjük, ellenőrizze, hogy fut-e a szolgáltatás."
     },
     "error.unknown": {
         "message": "A művelet meghiúsult."

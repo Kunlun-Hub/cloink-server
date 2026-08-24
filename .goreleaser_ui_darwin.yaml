@@ -1,6 +1,6 @@
 version: 2
 
-project_name: netbird-ui
+project_name: cloink-ui
 
 before:
   hooks:
@@ -11,9 +11,9 @@ before:
     - sh -c 'cd client/ui/frontend && pnpm install --frozen-lockfile && pnpm build'
 
 builds:
-  - id: netbird-ui-darwin
+  - id: cloink-ui-darwin
     dir: client/ui
-    binary: netbird-ui
+    binary: cloink-ui
     env:
       - CGO_ENABLED=1
       - MACOSX_DEPLOYMENT_TARGET=11.0
@@ -33,11 +33,11 @@ builds:
       - production
 
 universal_binaries:
-  - id: netbird-ui-darwin
+  - id: cloink-ui-darwin
 
 archives:
   - builds:
-      - netbird-ui-darwin
+      - cloink-ui-darwin
 
 checksum:
   name_template: "{{ .ProjectName }}_darwin_checksums.txt"
@@ -47,7 +47,7 @@ changelog:
 release:
   # Uploads into the release created by the main .goreleaser.yaml run.
   # make_latest stays false everywhere: the signing pipeline
-  # (netbirdio/sign-pipelines) marks the release latest after the Windows
+  # The Cloink signing pipeline marks the release latest after the Windows
   # and macOS artifacts are signed.
   make_latest: false
   prerelease: auto
