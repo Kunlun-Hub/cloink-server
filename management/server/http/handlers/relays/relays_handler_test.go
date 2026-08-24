@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	nbcontext "github.com/netbirdio/netbird/management/server/context"

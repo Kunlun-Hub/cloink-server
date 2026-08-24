@@ -27,8 +27,8 @@ func (l *recordingFlowLogger) StoreEvent(event nftypes.EventFields) {
 func TestTrackedLifecycleEventsReportCountersAtEnd(t *testing.T) {
 	logger := &recordingFlowLogger{}
 	flowID := uuid.New()
-	newBase := func() BaseConnTrack {
-		base := BaseConnTrack{
+	newBase := func() *BaseConnTrack {
+		base := &BaseConnTrack{
 			FlowId:    flowID,
 			Direction: nftypes.Egress,
 			SourceIP:  netip.MustParseAddr("100.64.0.1"),
@@ -39,17 +39,17 @@ func TestTrackedLifecycleEventsReportCountersAtEnd(t *testing.T) {
 	}
 
 	tcp := &TCPTracker{flowLogger: logger}
-	tcpConn := &TCPConnTrack{BaseConnTrack: newBase(), SourcePort: 1234, DestPort: 443}
+	tcpConn := &TCPConnTrack{BaseConnTrack: *newBase(), SourcePort: 1234, DestPort: 443}
 	tcp.sendEvent(nftypes.TypeStart, tcpConn, []byte("rule"))
 	tcp.sendEvent(nftypes.TypeEnd, tcpConn, nil)
 
 	udp := &UDPTracker{flowLogger: logger}
-	udpConn := &UDPConnTrack{BaseConnTrack: newBase(), SourcePort: 1234, DestPort: 53}
+	udpConn := &UDPConnTrack{BaseConnTrack: *newBase(), SourcePort: 1234, DestPort: 53}
 	udp.sendEvent(nftypes.TypeStart, udpConn, []byte("rule"))
 	udp.sendEvent(nftypes.TypeEnd, udpConn, nil)
 
 	icmp := &ICMPTracker{flowLogger: logger}
-	icmpConn := &ICMPConnTrack{BaseConnTrack: newBase(), ICMPType: 8}
+	icmpConn := &ICMPConnTrack{BaseConnTrack: *newBase(), ICMPType: 8}
 	icmp.sendEvent(nftypes.TypeStart, icmpConn, []byte("rule"))
 	icmp.sendEvent(nftypes.TypeEnd, icmpConn, nil)
 
