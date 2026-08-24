@@ -41,7 +41,7 @@ func TestManager_Update(t *testing.T) {
 	publicKey := []byte("test-public-key")
 	statusRecorder := peer.NewRecorder("")
 
-	manager := NewManager(mockIFace, publicKey, statusRecorder)
+	manager := NewManager(mockIFace, publicKey, statusRecorder, "")
 
 	tests := []struct {
 		name   string
@@ -105,7 +105,7 @@ func TestManager_Update_TokenPreservation(t *testing.T) {
 	}
 
 	publicKey := []byte("test-public-key")
-	manager := NewManager(mockIFace, publicKey, nil)
+	manager := NewManager(mockIFace, publicKey, nil, "")
 
 	// First update with tokens
 	initialConfig := &types.FlowConfig{

@@ -4,14 +4,71 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/client/firewall/uspfilter/log"
 	"github.com/netbirdio/netbird/client/internal/netflow"
+	nftypes "github.com/netbirdio/netbird/client/internal/netflow/types"
 )
 
 var logger = log.NewFromLogrus(logrus.StandardLogger())
-var flowLogger = netflow.NewManager(nil, []byte{}, nil).GetLogger()
+var flowLogger = netflow.NewManager(nil, []byte{}, nil, "").GetLogger()
+
+type recordingFlowLogger struct {
+	nftypes.FlowLogger
+	events []nftypes.EventFields
+}
+
+func (l *recordingFlowLogger) StoreEvent(event nftypes.EventFields) {
+	l.events = append(l.events, event)
+}
+
+func TestTrackedLifecycleEventsReportCountersAtEnd(t *testing.T) {
+	logger := &recordingFlowLogger{}
+	flowID := uuid.New()
+	newBase := func() BaseConnTrack {
+		base := BaseConnTrack{
+			FlowId:    flowID,
+			Direction: nftypes.Egress,
+			SourceIP:  netip.MustParseAddr("100.64.0.1"),
+			DestIP:    netip.MustParseAddr("100.64.0.2"),
+		}
+		base.UpdateCounters(nftypes.Egress, 100)
+		return base
+	}
+
+	tcp := &TCPTracker{flowLogger: logger}
+	tcpConn := &TCPConnTrack{BaseConnTrack: newBase(), SourcePort: 1234, DestPort: 443}
+	tcp.sendEvent(nftypes.TypeStart, tcpConn, []byte("rule"))
+	tcp.sendEvent(nftypes.TypeEnd, tcpConn, nil)
+
+	udp := &UDPTracker{flowLogger: logger}
+	udpConn := &UDPConnTrack{BaseConnTrack: newBase(), SourcePort: 1234, DestPort: 53}
+	udp.sendEvent(nftypes.TypeStart, udpConn, []byte("rule"))
+	udp.sendEvent(nftypes.TypeEnd, udpConn, nil)
+
+	icmp := &ICMPTracker{flowLogger: logger}
+	icmpConn := &ICMPConnTrack{BaseConnTrack: newBase(), ICMPType: 8}
+	icmp.sendEvent(nftypes.TypeStart, icmpConn, []byte("rule"))
+	icmp.sendEvent(nftypes.TypeEnd, icmpConn, nil)
+
+	if len(logger.events) != 6 {
+		t.Fatalf("got %d events, want 6", len(logger.events))
+	}
+	for i := 0; i < len(logger.events); i += 2 {
+		start, end := logger.events[i], logger.events[i+1]
+		if start.FlowID != end.FlowID || start.FlowID != flowID {
+			t.Errorf("events %d/%d do not preserve flow ID", i, i+1)
+		}
+		if start.RxPackets != 0 || start.TxPackets != 0 || start.RxBytes != 0 || start.TxBytes != 0 {
+			t.Errorf("start event %d has counters: %+v", i, start)
+		}
+		if end.TxPackets != 1 || end.TxBytes != 100 {
+			t.Errorf("end event %d counters = %d/%d, want 1/100", i+1, end.TxPackets, end.TxBytes)
+		}
+	}
+}
 
 func TestConnKey_String(t *testing.T) {
 	tests := []struct {

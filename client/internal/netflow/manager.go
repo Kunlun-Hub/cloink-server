@@ -23,6 +23,12 @@ import (
 	"github.com/netbirdio/netbird/flow/proto"
 )
 
+const (
+	maxUnackedEvents = 4096
+	maxUnackedBytes  = 4 << 20
+	maxRetryBatch    = 256
+)
+
 // Manager handles netflow tracking and logging
 type Manager struct {
 	mux               sync.Mutex
@@ -31,20 +37,36 @@ type Manager struct {
 	flowConfig        *nftypes.FlowConfig
 	conntrack         nftypes.ConnTracker
 	receiverClient    *client.GRPCClient
-	eventsWithoutAcks nftypes.Store
+	eventsWithoutAcks *store.BoundedMemory
 	publicKey         []byte
 	cancel            context.CancelFunc
 	retryInterval     time.Duration
 }
 
-// NewManager creates a new netflow manager
-func NewManager(iface nftypes.IFaceMapper, publicKey []byte, statusRecorder *peer.Status) *Manager {
+// NewManager creates a new netflow manager. An empty stateDir disables the
+// durable outbox and keeps unacknowledged events in memory only, so callers
+// must pass it explicitly instead of relying on a default.
+func NewManager(iface nftypes.IFaceMapper, publicKey []byte, statusRecorder *peer.Status, stateDir string) *Manager {
 	var prefix, prefixV6 netip.Prefix
 	if iface != nil {
 		prefix = iface.Address().Network
 		prefixV6 = iface.Address().IPv6Net
 	}
 	flowLogger := logger.New(statusRecorder, prefix, prefixV6)
+	unacked := store.NewBoundedMemoryStore(maxUnackedEvents, maxUnackedBytes)
+	switch {
+	case stateDir == "":
+		log.Warn("flow outbox is unavailable: no state directory configured, unacknowledged flow events are kept in memory and lost on restart")
+		unacked.MarkIncomplete(store.IncompleteOutboxUnavailable)
+	default:
+		durable, err := store.NewOutboxStore(stateDir, publicKey, maxUnackedEvents, maxUnackedBytes)
+		if err != nil {
+			log.Errorf("failed to open flow outbox, falling back to in-memory queue, unacknowledged flow events are lost on restart: %v", err)
+			unacked.MarkIncomplete(store.IncompleteOutboxOpen)
+		} else {
+			unacked = durable
+		}
+	}
 
 	var ct nftypes.ConnTracker
 	if runtime.GOOS == "linux" && iface != nil && !iface.IsUserspaceBind() {
@@ -56,7 +78,7 @@ func NewManager(iface nftypes.IFaceMapper, publicKey []byte, statusRecorder *pee
 		conntrack:         ct,
 		publicKey:         publicKey,
 		retryInterval:     time.Second,
-		eventsWithoutAcks: store.NewMemoryStore(),
+		eventsWithoutAcks: unacked,
 	}
 }
 
@@ -223,7 +245,9 @@ func (m *Manager) startSender(ctx context.Context, flowConfigInterval time.Durat
 			collectedEvents := m.logger.ResetAggregationWindow()
 			events := collectedEvents.GetAggregatedEvents()
 			for _, event := range events {
-				m.eventsWithoutAcks.StoreEvent(event)
+				if !m.eventsWithoutAcks.TryStoreEvent(event) {
+					continue
+				}
 				if err := m.send(event); err != nil {
 					log.Errorf("failed to send flow event to server: %v", err)
 				} else {
@@ -251,8 +275,6 @@ func (m *Manager) receiveACKs(ctx context.Context, client *client.GRPCClient, fl
 	}
 }
 
-// We effectively never drop events (see MaxInterval), which makes eventsWithoutAcks unbounded.
-// We may want to limit the max size of the store, and start dropping oldest events when the threshold is reached.
 func (m *Manager) startRetries(ctx context.Context, flowConfigInterval time.Duration) {
 	timer := time.NewTimer(m.retryInterval)
 	retryBackoff := backoff.WithContext(&backoff.ExponentialBackOff{
@@ -272,12 +294,17 @@ func (m *Manager) startRetries(ctx context.Context, flowConfigInterval time.Dura
 			return
 		case <-timer.C:
 			resetBackoff := true
+			retried := 0
 			for _, e := range m.eventsWithoutAcks.GetEvents() {
+				if retried == maxRetryBatch {
+					break
+				}
 				if e.Timestamp.Add(time.Second).After(time.Now()) {
 					// grace period on retries to avoid early retries
 					// do not retry if the event is less than 1 sec old
 					continue
 				}
+				retried++
 				if err := m.send(e); err != nil {
 					if nextBackoff := retryBackoff.NextBackOff(); nextBackoff != backoff.Stop {
 						timer = time.NewTimer(nextBackoff)
@@ -302,7 +329,7 @@ func (m *Manager) send(event *nftypes.Event) error {
 	m.mux.Unlock()
 
 	if client == nil {
-		return nil
+		return errors.New("flow client is not configured")
 	}
 
 	return client.Send(toProtoEvent(m.publicKey, event))

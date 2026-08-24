@@ -11,6 +11,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/activity"
 	nbcontext "github.com/netbirdio/netbird/management/server/context"
 	"github.com/netbirdio/netbird/management/server/permissions"
+	"github.com/netbirdio/netbird/management/server/telemetry"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 	"github.com/netbirdio/netbird/shared/management/http/util"
 )
@@ -19,11 +20,13 @@ import (
 type handler struct {
 	accountManager     account.Manager
 	permissionsManager permissions.Manager
+	metrics            *telemetry.NetworkTrafficMetrics
 }
 
-func AddEndpoints(accountManager account.Manager, permissionsManager permissions.Manager, router *mux.Router) {
+func AddEndpoints(accountManager account.Manager, permissionsManager permissions.Manager, metrics *telemetry.NetworkTrafficMetrics, router *mux.Router) {
 	eventsHandler := newHandler(accountManager)
 	eventsHandler.permissionsManager = permissionsManager
+	eventsHandler.metrics = metrics
 	router.HandleFunc("/events", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
 	router.HandleFunc("/events/audit", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
 	router.HandleFunc("/events/network-traffic", eventsHandler.getAllNetworkTrafficEvents).Methods("GET", "OPTIONS")

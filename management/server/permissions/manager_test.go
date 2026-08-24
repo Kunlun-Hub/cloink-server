@@ -119,6 +119,31 @@ func TestExistingRolesKeepAgentNetworkBehaviorOnSubmodules(t *testing.T) {
 	}
 }
 
+func TestNetworkTrafficRolePermissions(t *testing.T) {
+	manager := NewManager(nil)
+	ctx := context.Background()
+
+	tests := []struct {
+		role    types.UserRole
+		allowed bool
+	}{
+		{types.UserRoleOwner, true},
+		{types.UserRoleAdmin, true},
+		{types.UserRoleAuditor, true},
+		{types.UserRoleNetworkAdmin, true},
+		{types.UserRoleUser, false},
+	}
+	for _, test := range tests {
+		role := roles.RolesMap[test.role]
+		assert.Equal(t, test.allowed,
+			manager.ValidateRoleModuleAccess(ctx, "account", role, modules.NetworkTraffic, operations.Read),
+			"role %s network traffic read permission", test.role)
+		assert.False(t,
+			manager.ValidateRoleModuleAccess(ctx, "account", role, modules.NetworkTraffic, operations.Update),
+			"role %s must not update network traffic", test.role)
+	}
+}
+
 func TestGetPermissionsByRoleIncludesSubmodules(t *testing.T) {
 	manager := NewManager(nil)
 	ctx := context.Background()

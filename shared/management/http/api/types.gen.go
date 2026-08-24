@@ -812,6 +812,21 @@ func (e NetworkResourceType) Valid() bool {
 	}
 }
 
+// Defines values for NetworkTrafficGroupScope.
+const (
+	NetworkTrafficGroupScopeOVERLAYDATAPLANE NetworkTrafficGroupScope = "OVERLAY_DATA_PLANE"
+)
+
+// Valid indicates whether the value is a known member of the NetworkTrafficGroupScope enum.
+func (e NetworkTrafficGroupScope) Valid() bool {
+	switch e {
+	case NetworkTrafficGroupScopeOVERLAYDATAPLANE:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NotificationChannelType.
 const (
 	NotificationChannelTypeEmail   NotificationChannelType = "email"
@@ -4035,6 +4050,9 @@ type NetworkTrafficEvent struct {
 	FlowId string             `json:"flow_id"`
 	Icmp   NetworkTrafficICMP `json:"icmp"`
 
+	// Id Unique ID of the persisted network traffic event.
+	Id string `json:"id"`
+
 	// NumOfDrops Number of drop events.
 	NumOfDrops int `json:"num_of_drops"`
 
@@ -4087,7 +4105,47 @@ type NetworkTrafficEventsResponse struct {
 	TotalPages int `json:"total_pages"`
 
 	// TotalRecords Total number of event records available
-	TotalRecords int `json:"total_records"`
+	TotalRecords int64 `json:"total_records"`
+}
+
+// NetworkTrafficGroup defines model for NetworkTrafficGroup.
+type NetworkTrafficGroup struct {
+	DetailCount int64 `json:"detail_count"`
+
+	// Key Opaque identity for this group. Use the explicit window_start, user.id, and reporter_id fields for detail requests.
+	Key         string                   `json:"key"`
+	NumOfDrops  int64                    `json:"num_of_drops"`
+	NumOfEnds   int64                    `json:"num_of_ends"`
+	NumOfStarts int64                    `json:"num_of_starts"`
+	ReporterId  string                   `json:"reporter_id"`
+	RxBytes     int64                    `json:"rx_bytes"`
+	RxPackets   int64                    `json:"rx_packets"`
+	Scope       NetworkTrafficGroupScope `json:"scope"`
+	TxBytes     int64                    `json:"tx_bytes"`
+	TxPackets   int64                    `json:"tx_packets"`
+	User        NetworkTrafficUser       `json:"user"`
+	WindowStart time.Time                `json:"window_start"`
+}
+
+// NetworkTrafficGroupScope defines model for NetworkTrafficGroup.Scope.
+type NetworkTrafficGroupScope string
+
+// NetworkTrafficGroupsResponse defines model for NetworkTrafficGroupsResponse.
+type NetworkTrafficGroupsResponse struct {
+	// Data List of network traffic groups
+	Data []NetworkTrafficGroup `json:"data"`
+
+	// Page Current page number
+	Page int `json:"page"`
+
+	// PageSize Number of items per page
+	PageSize int `json:"page_size"`
+
+	// TotalPages Total number of pages available
+	TotalPages int `json:"total_pages"`
+
+	// TotalRecords Total number of groups available
+	TotalRecords int64 `json:"total_records"`
 }
 
 // NetworkTrafficICMP defines model for NetworkTrafficICMP.
@@ -6220,6 +6278,15 @@ type GetApiAgentNetworkUsageOverviewParamsGranularity string
 
 // GetApiEventsNetworkTrafficParams defines parameters for GetApiEventsNetworkTraffic.
 type GetApiEventsNetworkTrafficParams struct {
+	// Grouped Return grouped traffic windows. Cannot be combined with window_start or group_user_id.
+	Grouped *bool `form:"grouped,omitempty" json:"grouped,omitempty"`
+
+	// WindowStart Exact group window for a detail request. Requires group_user_id and reporter_id.
+	WindowStart *time.Time `form:"window_start,omitempty" json:"window_start,omitempty"`
+
+	// GroupUserId Exact group user for a detail request. The parameter must be present and may be empty for an unknown user.
+	GroupUserId *string `form:"group_user_id,omitempty" json:"group_user_id,omitempty"`
+
 	// Page Page number
 	Page *int `form:"page,omitempty" json:"page,omitempty"`
 
@@ -6268,6 +6335,11 @@ type GetApiEventsNetworkTrafficParamsConnectionType string
 
 // GetApiEventsNetworkTrafficParamsDirection defines parameters for GetApiEventsNetworkTraffic.
 type GetApiEventsNetworkTrafficParamsDirection string
+
+// GetApiEventsNetworkTraffic200JSONResponseBody defines parameters for GetApiEventsNetworkTraffic.
+type GetApiEventsNetworkTraffic200JSONResponseBody struct {
+	union json.RawMessage
+}
 
 // GetApiEventsProxyParams defines parameters for GetApiEventsProxy.
 type GetApiEventsProxyParams struct {
@@ -6949,6 +7021,68 @@ func (t WorkloadResponse) MarshalJSON() ([]byte, error) {
 }
 
 func (t *WorkloadResponse) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsNetworkTrafficEventsResponse returns the union data inside the GetApiEventsNetworkTraffic200JSONResponseBody as a NetworkTrafficEventsResponse
+func (t GetApiEventsNetworkTraffic200JSONResponseBody) AsNetworkTrafficEventsResponse() (NetworkTrafficEventsResponse, error) {
+	var body NetworkTrafficEventsResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNetworkTrafficEventsResponse overwrites any union data inside the GetApiEventsNetworkTraffic200JSONResponseBody as the provided NetworkTrafficEventsResponse
+func (t *GetApiEventsNetworkTraffic200JSONResponseBody) FromNetworkTrafficEventsResponse(v NetworkTrafficEventsResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNetworkTrafficEventsResponse performs a merge with any union data inside the GetApiEventsNetworkTraffic200JSONResponseBody, using the provided NetworkTrafficEventsResponse
+func (t *GetApiEventsNetworkTraffic200JSONResponseBody) MergeNetworkTrafficEventsResponse(v NetworkTrafficEventsResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsNetworkTrafficGroupsResponse returns the union data inside the GetApiEventsNetworkTraffic200JSONResponseBody as a NetworkTrafficGroupsResponse
+func (t GetApiEventsNetworkTraffic200JSONResponseBody) AsNetworkTrafficGroupsResponse() (NetworkTrafficGroupsResponse, error) {
+	var body NetworkTrafficGroupsResponse
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNetworkTrafficGroupsResponse overwrites any union data inside the GetApiEventsNetworkTraffic200JSONResponseBody as the provided NetworkTrafficGroupsResponse
+func (t *GetApiEventsNetworkTraffic200JSONResponseBody) FromNetworkTrafficGroupsResponse(v NetworkTrafficGroupsResponse) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNetworkTrafficGroupsResponse performs a merge with any union data inside the GetApiEventsNetworkTraffic200JSONResponseBody, using the provided NetworkTrafficGroupsResponse
+func (t *GetApiEventsNetworkTraffic200JSONResponseBody) MergeNetworkTrafficGroupsResponse(v NetworkTrafficGroupsResponse) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t GetApiEventsNetworkTraffic200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *GetApiEventsNetworkTraffic200JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

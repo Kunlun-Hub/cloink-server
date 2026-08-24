@@ -17,7 +17,7 @@ import (
 	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
 )
 
-var flowLogger = netflow.NewManager(nil, []byte{}, nil).GetLogger()
+var flowLogger = netflow.NewManager(nil, []byte{}, nil, "").GetLogger()
 
 func TestDefaultManager(t *testing.T) {
 	t.Setenv("NB_WG_KERNEL_DISABLED", "true")

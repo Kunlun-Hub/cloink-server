@@ -2914,6 +2914,10 @@ components:
     NetworkTrafficEvent:
       type: object
       properties:
+        id:
+          type: string
+          description: "Unique ID of the persisted network traffic event."
+          example: "2c7cf42d-1a42-44a8-b376-3be10f15481f"
         flow_id:
           type: string
           description: "FlowID is the ID of the connection flow. Not unique because it can be the same for multiple events (e.g., start and end of the connection)."
@@ -3021,7 +3025,89 @@ components:
           description: Number of items per page
         total_records:
           type: integer
+          format: int64
           description: Total number of event records available
+        total_pages:
+          type: integer
+          description: Total number of pages available
+      required:
+        - data
+        - page
+        - page_size
+        - total_records
+        - total_pages
+    NetworkTrafficGroup:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Opaque identity for this group. Use the explicit window_start, user.id, and reporter_id fields for detail requests.
+        scope:
+          type: string
+          enum: [ OVERLAY_DATA_PLANE ]
+        window_start:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/NetworkTrafficUser'
+        reporter_id:
+          type: string
+        detail_count:
+          type: integer
+          format: int64
+        rx_bytes:
+          type: integer
+          format: int64
+        rx_packets:
+          type: integer
+          format: int64
+        tx_bytes:
+          type: integer
+          format: int64
+        tx_packets:
+          type: integer
+          format: int64
+        num_of_starts:
+          type: integer
+          format: int64
+        num_of_ends:
+          type: integer
+          format: int64
+        num_of_drops:
+          type: integer
+          format: int64
+      required:
+        - key
+        - scope
+        - window_start
+        - user
+        - reporter_id
+        - detail_count
+        - rx_bytes
+        - rx_packets
+        - tx_bytes
+        - tx_packets
+        - num_of_starts
+        - num_of_ends
+        - num_of_drops
+    NetworkTrafficGroupsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          description: List of network traffic groups
+          items:
+            $ref: "#/components/schemas/NetworkTrafficGroup"
+        page:
+          type: integer
+          description: Current page number
+        page_size:
+          type: integer
+          description: Number of items per page
+        total_records:
+          type: integer
+          format: int64
+          description: Total number of groups available
         total_pages:
           type: integer
           description: Total number of pages available
@@ -10015,11 +10101,33 @@ paths:
           "$ref": "#/components/responses/internal_error"
   /api/events/network-traffic:
     get:
-      summary: List all Traffic Events
-      description: Returns a list of all network traffic events
+      summary: List Traffic Events or Groups
+      description: Returns raw network traffic events by default, grouped windows when grouped=true, or exact group details when window_start and group_user_id are present. Detail requests must repeat reporter_id and all active parent filters, including start_date and end_date. total_records counts groups in grouped mode and events otherwise.
       tags: [ Events ]
       x-experimental: true
       parameters:
+        - name: grouped
+          in: query
+          description: Return grouped traffic windows. Cannot be combined with window_start or group_user_id.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: window_start
+          in: query
+          description: Exact group window for a detail request. Requires group_user_id and reporter_id.
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: group_user_id
+          in: query
+          description: Exact group user for a detail request. The parameter must be present and may be empty for an unknown user.
+          required: false
+          allowEmptyValue: true
+          schema:
+            type: string
+            maxLength: 1024
         - name: page
           in: query
           description: Page number
@@ -10049,6 +10157,7 @@ paths:
           required: false
           schema:
             type: string
+            maxLength: 1024
         - name: source_id
           in: query
           description: Filter by source endpoint ID
@@ -10110,11 +10219,13 @@ paths:
             format: date-time
       responses:
         "200":
-          description: List of network traffic events
+          description: Network traffic event records or grouped traffic windows
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NetworkTrafficEventsResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/NetworkTrafficEventsResponse"
+                  - $ref: "#/components/schemas/NetworkTrafficGroupsResponse"
         '400':
           "$ref": "#/components/responses/bad_request"
         '401':

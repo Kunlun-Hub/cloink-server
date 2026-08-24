@@ -3,6 +3,7 @@
 package conntrack
 
 import (
+	"net/netip"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 	nfct "github.com/ti-mo/conntrack"
 	"github.com/ti-mo/netfilter"
+
+	nftypes "github.com/netbirdio/netbird/client/internal/netflow/types"
+	nbnet "github.com/netbirdio/netbird/client/net"
 )
 
 type mockListener struct {
@@ -35,6 +39,73 @@ func (m *mockListener) Close() error {
 		close(m.closedCh)
 	}
 	return nil
+}
+
+type recordingFlowLogger struct {
+	nftypes.FlowLogger
+	events []nftypes.EventFields
+}
+
+func (l *recordingFlowLogger) StoreEvent(event nftypes.EventFields) {
+	l.events = append(l.events, event)
+}
+
+func TestHandleEventCounters(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mark      uint32
+		rxPackets uint64
+		txPackets uint64
+		rxBytes   uint64
+		txBytes   uint64
+	}{
+		{name: "ingress", mark: nbnet.DataPlaneMarkIn, rxPackets: 11, txPackets: 22, rxBytes: 1100, txBytes: 2200},
+		{name: "egress", mark: nbnet.DataPlaneMarkOut, rxPackets: 22, txPackets: 11, rxBytes: 2200, txBytes: 1100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &recordingFlowLogger{}
+			tracker := New(logger, nil)
+			flow := nfct.NewFlow(uint8(nftypes.TCP), 0,
+				netip.MustParseAddr("100.64.0.1"), netip.MustParseAddr("100.64.0.2"),
+				1234, 443, 0, tc.mark)
+			flow.ID = 42
+			flow.CountersOrig = nfct.Counter{Packets: 11, Bytes: 1100}
+			flow.CountersReply = nfct.Counter{Packets: 22, Bytes: 2200}
+
+			tracker.handleEvent(nfct.Event{Type: nfct.EventNew, Flow: &flow})
+			tracker.handleEvent(nfct.Event{Type: nfct.EventDestroy, Flow: &flow})
+
+			require.Len(t, logger.events, 2, "new and destroy should be emitted")
+			start, end := logger.events[0], logger.events[1]
+			assert.Equal(t, start.FlowID, end.FlowID, "lifecycle should preserve flow ID")
+			assert.Equal(t, nftypes.TypeStart, start.Type, "new should emit start")
+			assert.Zero(t, start.RxPackets, "start RX packets should be zero")
+			assert.Zero(t, start.TxPackets, "start TX packets should be zero")
+			assert.Zero(t, start.RxBytes, "start RX bytes should be zero")
+			assert.Zero(t, start.TxBytes, "start TX bytes should be zero")
+			assert.Equal(t, nftypes.TypeEnd, end.Type, "destroy should emit end")
+			assert.Equal(t, tc.rxPackets, end.RxPackets, "destroy RX packets should map by direction")
+			assert.Equal(t, tc.txPackets, end.TxPackets, "destroy TX packets should map by direction")
+			assert.Equal(t, tc.rxBytes, end.RxBytes, "destroy RX bytes should map by direction")
+			assert.Equal(t, tc.txBytes, end.TxBytes, "destroy TX bytes should map by direction")
+			assert.Equal(t, flow.TupleOrig.IP.SourceAddress, end.SourceIP, "source should remain original tuple")
+			assert.Equal(t, flow.TupleOrig.IP.DestinationAddress, end.DestIP, "destination should remain original tuple")
+			assert.Equal(t, flow.TupleOrig.Proto.SourcePort, end.SourcePort, "source port should remain original tuple")
+			assert.Equal(t, flow.TupleOrig.Proto.DestinationPort, end.DestPort, "destination port should remain original tuple")
+		})
+	}
+}
+
+func TestHandleEventIgnoresUpdate(t *testing.T) {
+	logger := &recordingFlowLogger{}
+	tracker := New(logger, nil)
+	flow := nfct.NewFlow(uint8(nftypes.UDP), 0,
+		netip.MustParseAddr("100.64.0.1"), netip.MustParseAddr("100.64.0.2"),
+		1234, 53, 0, nbnet.DataPlaneMarkOut)
+
+	tracker.handleEvent(nfct.Event{Type: nfct.EventUpdate, Flow: &flow})
+
+	assert.Empty(t, logger.events, "cumulative update snapshots should be ignored")
 }
 
 func TestReconnectAfterError(t *testing.T) {

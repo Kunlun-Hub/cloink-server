@@ -397,7 +397,7 @@ func (t *ICMPTracker) Close() {
 }
 
 func (t *ICMPTracker) sendEvent(typ nftypes.Type, conn *ICMPConnTrack, ruleID []byte) {
-	t.flowLogger.StoreEvent(nftypes.EventFields{
+	fields := nftypes.EventFields{
 		FlowID:    conn.FlowId,
 		Type:      typ,
 		RuleID:    ruleID,
@@ -407,11 +407,14 @@ func (t *ICMPTracker) sendEvent(typ nftypes.Type, conn *ICMPConnTrack, ruleID []
 		DestIP:    conn.DestIP,
 		ICMPType:  conn.ICMPType,
 		ICMPCode:  conn.ICMPCode,
-		RxPackets: conn.PacketsRx.Load(),
-		TxPackets: conn.PacketsTx.Load(),
-		RxBytes:   conn.BytesRx.Load(),
-		TxBytes:   conn.BytesTx.Load(),
-	})
+	}
+	if typ == nftypes.TypeEnd {
+		fields.RxPackets = conn.PacketsRx.Load()
+		fields.TxPackets = conn.PacketsTx.Load()
+		fields.RxBytes = conn.BytesRx.Load()
+		fields.TxBytes = conn.BytesTx.Load()
+	}
+	t.flowLogger.StoreEvent(fields)
 }
 
 func (t *ICMPTracker) sendStartEvent(direction nftypes.Direction, srcIP netip.Addr, dstIP netip.Addr, typ uint8, code uint8, ruleID []byte, size int) {

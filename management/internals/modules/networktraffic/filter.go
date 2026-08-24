@@ -1,6 +1,8 @@
 package networktraffic
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ const (
 	DefaultSortOrder    = "desc"
 	DefaultRangeMinutes = 5
 	MaxDateRangeDays    = 15
+	MaxQueryValueLength = 1024
 )
 
 var validSortFields = map[string]string{
@@ -24,6 +27,8 @@ var validSortFields = map[string]string{
 	"user_id":     "user_id",
 	"reporter_id": "reporter_id",
 }
+
+var validSortOrders = map[string]string{"asc": "", "desc": ""}
 
 // Filter contains validated network traffic query parameters.
 type Filter struct {
@@ -46,24 +51,59 @@ type Filter struct {
 }
 
 // ParseFromRequest parses and bounds query parameters from an HTTP request.
-func (f *Filter) ParseFromRequest(r *http.Request) {
+func (f *Filter) ParseFromRequest(r *http.Request) error {
 	query := r.URL.Query()
-	f.Page = parsePositiveInt(query.Get("page"), 1)
-	f.PageSize = min(parsePositiveInt(query.Get("page_size"), DefaultPageSize), MaxPageSize)
-	f.SortBy = parseSortField(query.Get("sort_by"))
-	f.SortOrd = parseSortOrder(query.Get("sort_order"))
-	f.Search = parseOptionalString(query.Get("search"))
-	f.UserID = parseOptionalString(query.Get("user_id"))
-	f.ReporterID = parseOptionalString(query.Get("reporter_id"))
-	f.SourceID = parseOptionalString(query.Get("source_id"))
-	f.DestinationID = parseOptionalString(query.Get("destination_id"))
-	f.Protocol = parseOptionalInt(query.Get("protocol"))
-	f.EventType = parseOptionalString(query.Get("type"))
-	f.ConnectionType = parseOptionalString(query.Get("connection_type"))
-	f.Direction = parseOptionalString(query.Get("direction"))
-	f.StartDate = parseOptionalRFC3339(query.Get("start_date"))
-	f.EndDate = parseOptionalRFC3339(query.Get("end_date"))
-	f.normalizeDateRange(time.Now().UTC())
+	var err error
+	if f.Page, err = positiveInt(query, "page", 1, math.MaxInt); err != nil {
+		return err
+	}
+	if f.PageSize, err = positiveInt(query, "page_size", DefaultPageSize, MaxPageSize); err != nil {
+		return err
+	}
+	if f.Page > math.MaxInt/f.PageSize {
+		return fmt.Errorf("network traffic pagination is too large")
+	}
+	if f.SortBy, err = enumValue(query, "sort_by", DefaultSortBy, validSortFields, false); err != nil {
+		return err
+	}
+	if f.SortOrd, err = enumValue(query, "sort_order", DefaultSortOrder, validSortOrders, true); err != nil {
+		return err
+	}
+	f.SortOrd = strings.ToLower(f.SortOrd)
+	if f.Search, err = optionalQueryString(query, "search", true); err != nil {
+		return err
+	}
+	if f.UserID, err = optionalQueryString(query, "user_id", false); err != nil {
+		return err
+	}
+	if f.ReporterID, err = optionalQueryString(query, "reporter_id", false); err != nil {
+		return err
+	}
+	if f.SourceID, err = optionalQueryString(query, "source_id", false); err != nil {
+		return err
+	}
+	if f.DestinationID, err = optionalQueryString(query, "destination_id", false); err != nil {
+		return err
+	}
+	if f.Protocol, err = optionalProtocol(query); err != nil {
+		return err
+	}
+	if f.EventType, err = optionalEnum(query, "type", "TYPE_UNKNOWN", "TYPE_START", "TYPE_END", "TYPE_DROP"); err != nil {
+		return err
+	}
+	if f.ConnectionType, err = optionalEnum(query, "connection_type", ConnectionTypeP2P, ConnectionTypeRouted); err != nil {
+		return err
+	}
+	if f.Direction, err = optionalEnum(query, "direction", "DIRECTION_UNKNOWN", "INGRESS", "EGRESS"); err != nil {
+		return err
+	}
+	if f.StartDate, err = optionalRFC3339(query, "start_date"); err != nil {
+		return err
+	}
+	if f.EndDate, err = optionalRFC3339(query, "end_date"); err != nil {
+		return err
+	}
+	return f.normalizeDateRange(time.Now().UTC())
 }
 
 // Offset returns the database result offset.
@@ -87,78 +127,113 @@ func (f Filter) SortOrder() string {
 	return DefaultSortOrder
 }
 
-func (f *Filter) normalizeDateRange(now time.Time) {
+func (f *Filter) normalizeDateRange(now time.Time) error {
 	endDate := now
 	if f.EndDate != nil {
 		endDate = f.EndDate.UTC()
 	}
-
 	startDate := endDate.Add(-DefaultRangeMinutes * time.Minute)
 	if f.StartDate != nil {
 		startDate = f.StartDate.UTC()
 	}
 	if startDate.After(endDate) {
-		startDate = endDate
+		return fmt.Errorf("start_date must not be after end_date")
 	}
-
-	maxStartDate := endDate.Add(-MaxDateRangeDays * 24 * time.Hour)
-	if startDate.Before(maxStartDate) {
-		startDate = maxStartDate
+	if startDate.Before(endDate.Add(-MaxDateRangeDays * 24 * time.Hour)) {
+		return fmt.Errorf("network traffic date range exceeds %d days", MaxDateRangeDays)
 	}
-
-	f.StartDate = &startDate
-	f.EndDate = &endDate
+	f.StartDate, f.EndDate = &startDate, &endDate
+	return nil
 }
 
-func parsePositiveInt(value string, fallback int) int {
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return fallback
+func scalar(query map[string][]string, name string) (string, bool, error) {
+	values, ok := query[name]
+	if !ok {
+		return "", false, nil
 	}
-	return parsed
+	if len(values) != 1 {
+		return "", false, fmt.Errorf("%s must be specified once", name)
+	}
+	return values[0], true, nil
 }
 
-func parseOptionalString(value string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-func parseOptionalInt(value string) *int {
-	if value == "" {
-		return nil
+func positiveInt(query map[string][]string, name string, fallback, maximum int) (int, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return fallback, err
 	}
 	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return nil
+	if err != nil || parsed < 1 || parsed > maximum {
+		return 0, fmt.Errorf("invalid %s", name)
 	}
-	return &parsed
+	return parsed, nil
 }
 
-func parseOptionalRFC3339(value string) *time.Time {
+func enumValue(query map[string][]string, name, fallback string, valid map[string]string, foldCase bool) (string, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return fallback, err
+	}
+	if foldCase {
+		value = strings.ToLower(value)
+	}
+	if _, ok := valid[value]; !ok {
+		return "", fmt.Errorf("invalid %s", name)
+	}
+	return value, nil
+}
+
+func optionalQueryString(query map[string][]string, name string, trim bool) (*string, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return nil, err
+	}
+	if trim {
+		value = strings.TrimSpace(value)
+	}
 	if value == "" {
-		return nil
+		return nil, fmt.Errorf("%s must not be empty", name)
+	}
+	if len(value) > MaxQueryValueLength {
+		return nil, fmt.Errorf("%s is too long", name)
+	}
+	return &value, nil
+}
+
+func optionalProtocol(query map[string][]string) (*int, error) {
+	value, present, err := scalar(query, "protocol")
+	if err != nil || !present {
+		return nil, err
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 || parsed > 255 {
+		return nil, fmt.Errorf("invalid protocol")
+	}
+	return &parsed, nil
+}
+
+func optionalEnum(query map[string][]string, name string, valid ...string) (*string, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return nil, err
+	}
+	for _, candidate := range valid {
+		if value == candidate {
+			return &value, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid %s", name)
+}
+
+func optionalRFC3339(query map[string][]string, name string) (*time.Time, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return nil, err
 	}
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("invalid %s", name)
 	}
-	return &parsed
-}
-
-func parseSortField(value string) string {
-	if _, ok := validSortFields[value]; ok {
-		return value
-	}
-	return DefaultSortBy
-}
-
-func parseSortOrder(value string) string {
-	value = strings.ToLower(value)
-	if value == "asc" || value == "desc" {
-		return value
-	}
-	return DefaultSortOrder
+	parsed = parsed.UTC()
+	return &parsed, nil
 }

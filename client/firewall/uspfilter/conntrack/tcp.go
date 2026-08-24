@@ -695,7 +695,7 @@ func isValidFlagCombination(flags uint8) bool {
 }
 
 func (t *TCPTracker) sendEvent(typ nftypes.Type, conn *TCPConnTrack, ruleID []byte) {
-	t.flowLogger.StoreEvent(nftypes.EventFields{
+	fields := nftypes.EventFields{
 		FlowID:     conn.FlowId,
 		Type:       typ,
 		RuleID:     ruleID,
@@ -705,9 +705,12 @@ func (t *TCPTracker) sendEvent(typ nftypes.Type, conn *TCPConnTrack, ruleID []by
 		DestIP:     conn.DestIP,
 		SourcePort: conn.SourcePort,
 		DestPort:   conn.DestPort,
-		RxPackets:  conn.PacketsRx.Load(),
-		TxPackets:  conn.PacketsTx.Load(),
-		RxBytes:    conn.BytesRx.Load(),
-		TxBytes:    conn.BytesTx.Load(),
-	})
+	}
+	if typ == nftypes.TypeEnd {
+		fields.RxPackets = conn.PacketsRx.Load()
+		fields.TxPackets = conn.PacketsTx.Load()
+		fields.RxBytes = conn.BytesRx.Load()
+		fields.TxBytes = conn.BytesTx.Load()
+	}
+	t.flowLogger.StoreEvent(fields)
 }

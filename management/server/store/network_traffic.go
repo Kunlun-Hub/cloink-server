@@ -62,6 +62,7 @@ func (s *SqlStore) GetAccountNetworkTrafficEvents(ctx context.Context, lockStren
 	}
 
 	query = query.Order(filter.SortColumn() + " " + strings.ToUpper(filter.SortOrder())).
+		Order("id " + strings.ToUpper(filter.SortOrder())).
 		Limit(filter.PageSize).Offset(filter.Offset())
 	if lockStrength != LockingStrengthNone {
 		query = query.Clauses(clause.Locking{Strength: string(lockStrength)})
@@ -70,6 +71,71 @@ func (s *SqlStore) GetAccountNetworkTrafficEvents(ctx context.Context, lockStren
 	var events []*networktraffic.Event
 	if err := query.Find(&events).Error; err != nil {
 		return nil, 0, status.Errorf(status.Internal, "get network traffic events: %v", err)
+	}
+	return events, total, nil
+}
+
+// GetAccountNetworkTrafficGroups returns one page of account-scoped collection groups.
+// Counter overflow is returned as an internal error rather than a truncated total.
+func (s *SqlStore) GetAccountNetworkTrafficGroups(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Group, int64, error) {
+	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > networktraffic.MaxPageSize {
+		return nil, 0, status.Errorf(status.InvalidArgument, "invalid network traffic group pagination")
+	}
+	if lockStrength != LockingStrengthNone {
+		return nil, 0, status.Errorf(status.InvalidArgument, "network traffic group queries do not support row locking")
+	}
+	filtered := func() *gorm.DB {
+		return applyNetworkTrafficFilters(s.db.WithContext(ctx).Model(&networktraffic.Event{}).Where("account_id = ?", accountID), filter)
+	}
+	grouped := filtered().Select(`window_start,
+		user_id, MAX(user_name) AS user_name, MAX(user_email) AS user_email, reporter_id,
+		COUNT(*) AS detail_count, COALESCE(SUM(rx_bytes), 0) AS rx_bytes, COALESCE(SUM(rx_packets), 0) AS rx_packets,
+		COALESCE(SUM(tx_bytes), 0) AS tx_bytes, COALESCE(SUM(tx_packets), 0) AS tx_packets,
+		COALESCE(SUM(num_of_starts), 0) AS num_of_starts, COALESCE(SUM(num_of_ends), 0) AS num_of_ends, COALESCE(SUM(num_of_drops), 0) AS num_of_drops`).
+		Group("window_start, user_id, reporter_id")
+	query := s.db.WithContext(ctx).Table("(?) AS network_traffic_groups", grouped).
+		Select("network_traffic_groups.*, COUNT(*) OVER() AS total_groups").
+		Order("window_start DESC, user_id DESC, reporter_id DESC").
+		Limit(filter.PageSize).Offset(filter.Offset())
+	var groups []*networktraffic.Group
+	if err := query.Scan(&groups).Error; err != nil {
+		return nil, 0, status.Errorf(status.Internal, "get network traffic groups: %v", err)
+	}
+	if len(groups) > 0 {
+		return groups, groups[0].TotalGroups, nil
+	}
+	if filter.Offset() == 0 {
+		return groups, 0, nil
+	}
+	var total int64
+	if err := s.db.WithContext(ctx).Table("(?) AS network_traffic_groups", grouped).Count(&total).Error; err != nil {
+		return nil, 0, status.Errorf(status.Internal, "count network traffic groups: %v", err)
+	}
+	return groups, total, nil
+}
+
+// GetAccountNetworkTrafficGroupEvents returns one page of an exact account-scoped group.
+func (s *SqlStore) GetAccountNetworkTrafficGroupEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter, windowStart time.Time, userID, reporterID string) ([]*networktraffic.Event, int64, error) {
+	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > networktraffic.MaxPageSize {
+		return nil, 0, status.Errorf(status.InvalidArgument, "invalid network traffic detail pagination")
+	}
+	query := s.db.WithContext(ctx).Model(&networktraffic.Event{}).
+		Where("account_id = ? AND window_start = ? AND user_id = ? AND reporter_id = ?", accountID, windowStart, userID, reporterID)
+	query = applyNetworkTrafficFilters(query, filter)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, status.Errorf(status.Internal, "count network traffic group events: %v", err)
+	}
+
+	query = query.Order("timestamp DESC, id DESC").Limit(filter.PageSize).Offset(filter.Offset())
+	if lockStrength != LockingStrengthNone {
+		query = query.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+
+	var events []*networktraffic.Event
+	if err := query.Find(&events).Error; err != nil {
+		return nil, 0, status.Errorf(status.Internal, "get network traffic group events: %v", err)
 	}
 	return events, total, nil
 }

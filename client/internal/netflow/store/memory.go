@@ -2,11 +2,10 @@ package store
 
 import (
 	"maps"
-	"math/rand"
-	v2 "math/rand/v2"
 	"net/netip"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,11 +23,135 @@ type Memory struct {
 	events map[uuid.UUID]*types.Event
 }
 
+type IncompleteReason uint8
+
+const (
+	IncompleteRetryQueueFull IncompleteReason = iota + 1
+	IncompleteOutboxOpen
+	IncompleteOutboxWrite
+	IncompleteOutboxDelete
+	IncompleteOutboxCorrupt
+	IncompleteOutboxUnavailable
+)
+
+type BoundedMemory struct {
+	Memory
+	maxEvents  int
+	maxBytes   int
+	bytes      int
+	persist    func(*types.Event) (int, error)
+	remove     func(uuid.UUID) error
+	sizes      map[uuid.UUID]int
+	incomplete [6]atomic.Uint64
+}
+
+func NewBoundedMemoryStore(maxEvents, maxBytes int) *BoundedMemory {
+	return &BoundedMemory{
+		Memory:    Memory{events: make(map[uuid.UUID]*types.Event)},
+		maxEvents: maxEvents,
+		maxBytes:  maxBytes,
+		sizes:     make(map[uuid.UUID]int),
+	}
+}
+
+func (m *BoundedMemory) MarkIncomplete(reason IncompleteReason) {
+	if reason >= IncompleteRetryQueueFull && int(reason) <= len(m.incomplete) {
+		m.incomplete[reason-1].Add(1)
+	}
+}
+
+func (m *BoundedMemory) IncompleteCount(reason IncompleteReason) uint64 {
+	if reason < IncompleteRetryQueueFull || int(reason) > len(m.incomplete) {
+		return 0
+	}
+	return m.incomplete[reason-1].Load()
+}
+
+func (m *BoundedMemory) TryStoreEvent(event *types.Event) bool {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+	if _, ok := m.events[event.ID]; ok {
+		return true
+	}
+
+	size := eventSize(event)
+	if len(m.events) >= m.maxEvents || m.bytes+size > m.maxBytes {
+		m.MarkIncomplete(IncompleteRetryQueueFull)
+		return false
+	}
+	if m.persist != nil {
+		var err error
+		size, err = m.persist(event)
+		if err != nil {
+			m.MarkIncomplete(IncompleteOutboxWrite)
+			return false
+		}
+		if m.bytes+size > m.maxBytes {
+			m.MarkIncomplete(IncompleteRetryQueueFull)
+			if err := m.remove(event.ID); err != nil {
+				m.MarkIncomplete(IncompleteOutboxDelete)
+			}
+			return false
+		}
+	}
+	m.events[event.ID] = event
+	m.sizes[event.ID] = size
+	m.bytes += size
+	return true
+}
+
+func (m *BoundedMemory) StoreEvent(event *types.Event) {
+	m.TryStoreEvent(event)
+}
+
+func (m *BoundedMemory) GetEvents() []*types.Event {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+	events := make([]*types.Event, 0, len(m.events))
+	for _, event := range m.events {
+		events = append(events, event)
+	}
+	slices.SortFunc(events, func(a, b *types.Event) int {
+		if result := a.Timestamp.Compare(b.Timestamp); result != 0 {
+			return result
+		}
+		return slices.Compare(a.ID[:], b.ID[:])
+	})
+	return events
+}
+
+func (m *BoundedMemory) DeleteEvents(ids []uuid.UUID) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+	for _, id := range ids {
+		if _, ok := m.events[id]; !ok {
+			continue
+		}
+		if m.remove != nil && m.remove(id) != nil {
+			m.MarkIncomplete(IncompleteOutboxDelete)
+			continue
+		}
+		m.bytes -= m.sizes[id]
+		delete(m.sizes, id)
+		delete(m.events, id)
+	}
+}
+
+func (m *BoundedMemory) Close() {
+	// Unacknowledged events intentionally survive flow disable/re-enable. The
+	// durable outbox owns terminal cleanup once it replaces this memory store.
+}
+
+// ponytail: this is a conservative memory budget, not heap accounting; replace it
+// with encoded outbox bytes when the durable outbox is implemented.
+func eventSize(event *types.Event) int {
+	return 768 + len(event.RuleID) + len(event.SourceResourceID) + len(event.DestResourceID)
+}
+
 type AggregatingMemory struct {
 	Memory
 	WindowStart time.Time
 	WindowEnd   time.Time
-	rnd         *v2.PCG
 	nowFunc     func() time.Time
 }
 
@@ -68,7 +191,7 @@ func NewAggregatingMemoryStore() *AggregatingMemory {
 
 // used in tests when deterministic (less random) time intervals are required
 func NewAggregatingMemoryStoreWithTimeFunc(nowFunc func() time.Time) *AggregatingMemory {
-	return &AggregatingMemory{WindowStart: nowFunc(), Memory: Memory{events: make(map[uuid.UUID]*types.Event)}, nowFunc: nowFunc, rnd: v2.NewPCG(rand.Uint64(), rand.Uint64())}
+	return &AggregatingMemory{WindowStart: nowFunc(), Memory: Memory{events: make(map[uuid.UUID]*types.Event)}, nowFunc: nowFunc}
 }
 
 func (am *AggregatingMemory) ResetAggregationWindow() types.FlowEventAggregator {
@@ -76,7 +199,7 @@ func (am *AggregatingMemory) ResetAggregationWindow() types.FlowEventAggregator 
 	defer am.mux.Unlock()
 
 	now := am.nowFunc()
-	toret := AggregatingMemory{WindowStart: am.WindowStart, WindowEnd: now, Memory: Memory{events: am.events}, rnd: v2.NewPCG(rand.Uint64(), rand.Uint64())}
+	toret := AggregatingMemory{WindowStart: am.WindowStart, WindowEnd: now, Memory: Memory{events: am.events}}
 
 	am.events = make(map[uuid.UUID]*types.Event)
 	am.WindowStart = now
@@ -85,13 +208,45 @@ func (am *AggregatingMemory) ResetAggregationWindow() types.FlowEventAggregator 
 }
 
 type aggregationKey struct {
-	srcAddr   netip.Addr
-	destAddr  netip.Addr
-	destPort  uint16
-	direction int
-	protocol  uint8
-	icmpType  uint8
-	unique    uint64 // used to prevent aggregation on non icmp/udp/tcp events
+	srcAddr        netip.Addr
+	destAddr       netip.Addr
+	destPort       uint16
+	direction      int
+	protocol       uint8
+	icmpType       uint8
+	kind           types.Type
+	flowID         uuid.UUID
+	ruleID         string
+	sourceResource string
+	destResource   string
+	unique         uuid.UUID
+}
+
+func aggregationKeyFor(event *types.Event) aggregationKey {
+	if event.Type != types.TypeDrop && event.FlowID != uuid.Nil {
+		switch event.Protocol {
+		case types.ICMP, types.ICMPv6, types.UDP, types.TCP:
+			return aggregationKey{kind: types.TypeStart, flowID: event.FlowID}
+		}
+	}
+
+	key := aggregationKey{
+		srcAddr:   event.SourceIP,
+		destAddr:  event.DestIP,
+		destPort:  event.DestPort,
+		direction: int(event.Direction),
+		protocol:  uint8(event.Protocol),
+		icmpType:  event.ICMPType,
+		kind:      event.Type,
+	}
+	if event.Type == types.TypeDrop {
+		key.ruleID = string(event.RuleID)
+		key.sourceResource = string(event.SourceResourceID)
+		key.destResource = string(event.DestResourceID)
+		return key
+	}
+	key.unique = event.ID
+	return key
 }
 
 func (am *AggregatingMemory) GetAggregatedEvents() []*types.Event {
@@ -100,7 +255,7 @@ func (am *AggregatingMemory) GetAggregatedEvents() []*types.Event {
 
 	aggregated := make(map[aggregationKey]*types.Event)
 	for _, v := range am.events {
-		lookupKey := aggregationKey{srcAddr: v.SourceIP, destAddr: v.DestIP, destPort: v.DestPort, direction: int(v.Direction), protocol: uint8(v.Protocol), icmpType: v.ICMPType}
+		lookupKey := aggregationKeyFor(v)
 		if _, ok := aggregated[lookupKey]; !ok {
 			event := v.Clone()
 
@@ -120,20 +275,12 @@ func (am *AggregatingMemory) GetAggregatedEvents() []*types.Event {
 			event.WindowStart = am.WindowStart
 			event.WindowEnd = am.WindowEnd
 
-			if event.Protocol != types.ICMP && event.Protocol != types.ICMPv6 && event.Protocol != types.UDP && event.Protocol != types.TCP {
-				lookupKey.unique = am.rnd.Uint64() // to make the lookup key unique so we don't aggregate on it
-			}
-
 			aggregated[lookupKey] = event
 			continue
 		}
 
 		aggregatedEvent := aggregated[lookupKey]
-		if aggregatedEvent.Protocol != types.ICMP && aggregatedEvent.Protocol != types.ICMPv6 && aggregatedEvent.Protocol != types.UDP && aggregatedEvent.Protocol != types.TCP {
-			continue // we don't aggregate this type of events; shouldn't ever get here
-		}
 
-		// track the number of connections, duration?, open and close events?
 		aggregatedEvent.RxBytes += v.RxBytes
 		aggregatedEvent.RxPackets += v.RxPackets
 		aggregatedEvent.TxBytes += v.TxBytes
@@ -153,6 +300,12 @@ func (am *AggregatingMemory) GetAggregatedEvents() []*types.Event {
 		}
 		if len(aggregatedEvent.RuleID) == 0 && len(v.RuleID) != 0 {
 			aggregatedEvent.RuleID = slices.Clone(v.RuleID)
+		}
+		if len(aggregatedEvent.SourceResourceID) == 0 && len(v.SourceResourceID) != 0 {
+			aggregatedEvent.SourceResourceID = slices.Clone(v.SourceResourceID)
+		}
+		if len(aggregatedEvent.DestResourceID) == 0 && len(v.DestResourceID) != 0 {
+			aggregatedEvent.DestResourceID = slices.Clone(v.DestResourceID)
 		}
 	}
 

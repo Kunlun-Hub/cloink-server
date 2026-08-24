@@ -37,7 +37,7 @@ import (
 	"github.com/netbirdio/netbird/shared/management/domain"
 )
 
-var flowLogger = netflow.NewManager(nil, []byte{}, nil).GetLogger()
+var flowLogger = netflow.NewManager(nil, []byte{}, nil, "").GetLogger()
 
 type mocWGIface struct {
 	filter device.PacketFilter

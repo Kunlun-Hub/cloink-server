@@ -24,6 +24,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/account"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/store"
+	"github.com/netbirdio/netbird/management/server/telemetry"
 	internalStatus "github.com/netbirdio/netbird/shared/management/status"
 )
 
@@ -54,14 +55,19 @@ type FlowServer struct {
 	proto.UnimplementedFlowServiceServer
 	accountManager account.Manager
 	configManager  *networktraffic.ConfigManager
+	metrics        *telemetry.NetworkTrafficMetrics
 	cleanupMu      sync.Mutex
 	cleanupCancel  context.CancelFunc
 	cleanupDone    chan struct{}
 }
 
 // NewFlowServer creates a self-hosted flow receiver.
-func NewFlowServer(accountManager account.Manager) *FlowServer {
-	return &FlowServer{accountManager: accountManager}
+func NewFlowServer(accountManager account.Manager, metrics ...*telemetry.NetworkTrafficMetrics) *FlowServer {
+	server := &FlowServer{accountManager: accountManager}
+	if len(metrics) > 0 {
+		server.metrics = metrics[0]
+	}
+	return server
 }
 
 // SetConfigManager sets the token validator used by the receiver.
@@ -116,9 +122,16 @@ func (s *FlowServer) StopCleanup() {
 }
 
 func (s *FlowServer) cleanup(ctx context.Context, retention time.Duration, maxPerAccount int) {
-	if _, err := s.accountManager.GetStore().CleanupNetworkTrafficEvents(ctx, time.Now().UTC().Add(-retention), maxPerAccount); err != nil && ctx.Err() == nil {
-		log.WithContext(ctx).Warnf("failed to clean up network traffic events: %v", err)
+	started := time.Now()
+	rows, err := s.accountManager.GetStore().CleanupNetworkTrafficEvents(ctx, time.Now().UTC().Add(-retention), maxPerAccount)
+	if err != nil {
+		s.metrics.RecordCleanup(ctx, "error", 0, time.Since(started))
+		if ctx.Err() == nil {
+			log.WithContext(ctx).Warnf("failed to clean up network traffic events: %v", err)
+		}
+		return
 	}
+	s.metrics.RecordCleanup(ctx, "success", rows, time.Since(started))
 }
 
 // Events receives flow events and acknowledges only events that are durable or
@@ -149,16 +162,21 @@ func (s *FlowServer) Events(stream proto.FlowService_EventsServer) error {
 			return err
 		}
 
+		started := time.Now()
 		saveErr := s.saveEvent(stream.Context(), claims, event)
 		if saveErr != nil {
 			var permanentErr *permanentFlowError
 			if !errors.As(saveErr, &permanentErr) {
+				s.metrics.RecordReceive(stream.Context(), "error", "retryable", time.Since(started))
 				return saveErr
 			}
+			s.metrics.RecordReceive(stream.Context(), "discarded", "invalid", time.Since(started))
 			log.WithContext(stream.Context()).Debugf("discarding invalid network traffic event: %v", permanentErr)
 			if _, err := uuid.FromBytes(event.GetEventId()); err != nil {
 				return status.Error(codes.InvalidArgument, "invalid flow event ID")
 			}
+		} else {
+			s.metrics.RecordReceive(stream.Context(), "success", "none", time.Since(started))
 		}
 
 		if err := stream.Send(&proto.FlowEventAck{EventId: event.GetEventId()}); err != nil {
@@ -299,7 +317,14 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 		NumOfEnds:              int(fields.GetNumOfEnds()),
 		NumOfDrops:             int(fields.GetNumOfDrops()),
 	}
-	return s.accountManager.GetStore().CreateNetworkTrafficEvent(ctx, record)
+	started := time.Now()
+	err = s.accountManager.GetStore().CreateNetworkTrafficEvent(ctx, record)
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+	s.metrics.RecordStore(ctx, result, time.Since(started))
+	return err
 }
 
 func validateFlowEvent(event *proto.FlowEvent) error {

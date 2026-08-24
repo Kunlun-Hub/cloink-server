@@ -304,6 +304,16 @@ func (s *FileStore) GetAccountNetworkTrafficEvents(context.Context, LockingStren
 	return nil, 0, errors.New("network traffic events require a SQL store")
 }
 
+// GetAccountNetworkTrafficGroups is unsupported by the legacy JSON store.
+func (s *FileStore) GetAccountNetworkTrafficGroups(context.Context, LockingStrength, string, networktraffic.Filter) ([]*networktraffic.Group, int64, error) {
+	return nil, 0, errors.New("network traffic events require a SQL store")
+}
+
+// GetAccountNetworkTrafficGroupEvents is unsupported by the legacy JSON store.
+func (s *FileStore) GetAccountNetworkTrafficGroupEvents(context.Context, LockingStrength, string, networktraffic.Filter, time.Time, string, string) ([]*networktraffic.Event, int64, error) {
+	return nil, 0, errors.New("network traffic events require a SQL store")
+}
+
 // CleanupNetworkTrafficEvents is unsupported by the legacy JSON store.
 func (s *FileStore) CleanupNetworkTrafficEvents(context.Context, time.Time, int) (int64, error) {
 	return 0, errors.New("network traffic events require a SQL store")

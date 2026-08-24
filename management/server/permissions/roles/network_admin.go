@@ -57,6 +57,12 @@ var NetworkAdmin = RolePermissions{
 			operations.Update: false,
 			operations.Delete: false,
 		},
+		modules.NetworkTraffic: {
+			operations.Read:   true,
+			operations.Create: false,
+			operations.Update: false,
+			operations.Delete: false,
+		},
 		modules.Policies: {
 			operations.Read:   true,
 			operations.Create: true,

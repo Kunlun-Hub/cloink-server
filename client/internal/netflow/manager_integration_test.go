@@ -236,15 +236,22 @@ func TestRetryEvents(t *testing.T) {
 	}()
 	assert.True(t, len(serverSideEvents) > 2) // must see retries
 
+	eventIDs := make(map[uuid.UUID][]byte, 2)
 	uniqueServerSideEvents := make(map[uuid.UUID]*proto.FlowEvent)
 	slices.Values(serverSideEvents)(func(e *proto.FlowEvent) bool {
 		id, err := uuid.FromBytes(e.FlowFields.FlowId)
 		assert.NoError(t, err)
+		if eventID, ok := eventIDs[id]; ok {
+			assert.Equal(t, eventID, e.EventId)
+		} else {
+			eventIDs[id] = e.EventId
+		}
 		uniqueServerSideEvents[id] = e
 		return true
 	})
 	assert.Contains(t, uniqueServerSideEvents, event1.FlowID)
 	assert.Contains(t, uniqueServerSideEvents, event2.FlowID)
+	assert.NotEqual(t, eventIDs[event1.FlowID], eventIDs[event2.FlowID])
 
 	// ack events
 	server.acks <- &proto.FlowEventAck{EventId: uniqueServerSideEvents[event1.FlowID].EventId}
@@ -268,7 +275,7 @@ func createManager(t *testing.T, serverAddr string, retryInterval time.Duration)
 	}
 
 	publicKey := []byte("test-public-key")
-	manager := NewManager(mockIFace, publicKey, nil)
+	manager := NewManager(mockIFace, publicKey, nil, "")
 	manager.retryInterval = retryInterval
 
 	initialConfig := &types.FlowConfig{

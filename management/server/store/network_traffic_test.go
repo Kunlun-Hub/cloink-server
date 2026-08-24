@@ -38,9 +38,14 @@ func TestSqlStoreNetworkTrafficEventsIdempotenceFiltersAndCleanup(t *testing.T) 
 	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, base("old", now.Add(-2*time.Hour))))
 	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, base("new-1", now.Add(-10*time.Minute))))
 	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, base("new-2", now.Add(-5*time.Minute))))
-	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, base("new-3", now)))
-	// Retries of the same client event must not create another row.
-	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, base("new-3", now)))
+	retryOriginal := base("new-3", now)
+	retryOriginal.RxBytes = 30
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, retryOriginal))
+	// A retry keeps the first persisted payload even if a malformed replay changes it.
+	retryChanged := base("new-3", now)
+	retryChanged.FlowID = "changed-flow"
+	retryChanged.RxBytes = 999
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, retryChanged))
 
 	start := now.Add(-30 * time.Minute)
 	end := now.Add(time.Minute)
@@ -66,4 +71,10 @@ func TestSqlStoreNetworkTrafficEventsIdempotenceFiltersAndCleanup(t *testing.T) 
 	require.Equal(t, int64(2), total)
 	require.Len(t, events, 2)
 	require.Equal(t, "event-new-3", events[0].ID)
+	require.Equal(t, "event-new-2", events[1].ID)
+	response := events[0].ToAPIResponse()
+	require.Equal(t, "event-new-3", response.Id)
+	require.Equal(t, "flow-new-3", response.FlowId)
+	require.Equal(t, "flow-new-3", events[0].FlowID)
+	require.Equal(t, int64(30), events[0].RxBytes)
 }

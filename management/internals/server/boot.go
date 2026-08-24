@@ -99,7 +99,7 @@ func (s *BaseServer) FlowConfigManager() *networktraffic.ConfigManager {
 // FlowServer returns the shared self-hosted flow receiver.
 func (s *BaseServer) FlowServer() *nbgrpc.FlowServer {
 	return Create(s, func() *nbgrpc.FlowServer {
-		return nbgrpc.NewFlowServer(s.AccountManager())
+		return nbgrpc.NewFlowServer(s.AccountManager(), s.Metrics().NetworkTrafficMetrics())
 	})
 }
 

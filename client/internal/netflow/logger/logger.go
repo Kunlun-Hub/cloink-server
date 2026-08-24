@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"context"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -16,17 +15,39 @@ import (
 	"github.com/netbirdio/netbird/dns"
 )
 
-type rcvChan chan *types.EventFields
+const (
+	captureQueueSize = 100
+	shutdownTimeout  = time.Second
+)
+
+type admissionStats struct {
+	accepted        atomic.Uint64
+	disabled        atomic.Uint64
+	full            atomic.Uint64
+	closing         atomic.Uint64
+	shutdownTimeout atomic.Uint64
+}
+
+type Stats struct {
+	Accepted         uint64
+	Disabled         uint64
+	CaptureQueueFull uint64
+	Closing          uint64
+	ShutdownTimeout  uint64
+}
+
 type Logger struct {
 	mux                sync.Mutex
 	enabled            atomic.Bool
-	rcvChan            atomic.Pointer[rcvChan]
-	cancel             context.CancelFunc
+	rcvChan            chan *types.EventFields
+	stopChan           chan struct{}
+	receiverDone       chan struct{}
 	statusRecorder     *peer.Status
 	wgIfaceNet         netip.Prefix
 	wgIfaceNetV6       netip.Prefix
 	dnsCollection      atomic.Bool
 	exitNodeCollection atomic.Bool
+	stats              admissionStats
 	Store              types.AggregatingStore
 }
 
@@ -41,88 +62,113 @@ func New(statusRecorder *peer.Status, wgIfaceIPNet, wgIfaceIPNetV6 netip.Prefix)
 
 func (l *Logger) StoreEvent(flowEvent types.EventFields) {
 	if !l.enabled.Load() {
-		return
-	}
-
-	c := l.rcvChan.Load()
-	if c == nil {
-		return
-	}
-
-	select {
-	case *c <- &flowEvent:
-	default:
-		// todo: we should collect or log on this
-	}
-}
-
-func (l *Logger) Enable() {
-	go l.startReceiver()
-}
-
-func (l *Logger) startReceiver() {
-	if l.enabled.Load() {
+		l.stats.disabled.Add(1)
 		return
 	}
 
 	l.mux.Lock()
-	ctx, cancel := context.WithCancel(context.Background())
-	l.cancel = cancel
-	l.mux.Unlock()
+	defer l.mux.Unlock()
+	if !l.enabled.Load() {
+		l.stats.closing.Add(1)
+		return
+	}
 
-	c := make(rcvChan, 100)
-	l.rcvChan.Store(&c)
+	select {
+	case l.rcvChan <- &flowEvent:
+		l.stats.accepted.Add(1)
+	default:
+		l.stats.full.Add(1)
+	}
+}
+
+func (l *Logger) Enable() {
+	l.mux.Lock()
+	defer l.mux.Unlock()
+	if l.enabled.Load() {
+		return
+	}
+
+	l.rcvChan = make(chan *types.EventFields, captureQueueSize)
+	l.stopChan = make(chan struct{})
+	l.receiverDone = make(chan struct{})
 	l.enabled.Store(true)
+	go l.startReceiver(l.rcvChan, l.stopChan, l.receiverDone)
+}
 
+func (l *Logger) startReceiver(c <-chan *types.EventFields, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 	for {
 		select {
-		case <-ctx.Done():
-			log.Info("flow Memory store receiver stopped")
-			return
 		case eventFields := <-c:
-			id := uuid.New()
-			event := types.Event{
-				ID:          id,
-				EventFields: *eventFields,
-				Timestamp:   time.Now().UTC(),
-			}
-
-			var isSrcExitNode bool
-			var isDestExitNode bool
-
-			if !l.isOverlayIP(event.SourceIP) {
-				event.SourceResourceID, isSrcExitNode = l.statusRecorder.CheckRoutes(event.SourceIP)
-			}
-
-			if !l.isOverlayIP(event.DestIP) {
-				event.DestResourceID, isDestExitNode = l.statusRecorder.CheckRoutes(event.DestIP)
-			}
-
-			if l.shouldStore(eventFields, isSrcExitNode || isDestExitNode) {
-				l.Store.StoreEvent(&event)
+			l.storeEvent(eventFields)
+		case <-stop:
+			for {
+				select {
+				case eventFields := <-c:
+					l.storeEvent(eventFields)
+				default:
+					log.Info("flow Memory store receiver stopped")
+					return
+				}
 			}
 		}
 	}
 }
 
-func (l *Logger) Close() {
-	l.stop()
-	l.Store.Close()
+func (l *Logger) storeEvent(eventFields *types.EventFields) {
+	id := uuid.New()
+	event := types.Event{
+		ID:          id,
+		EventFields: *eventFields,
+		Timestamp:   time.Now().UTC(),
+	}
+
+	var isSrcExitNode bool
+	var isDestExitNode bool
+
+	if !l.isOverlayIP(event.SourceIP) {
+		event.SourceResourceID, isSrcExitNode = l.statusRecorder.CheckRoutes(event.SourceIP)
+	}
+
+	if !l.isOverlayIP(event.DestIP) {
+		event.DestResourceID, isDestExitNode = l.statusRecorder.CheckRoutes(event.DestIP)
+	}
+
+	if l.shouldStore(eventFields, isSrcExitNode || isDestExitNode) {
+		l.Store.StoreEvent(&event)
+	}
 }
 
-func (l *Logger) stop() {
+func (l *Logger) Close() {
+	l.mux.Lock()
 	if !l.enabled.Load() {
+		l.Store.Close()
+		l.mux.Unlock()
 		return
 	}
 
 	l.enabled.Store(false)
-	l.mux.Lock()
-	if l.cancel != nil {
-		l.cancel()
-		l.cancel = nil
-	}
-	l.rcvChan.Store(nil)
+	close(l.stopChan)
+	done := l.receiverDone
 	l.mux.Unlock()
+
+	select {
+	case <-done:
+		l.Store.Close()
+	case <-time.After(shutdownTimeout):
+		l.stats.shutdownTimeout.Add(1)
+		log.Warn("timed out stopping flow Memory store receiver")
+	}
+}
+
+func (l *Logger) Stats() Stats {
+	return Stats{
+		Accepted:         l.stats.accepted.Load(),
+		Disabled:         l.stats.disabled.Load(),
+		CaptureQueueFull: l.stats.full.Load(),
+		Closing:          l.stats.closing.Load(),
+		ShutdownTimeout:  l.stats.shutdownTimeout.Load(),
+	}
 }
 
 func (l *Logger) ResetAggregationWindow() types.FlowEventAggregator {

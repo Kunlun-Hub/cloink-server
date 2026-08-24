@@ -334,7 +334,7 @@ func (c *ConnTrack) handleEvent(event nfct.Event) {
 
 	log.Tracef("%s %s %s connection: %s:%d → %s:%d", eventStr, direction, proto, srcIP, srcPort, dstIP, dstPort)
 
-	c.flowLogger.StoreEvent(nftypes.EventFields{
+	fields := nftypes.EventFields{
 		FlowID:     flowID,
 		Type:       eventType,
 		Direction:  direction,
@@ -345,11 +345,14 @@ func (c *ConnTrack) handleEvent(event nfct.Event) {
 		DestPort:   dstPort,
 		ICMPType:   icmpType,
 		ICMPCode:   icmpCode,
-		RxPackets:  c.mapRxPackets(flow, direction),
-		TxPackets:  c.mapTxPackets(flow, direction),
-		RxBytes:    c.mapRxBytes(flow, direction),
-		TxBytes:    c.mapTxBytes(flow, direction),
-	})
+	}
+	if event.Type == nfct.EventDestroy {
+		fields.RxPackets = c.mapRxPackets(flow, direction)
+		fields.TxPackets = c.mapTxPackets(flow, direction)
+		fields.RxBytes = c.mapRxBytes(flow, direction)
+		fields.TxBytes = c.mapTxBytes(flow, direction)
+	}
+	c.flowLogger.StoreEvent(fields)
 }
 
 // relevantFlow checks if the flow is related to the specified interface

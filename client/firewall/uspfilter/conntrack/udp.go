@@ -250,7 +250,7 @@ func (t *UDPTracker) Timeout() time.Duration {
 }
 
 func (t *UDPTracker) sendEvent(typ nftypes.Type, conn *UDPConnTrack, ruleID []byte) {
-	t.flowLogger.StoreEvent(nftypes.EventFields{
+	fields := nftypes.EventFields{
 		FlowID:     conn.FlowId,
 		Type:       typ,
 		RuleID:     ruleID,
@@ -260,9 +260,12 @@ func (t *UDPTracker) sendEvent(typ nftypes.Type, conn *UDPConnTrack, ruleID []by
 		DestIP:     conn.DestIP,
 		SourcePort: conn.SourcePort,
 		DestPort:   conn.DestPort,
-		RxPackets:  conn.PacketsRx.Load(),
-		TxPackets:  conn.PacketsTx.Load(),
-		RxBytes:    conn.BytesRx.Load(),
-		TxBytes:    conn.BytesTx.Load(),
-	})
+	}
+	if typ == nftypes.TypeEnd {
+		fields.RxPackets = conn.PacketsRx.Load()
+		fields.TxPackets = conn.PacketsTx.Load()
+		fields.RxBytes = conn.BytesRx.Load()
+		fields.TxBytes = conn.BytesTx.Load()
+	}
+	t.flowLogger.StoreEvent(fields)
 }

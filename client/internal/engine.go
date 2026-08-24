@@ -554,7 +554,7 @@ func (e *Engine) Start(netbirdConfig *mgmProto.NetbirdConfig, mgmtURL *url.URL) 
 
 	// start flow manager right after interface creation
 	publicKey := e.config.WgPrivateKey.PublicKey()
-	e.flowManager = netflow.NewManager(e.wgInterface, publicKey[:], e.statusRecorder)
+	e.flowManager = netflow.NewManager(e.wgInterface, publicKey[:], e.statusRecorder, e.config.StateDir)
 
 	if e.config.RosenpassEnabled {
 		log.Infof("rosenpass is enabled")

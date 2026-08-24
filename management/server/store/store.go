@@ -272,6 +272,8 @@ type Store interface {
 	CreateNetworkTrafficEvent(ctx context.Context, event *networktraffic.Event) error
 	GetNetworkTrafficPolicy(ctx context.Context, lockStrength LockingStrength, accountID, ruleOrPolicyID string) (*types.Policy, error)
 	GetAccountNetworkTrafficEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Event, int64, error)
+	GetAccountNetworkTrafficGroups(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Group, int64, error)
+	GetAccountNetworkTrafficGroupEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter, windowStart time.Time, userID, reporterID string) ([]*networktraffic.Event, int64, error)
 	CleanupNetworkTrafficEvents(ctx context.Context, olderThan time.Time, maxPerAccount int) (int64, error)
 
 	// SetFieldEncrypt sets the field encryptor for encrypting sensitive user data.

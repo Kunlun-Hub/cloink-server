@@ -28,12 +28,6 @@ func TestFlowAggregation(t *testing.T) {
 			eventTypes:  []types.Type{types.TypeStart, types.TypeEnd},
 		},
 		{
-			description: "start and drop",
-			addresses:   [][]netip.Addr{{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("2.2.2.2")}, {netip.MustParseAddr("3.3.3.3"), netip.MustParseAddr("2.2.2.2")}},
-			dstPort:     uint16(random.Uint32() >> 16),
-			eventTypes:  []types.Type{types.TypeStart, types.TypeDrop},
-		},
-		{
 			description: "start only",
 			addresses:   [][]netip.Addr{{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("2.2.2.2")}, {netip.MustParseAddr("3.3.3.3"), netip.MustParseAddr("2.2.2.2")}},
 			dstPort:     uint16(random.Uint32() >> 16),
@@ -69,6 +63,114 @@ func TestFlowAggregation(t *testing.T) {
 	}
 }
 
+func TestFlowAggregationAddsReportedCounters(t *testing.T) {
+	store := NewAggregatingMemoryStore()
+	store.WindowEnd = store.WindowStart.Add(time.Second)
+	flowID := uuid.New()
+	for _, event := range []*types.Event{
+		{
+			ID: uuid.New(), EventFields: types.EventFields{
+				FlowID: flowID, Type: types.TypeStart, Protocol: types.TCP,
+				Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
+				DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443,
+			},
+		},
+		{
+			ID: uuid.New(), EventFields: types.EventFields{
+				FlowID: flowID, Type: types.TypeEnd, Protocol: types.TCP,
+				Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
+				DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443,
+				RxPackets: 3, TxPackets: 4, RxBytes: 300, TxBytes: 400,
+			},
+		},
+	} {
+		store.StoreEvent(event)
+	}
+
+	events := store.GetAggregatedEvents()
+	assert.Len(t, events, 1)
+	assert.Equal(t, uint64(300), events[0].RxBytes)
+	assert.Equal(t, uint64(400), events[0].TxBytes)
+	assert.Equal(t, uint64(3), events[0].RxPackets)
+	assert.Equal(t, uint64(4), events[0].TxPackets)
+	assert.Equal(t, uint64(1), events[0].NumOfStarts)
+	assert.Equal(t, uint64(1), events[0].NumOfEnds)
+	assert.Equal(t, types.TypeUnknown, events[0].Type)
+}
+
+func TestFlowAggregationPreservesLifecycleIdentity(t *testing.T) {
+	store := NewAggregatingMemoryStore()
+	flowIDs := []uuid.UUID{uuid.New(), uuid.New()}
+	for i, flowID := range flowIDs {
+		for _, eventType := range []types.Type{types.TypeStart, types.TypeEnd} {
+			fields := types.EventFields{
+				FlowID: flowID, Type: eventType, Protocol: types.TCP,
+				Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
+				DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443,
+			}
+			if eventType == types.TypeStart {
+				fields.RuleID = []byte{byte(i + 1)}
+				fields.SourceResourceID = []byte{byte(i + 3)}
+				fields.DestResourceID = []byte{byte(i + 5)}
+			}
+			store.StoreEvent(&types.Event{ID: uuid.New(), EventFields: fields})
+		}
+	}
+
+	events := store.GetAggregatedEvents()
+	assert.Len(t, events, 2)
+	for _, event := range events {
+		i := 0
+		if event.FlowID == flowIDs[1] {
+			i = 1
+		}
+		assert.Equal(t, flowIDs[i], event.FlowID)
+		assert.Equal(t, []byte{byte(i + 1)}, event.RuleID)
+		assert.Equal(t, []byte{byte(i + 3)}, event.SourceResourceID)
+		assert.Equal(t, []byte{byte(i + 5)}, event.DestResourceID)
+		assert.Equal(t, uint64(1), event.NumOfStarts)
+		assert.Equal(t, uint64(1), event.NumOfEnds)
+	}
+}
+
+func TestDropAggregationPreservesAttributionWithoutPacketCardinality(t *testing.T) {
+	store := NewAggregatingMemoryStore()
+	for i := 0; i < 100; i++ {
+		store.StoreEvent(&types.Event{ID: uuid.New(), EventFields: types.EventFields{
+			FlowID: uuid.New(), Type: types.TypeDrop, Protocol: types.TCP,
+			RuleID: []byte("rule"), SourceResourceID: []byte("source"), DestResourceID: []byte("dest"),
+			Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"), SourcePort: uint16(i),
+			DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443, RxPackets: 1,
+		}})
+	}
+	store.StoreEvent(&types.Event{ID: uuid.New(), EventFields: types.EventFields{
+		FlowID: uuid.New(), Type: types.TypeDrop, Protocol: types.TCP,
+		RuleID: []byte("other-rule"), SourceResourceID: []byte("source"), DestResourceID: []byte("dest"),
+		Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
+		DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443, RxPackets: 1,
+	}})
+	store.StoreEvent(&types.Event{ID: uuid.New(), EventFields: types.EventFields{
+		FlowID: uuid.New(), Type: types.TypeStart, Protocol: types.TCP,
+		Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
+		DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443,
+	}})
+
+	events := store.GetAggregatedEvents()
+	assert.Len(t, events, 3)
+	for _, event := range events {
+		switch string(event.RuleID) {
+		case "rule":
+			assert.Equal(t, uint64(100), event.NumOfDrops)
+			assert.Equal(t, uint64(100), event.RxPackets)
+		case "other-rule":
+			assert.Equal(t, uint64(1), event.NumOfDrops)
+		default:
+			assert.Equal(t, uint64(1), event.NumOfStarts)
+			assert.Zero(t, event.NumOfDrops)
+		}
+	}
+}
+
 func TestIcmpEventAggregation(t *testing.T) {
 	var protocols = []types.Protocol{types.ICMP, types.ICMPv6}
 	var icmpTypes = []uint8{1, 2, 3}
@@ -82,11 +184,6 @@ func TestIcmpEventAggregation(t *testing.T) {
 			description: "start and stop",
 			addresses:   [][]netip.Addr{{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("2.2.2.2")}},
 			eventTypes:  []types.Type{types.TypeStart, types.TypeEnd},
-		},
-		{
-			description: "start and drop",
-			addresses:   [][]netip.Addr{{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("2.2.2.2")}},
-			eventTypes:  []types.Type{types.TypeStart, types.TypeDrop},
 		},
 		{
 			description: "start only",

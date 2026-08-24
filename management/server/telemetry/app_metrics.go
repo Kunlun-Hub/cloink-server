@@ -31,6 +31,7 @@ type MockAppMetrics struct {
 	AddAccountManagerMetricsFunc func() *AccountManagerMetrics
 	EphemeralPeersMetricsFunc    func() *EphemeralPeersMetrics
 	RelayMetricsFunc             func() *RelayMetrics
+	NetworkTrafficMetricsFunc    func() *NetworkTrafficMetrics
 }
 
 // GetMeter mocks the GetMeter function of the AppMetrics interface
@@ -120,6 +121,13 @@ func (mock *MockAppMetrics) RelayMetrics() *RelayMetrics {
 	return nil
 }
 
+func (mock *MockAppMetrics) NetworkTrafficMetrics() *NetworkTrafficMetrics {
+	if mock.NetworkTrafficMetricsFunc != nil {
+		return mock.NetworkTrafficMetricsFunc()
+	}
+	return nil
+}
+
 // AppMetrics is metrics interface
 type AppMetrics interface {
 	GetMeter() metric2.Meter
@@ -133,6 +141,7 @@ type AppMetrics interface {
 	AccountManagerMetrics() *AccountManagerMetrics
 	EphemeralPeersMetrics() *EphemeralPeersMetrics
 	RelayMetrics() *RelayMetrics
+	NetworkTrafficMetrics() *NetworkTrafficMetrics
 }
 
 // defaultAppMetrics are core application metrics based on OpenTelemetry https://opentelemetry.io/
@@ -150,6 +159,7 @@ type defaultAppMetrics struct {
 	accountManagerMetrics *AccountManagerMetrics
 	ephemeralMetrics      *EphemeralPeersMetrics
 	relayMetrics          *RelayMetrics
+	networkTrafficMetrics *NetworkTrafficMetrics
 }
 
 // IDPMetrics returns metrics for the idp package
@@ -189,6 +199,10 @@ func (appMetrics *defaultAppMetrics) EphemeralPeersMetrics() *EphemeralPeersMetr
 
 func (appMetrics *defaultAppMetrics) RelayMetrics() *RelayMetrics {
 	return appMetrics.relayMetrics
+}
+
+func (appMetrics *defaultAppMetrics) NetworkTrafficMetrics() *NetworkTrafficMetrics {
+	return appMetrics.networkTrafficMetrics
 }
 
 // Close stop application metrics HTTP handler and closes listener.
@@ -283,6 +297,10 @@ func NewDefaultAppMetrics(ctx context.Context) (AppMetrics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize relay metrics: %w", err)
 	}
+	networkTrafficMetrics, err := NewNetworkTrafficMetrics(meter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize network traffic metrics: %w", err)
+	}
 
 	return &defaultAppMetrics{
 		Meter:                 meter,
@@ -295,6 +313,7 @@ func NewDefaultAppMetrics(ctx context.Context) (AppMetrics, error) {
 		accountManagerMetrics: accountManagerMetrics,
 		ephemeralMetrics:      ephemeralMetrics,
 		relayMetrics:          relayMetrics,
+		networkTrafficMetrics: networkTrafficMetrics,
 	}, nil
 }
 
@@ -339,6 +358,10 @@ func NewAppMetricsWithMeter(ctx context.Context, meter metric2.Meter) (AppMetric
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize relay metrics: %w", err)
 	}
+	networkTrafficMetrics, err := NewNetworkTrafficMetrics(meter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize network traffic metrics: %w", err)
+	}
 
 	return &defaultAppMetrics{
 		Meter:                 meter,
@@ -352,5 +375,6 @@ func NewAppMetricsWithMeter(ctx context.Context, meter metric2.Meter) (AppMetric
 		accountManagerMetrics: accountManagerMetrics,
 		ephemeralMetrics:      ephemeralMetrics,
 		relayMetrics:          relayMetrics,
+		networkTrafficMetrics: networkTrafficMetrics,
 	}, nil
 }

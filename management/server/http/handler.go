@@ -144,7 +144,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	routes.AddEndpoints(accountManager, router)
 	relays.AddEndpoints(accountManager, relayConfig, LocationManager, secretsManager, permissionsManager, appMetrics.RelayMetrics(), router)
 	dns.AddEndpoints(accountManager, router)
-	events.AddEndpoints(accountManager, permissionsManager, router)
+	events.AddEndpoints(accountManager, permissionsManager, appMetrics.NetworkTrafficMetrics(), router)
 	networks.AddEndpoints(networksManager, resourceManager, routerManager, groupsManager, accountManager, router)
 	zonesManager.RegisterEndpoints(router, zManager)
 	recordsManager.RegisterEndpoints(router, rManager)

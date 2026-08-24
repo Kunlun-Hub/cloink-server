@@ -17,6 +17,24 @@ const (
 	ConnectionTypeRouted = "ROUTED"
 )
 
+// Group is a read-only projection of persisted events sharing a collection window.
+type Group struct {
+	WindowStart time.Time
+	UserID      string
+	UserName    string
+	UserEmail   string
+	ReporterID  string
+	DetailCount int64
+	TotalGroups int64 `json:"-" gorm:"column:total_groups"`
+	RxBytes     int64
+	RxPackets   int64
+	TxBytes     int64
+	TxPackets   int64
+	NumOfStarts int64
+	NumOfEnds   int64
+	NumOfDrops  int64
+}
+
 // Event is a client-reported, aggregated network flow window.
 type Event struct {
 	ID             string    `gorm:"primaryKey"`
@@ -96,6 +114,7 @@ func (e *Event) ToAPIResponse() *api.NetworkTrafficEvent {
 	}
 
 	return &api.NetworkTrafficEvent{
+		Id:          e.ID,
 		FlowId:      e.FlowID,
 		Direction:   e.Direction,
 		Protocol:    e.Protocol,
