@@ -1,0 +1,171 @@
+name: Build Windows Client
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed (e.g. 0.77.1); defaults to git describe"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-client:
+    name: Build Windows amd64 client + installer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          RAW="${{ github.event.inputs.version }}"
+          if [ -z "$RAW" ]; then
+            RAW=$(git describe --tags --always | sed 's/^v//')
+          fi
+          BASE=$(echo "$RAW" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.1")
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          echo "appver=$BASE.0" >> "$GITHUB_OUTPUT"
+          echo "major=$(echo $BASE | cut -d. -f1)" >> "$GITHUB_OUTPUT"
+          echo "minor=$(echo $BASE | cut -d. -f2)" >> "$GITHUB_OUTPUT"
+          echo "patch=$(echo $BASE | cut -d. -f3)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install mingw-w64 and NSIS
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis nsis-pluginapi osslsigncode
+
+      - name: Install NSIS plugins (EnVar + ShellExecAsUser, unicode)
+        run: |
+          curl -sSL -o /tmp/envar.zip https://pkgs.netbird.io/nsis/EnVar_plugin.zip
+          echo "e9aa92de351345ed82795251d838f1ae9041ba35af9d381a5780c7843b01f56a  /tmp/envar.zip" | sha256sum -c
+          sudo unzip -o -q /tmp/envar.zip -d /tmp/envar
+          sudo cp /tmp/envar/Plugins/x86-unicode/EnVar.dll /usr/share/nsis/Plugins/x86-unicode/
+          curl -sSL -o /tmp/shellexec.7z https://pkgs.netbird.io/nsis/ShellExecAsUser_amd64-Unicode.7z
+          echo "0a55ea25c7330a92cec028eda8afcaf1b1a7092e0dfb77c21c8f654564b4ff9d  /tmp/shellexec.7z" | sha256sum -c
+          sudo 7z x -y -o/tmp/shellexec /tmp/shellexec.7z > /dev/null
+          sudo cp /tmp/shellexec/Plugins/x86-unicode/ShellExecAsUser.dll /usr/share/nsis/Plugins/x86-unicode/
+
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@233067e
+
+      - name: Install wails3 CLI (version from go.mod)
+        run: |
+          WAILS_VERSION=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
+
+      - name: Generate syso resources (icon + version info)
+        run: |
+          goversioninfo -icon client/ui/build/windows/icon.ico -manifest client/manifest.xml \
+            -product-name Cloink -copyright "Cloink" \
+            -ver-major ${{ steps.ver.outputs.major }} -ver-minor ${{ steps.ver.outputs.minor }} \
+            -ver-patch ${{ steps.ver.outputs.patch }} -ver-build 0 \
+            -file-version ${{ steps.ver.outputs.appver }} -product-version ${{ steps.ver.outputs.appver }} \
+            -o client/resources_windows_amd64.syso versioninfo.json
+          goversioninfo -64 -icon client/ui/build/windows/icon.ico -manifest client/ui/build/windows/wails.exe.manifest \
+            -product-name Cloink-UI -copyright "Cloink" \
+            -ver-major ${{ steps.ver.outputs.major }} -ver-minor ${{ steps.ver.outputs.minor }} \
+            -ver-patch ${{ steps.ver.outputs.patch }} -ver-build 0 \
+            -file-version ${{ steps.ver.outputs.appver }} -product-version ${{ steps.ver.outputs.appver }} \
+            -o client/ui/resources_windows_amd64.syso versioninfo.json
+
+      - name: Build Wails frontend
+        working-directory: client/ui/frontend
+        run: |
+          pnpm install --frozen-lockfile
+          cd .. && wails3 generate bindings -clean=true -ts
+          cd frontend && pnpm build
+
+      - name: Build cloink.exe (CLI/daemon)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          DATE=$(git log -1 --format=%cI)
+          go build -tags load_wgnt_from_rsrc \
+            -ldflags "-s -w -X github.com/netbirdio/netbird/version.version=${{ steps.ver.outputs.version }} -X main.commit=$COMMIT -X main.date=$DATE -X main.builtBy=github-actions" \
+            -o dist/cloink_windows_amd64/cloink.exe ./client
+
+      - name: Build cloink-ui.exe (desktop UI)
+        env:
+          CGO_ENABLED: "1"
+          CC: x86_64-w64-mingw32-gcc
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -tags production \
+            -ldflags "-s -w -X github.com/netbirdio/netbird/version.version=${{ steps.ver.outputs.version }} -X main.builtBy=github-actions -H windowsgui" \
+            -o dist/cloink_windows_amd64/cloink-ui.exe ./client/ui
+
+      - name: Download wintun
+        run: |
+          curl -sSL -o /tmp/wintun.zip https://pkgs.netbird.io/wintun/wintun-0.14.1.zip
+          echo "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51  /tmp/wintun.zip" | sha256sum -c
+          unzip -o -q /tmp/wintun.zip -d /tmp/wintun
+          cp /tmp/wintun/wintun/bin/amd64/wintun.dll dist/cloink_windows_amd64/
+
+      - name: Generate WebView2 bootstrapper
+        working-directory: client
+        run: wails3 generate webview2bootstrapper -dir .
+
+      - name: Build NSIS installer
+        working-directory: client
+        env:
+          APPVER: ${{ steps.ver.outputs.appver }}
+        run: makensis -DARCH=amd64 installer.nsis
+
+      - name: Collect artifacts
+        run: |
+          mv cloink-installer.exe dist/cloink_windows_amd64_installer.exe
+          cd dist && sha256sum cloink_windows_amd64_installer.exe cloink_windows_amd64/*.exe cloink_windows_amd64/wintun.dll > checksums.txt
+          cat checksums.txt
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloink-windows-amd64-installer
+          path: |
+            dist/cloink_windows_amd64_installer.exe
+            dist/checksums.txt
+          retention-days: 30
+
+      - name: Upload raw binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloink-windows-amd64-binaries
+          path: dist/cloink_windows_amd64/
+          retention-days: 30
+
+      - name: Attach to release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/cloink_windows_amd64_installer.exe
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
