@@ -9,6 +9,7 @@ import (
 
 	"github.com/netbirdio/netbird/management/server/account"
 	nbinstance "github.com/netbirdio/netbird/management/server/instance"
+	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/shared/management/http/api"
 	"github.com/netbirdio/netbird/shared/management/http/util"
 )
@@ -16,6 +17,7 @@ import (
 // handler handles the instance setup HTTP endpoints
 type handler struct {
 	instanceManager nbinstance.Manager
+	accountManager  account.Manager
 	setupManager    *nbinstance.SetupService
 }
 
@@ -24,11 +26,53 @@ type handler struct {
 func AddEndpoints(instanceManager nbinstance.Manager, accountManager account.Manager, router *mux.Router) {
 	h := &handler{
 		instanceManager: instanceManager,
+		accountManager:  accountManager,
 		setupManager:    nbinstance.NewSetupService(instanceManager, accountManager),
 	}
 
 	router.HandleFunc("/instance", h.getInstanceStatus).Methods("GET", "OPTIONS")
+	router.HandleFunc("/instance/branding", h.getBranding).Methods("GET", "OPTIONS")
 	router.HandleFunc("/setup", h.setup).Methods("POST", "OPTIONS")
+}
+
+// getBranding returns public branding settings for unauthenticated entry pages.
+// This endpoint is unauthenticated.
+func (h *handler) getBranding(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	resp := api.InstanceBranding{}
+	if h.accountManager == nil || h.accountManager.GetStore() == nil {
+		util.WriteJSONObject(r.Context(), w, resp)
+		return
+	}
+	accounts := h.accountManager.GetStore().GetAllAccounts(r.Context())
+	var selected *types.Account
+	for _, candidate := range accounts {
+		if candidate != nil && candidate.IsDomainPrimaryAccount {
+			selected = candidate
+			break
+		}
+	}
+	if selected == nil && len(accounts) > 0 {
+		selected = accounts[0]
+	}
+	if selected == nil || selected.Settings == nil || selected.Settings.Extra == nil {
+		util.WriteJSONObject(r.Context(), w, resp)
+		return
+	}
+	extra := selected.Settings.Extra
+	resp.BrandingLogoDataUrl = optionalBrandingString(extra.BrandingLogoDataURL)
+	resp.BrandingLogoDarkDataUrl = optionalBrandingString(extra.BrandingLogoDarkDataURL)
+	resp.BrandingIconDataUrl = optionalBrandingString(extra.BrandingIconDataURL)
+	resp.BrandingTabTitle = optionalBrandingString(extra.BrandingTabTitle)
+	resp.BrandingPrimaryColor = optionalBrandingString(extra.BrandingPrimaryColor)
+	util.WriteJSONObject(r.Context(), w, resp)
+}
+
+func optionalBrandingString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // AddVersionEndpoint registers the authenticated version endpoint.

@@ -241,6 +241,21 @@ func (h *handler) updateAccountRequestSettings(req api.PutApiAccountsAccountIdJS
 			FlowGroups:               req.Settings.Extra.NetworkTrafficLogsGroups,
 			FlowPacketCounterEnabled: req.Settings.Extra.NetworkTrafficPacketCounterEnabled,
 		}
+		if req.Settings.Extra.BrandingLogoDataUrl != nil {
+			returnSettings.Extra.BrandingLogoDataURL = *req.Settings.Extra.BrandingLogoDataUrl
+		}
+		if req.Settings.Extra.BrandingLogoDarkDataUrl != nil {
+			returnSettings.Extra.BrandingLogoDarkDataURL = *req.Settings.Extra.BrandingLogoDarkDataUrl
+		}
+		if req.Settings.Extra.BrandingIconDataUrl != nil {
+			returnSettings.Extra.BrandingIconDataURL = *req.Settings.Extra.BrandingIconDataUrl
+		}
+		if req.Settings.Extra.BrandingTabTitle != nil {
+			returnSettings.Extra.BrandingTabTitle = *req.Settings.Extra.BrandingTabTitle
+		}
+		if req.Settings.Extra.BrandingPrimaryColor != nil {
+			returnSettings.Extra.BrandingPrimaryColor = *req.Settings.Extra.BrandingPrimaryColor
+		}
 	}
 
 	if req.Settings.JwtGroupsEnabled != nil {
@@ -471,6 +486,11 @@ func toAccountResponse(accountID string, settings *types.Settings, meta *types.A
 			NetworkTrafficLogsEnabled:          settings.Extra.FlowEnabled,
 			NetworkTrafficLogsGroups:           settings.Extra.FlowGroups,
 			NetworkTrafficPacketCounterEnabled: settings.Extra.FlowPacketCounterEnabled,
+			BrandingLogoDataUrl:                optionalBrandingString(settings.Extra.BrandingLogoDataURL),
+			BrandingLogoDarkDataUrl:            optionalBrandingString(settings.Extra.BrandingLogoDarkDataURL),
+			BrandingIconDataUrl:                optionalBrandingString(settings.Extra.BrandingIconDataURL),
+			BrandingTabTitle:                   optionalBrandingString(settings.Extra.BrandingTabTitle),
+			BrandingPrimaryColor:               optionalBrandingString(settings.Extra.BrandingPrimaryColor),
 		}
 	}
 
@@ -483,4 +503,11 @@ func toAccountResponse(accountID string, settings *types.Settings, meta *types.A
 		DomainCategory: meta.DomainCategory,
 		Onboarding:     apiOnboarding,
 	}
+}
+
+func optionalBrandingString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

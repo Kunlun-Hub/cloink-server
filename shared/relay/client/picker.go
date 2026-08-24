@@ -55,11 +55,16 @@ type ServerPicker struct {
 }
 
 func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
-	ctx, cancel := context.WithTimeout(parentCtx, sp.ConnectionTimeout)
+	connectionTimeout := sp.ConnectionTimeout
+	if connectionTimeout <= 0 {
+		connectionTimeout = defaultConnectionTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(parentCtx, connectionTimeout)
 	defer cancel()
 
 	config := sp.loadConfig()
-	serverURLs := sp.availableServerURLs(config.serverURLs, time.Now())
+	serverURLs := sp.availableServerURLs(config, config.serverURLs, time.Now())
 	totalServers := len(serverURLs)
 	if totalServers == 0 {
 		return nil, errors.New("failed to connect to any relay server: all attempts failed")
@@ -73,7 +78,7 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	startConnection := func(url string) {
 		concurrentLimiter <- struct{}{}
 		startedServers++
-		connectionCtx, connectionCancel := context.WithTimeout(parentCtx, sp.ConnectionTimeout)
+		connectionCtx, connectionCancel := context.WithCancel(ctx)
 		connectionCancels[url] = connectionCancel
 		go func(url string) {
 			defer func() { <-concurrentLimiter }()
@@ -119,7 +124,7 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	return nil, errors.New("failed to connect to any relay server: all attempts failed")
 }
 
-func (sp *ServerPicker) availableServerURLs(serverURLs []string, now time.Time) []string {
+func (sp *ServerPicker) availableServerURLs(config pickerConfig, serverURLs []string, now time.Time) []string {
 	if sp.CooldownDuration <= 0 || len(serverURLs) == 0 {
 		return serverURLs
 	}
@@ -134,9 +139,24 @@ func (sp *ServerPicker) availableServerURLs(serverURLs []string, now time.Time) 
 		}
 	}
 	if len(available) == 0 {
-		return serverURLs
+		return sp.serverURLsByCooldownExpiryLocked(config, serverURLs)
 	}
 	return available
+}
+
+// serverURLsByCooldownExpiryLocked orders fully cooled-down servers so the one
+// recovering first is retried first. Weight grouping stays authoritative: only
+// servers of equal weight are reordered against each other.
+// Caller holds cooldownMu.
+func (sp *ServerPicker) serverURLsByCooldownExpiryLocked(config pickerConfig, serverURLs []string) []string {
+	ordered := slices.Clone(serverURLs)
+	slices.SortStableFunc(ordered, func(left, right string) int {
+		if weightDiff := config.weight(right) - config.weight(left); weightDiff != 0 {
+			return weightDiff
+		}
+		return sp.cooldowns[left].Compare(sp.cooldowns[right])
+	})
+	return ordered
 }
 
 func (sp *ServerPicker) markServerFailure(relayURL string, now time.Time, err error) {

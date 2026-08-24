@@ -392,6 +392,8 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 
 		if newSettings.Extra == nil {
 			newSettings.Extra = oldSettings.Extra
+		} else {
+			preserveUnmanagedExtraSettings(newSettings.Extra, oldSettings.Extra)
 		}
 		if newSettings.LoginMethod == "" {
 			newSettings.LoginMethod = oldSettings.LoginMethod
@@ -517,6 +519,10 @@ func prefixFromIPNet(ipNet net.IPNet) netip.Prefix {
 }
 
 func (am *DefaultAccountManager) validateSettingsUpdate(ctx context.Context, transaction store.Store, newSettings, oldSettings *types.Settings, userID, accountID string) error {
+	if err := validateBrandingSettings(newSettings.Extra); err != nil {
+		return err
+	}
+
 	halfYearLimit := 180 * 24 * time.Hour
 	if newSettings.PeerLoginExpiration > halfYearLimit {
 		return status.Errorf(status.InvalidArgument, "peer login expiration can't be larger than 180 days")

@@ -194,6 +194,13 @@ type ExtraSettings struct {
 	FlowPacketCounterEnabled bool     `gorm:"default:false"`
 	FlowENCollectionEnabled  bool     `gorm:"default:false"`
 	FlowDnsCollectionEnabled bool     `gorm:"default:false"`
+
+	// Branding settings are stored on the account and exposed by the dashboard.
+	BrandingLogoDataURL     string
+	BrandingLogoDarkDataURL string
+	BrandingIconDataURL     string
+	BrandingTabTitle        string
+	BrandingPrimaryColor    string
 }
 
 // Copy copies the ExtraSettings struct
@@ -209,6 +216,11 @@ func (e *ExtraSettings) Copy() *ExtraSettings {
 		FlowPacketCounterEnabled:  e.FlowPacketCounterEnabled,
 		FlowENCollectionEnabled:   e.FlowENCollectionEnabled,
 		FlowDnsCollectionEnabled:  e.FlowDnsCollectionEnabled,
+		BrandingLogoDataURL:       e.BrandingLogoDataURL,
+		BrandingLogoDarkDataURL:   e.BrandingLogoDarkDataURL,
+		BrandingIconDataURL:       e.BrandingIconDataURL,
+		BrandingTabTitle:          e.BrandingTabTitle,
+		BrandingPrimaryColor:      e.BrandingPrimaryColor,
 	}
 }
 

@@ -72,6 +72,9 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if err := bypass.AddBypassPath("/api/instance"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
+	if err := bypass.AddBypassPath("/api/instance/branding"); err != nil {
+		return nil, fmt.Errorf("failed to add bypass path: %w", err)
+	}
 	if err := bypass.AddBypassPath("/api/setup"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}

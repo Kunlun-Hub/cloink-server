@@ -1749,6 +1749,21 @@ type AccountDashboardFeatures struct {
 
 // AccountExtraSettings defines model for AccountExtraSettings.
 type AccountExtraSettings struct {
+	// BrandingIconDataUrl Custom compact brand icon and favicon stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+	BrandingIconDataUrl *string `json:"branding_icon_data_url,omitempty"`
+
+	// BrandingLogoDarkDataUrl Custom dashboard header logo for dark mode stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+	BrandingLogoDarkDataUrl *string `json:"branding_logo_dark_data_url,omitempty"`
+
+	// BrandingLogoDataUrl Custom dashboard header logo stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+	BrandingLogoDataUrl *string `json:"branding_logo_data_url,omitempty"`
+
+	// BrandingPrimaryColor Custom dashboard primary brand color as a 6-digit hex value.
+	BrandingPrimaryColor *string `json:"branding_primary_color,omitempty"`
+
+	// BrandingTabTitle Custom brand title shown in browser tabs.
+	BrandingTabTitle *string `json:"branding_tab_title,omitempty"`
+
 	// NetworkTrafficLogsEnabled Enables or disables network traffic logging. If enabled, all network traffic events from peers will be stored.
 	NetworkTrafficLogsEnabled bool `json:"network_traffic_logs_enabled"`
 
@@ -3670,6 +3685,15 @@ type IngressPortAllocationRequestPortRange struct {
 
 // IngressPortAllocationRequestPortRangeProtocol The protocol accepted by the port range
 type IngressPortAllocationRequestPortRangeProtocol string
+
+// InstanceBranding Public branding settings for unauthenticated entry pages.
+type InstanceBranding struct {
+	BrandingIconDataUrl     *string `json:"branding_icon_data_url,omitempty"`
+	BrandingLogoDarkDataUrl *string `json:"branding_logo_dark_data_url,omitempty"`
+	BrandingLogoDataUrl     *string `json:"branding_logo_data_url,omitempty"`
+	BrandingPrimaryColor    *string `json:"branding_primary_color,omitempty"`
+	BrandingTabTitle        *string `json:"branding_tab_title,omitempty"`
+}
 
 // InstanceStatus Instance status information
 type InstanceStatus struct {

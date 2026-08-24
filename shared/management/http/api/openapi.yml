@@ -497,6 +497,27 @@ components:
     AccountExtraSettings:
       type: object
       properties:
+        branding_logo_data_url:
+          description: Custom dashboard header logo stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+          type: string
+          maxLength: 1048704
+        branding_logo_dark_data_url:
+          description: Custom dashboard header logo for dark mode stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+          type: string
+          maxLength: 1048704
+        branding_icon_data_url:
+          description: Custom compact brand icon and favicon stored as a data URL. Allowed image types are PNG, JPEG, WebP, and SVG. Decoded image data must be 256 KB or smaller.
+          type: string
+          maxLength: 1048704
+        branding_tab_title:
+          description: Custom brand title shown in browser tabs.
+          type: string
+          maxLength: 80
+        branding_primary_color:
+          description: Custom dashboard primary brand color as a 6-digit hex value.
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          example: "#f68330"
         peer_approval_enabled:
           description: (Cloud only) Enables or disables peer approval globally. If enabled, all peers added will be in pending state until approved by an admin.
           type: boolean
@@ -3866,6 +3887,20 @@ components:
       required:
         - domain
         - target_cluster
+    InstanceBranding:
+      type: object
+      description: Public branding settings for unauthenticated entry pages.
+      properties:
+        branding_logo_data_url:
+          type: string
+        branding_logo_dark_data_url:
+          type: string
+        branding_icon_data_url:
+          type: string
+        branding_tab_title:
+          type: string
+        branding_primary_color:
+          type: string
     InstanceStatus:
       type: object
       description: Instance status information
@@ -6735,6 +6770,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InstanceStatus'
+        '500':
+          "$ref": "#/components/responses/internal_error"
+  /api/instance/branding:
+    get:
+      summary: Get Public Instance Branding
+      description: Returns public branding settings for unauthenticated entry pages.
+      tags: [ Instance ]
+      security: [ ]
+      responses:
+        '200':
+          description: Public branding settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceBranding'
         '500':
           "$ref": "#/components/responses/internal_error"
   /api/instance/version:

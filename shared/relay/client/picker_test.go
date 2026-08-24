@@ -43,8 +43,42 @@ func TestServerPickerCooldownBacksOffAndResets(t *testing.T) {
 func TestServerPickerFailureEntersCooldown(t *testing.T) {
 	sp := ServerPicker{CooldownDuration: time.Minute}
 	sp.markServerFailure("rels://failed", time.Now(), errors.New("handshake failed"))
-	if got := sp.availableServerURLs([]string{"rels://failed", "rels://healthy"}, time.Now()); len(got) != 1 || got[0] != "rels://healthy" {
+	got := sp.availableServerURLs(pickerConfig{}, []string{"rels://failed", "rels://healthy"}, time.Now())
+	if len(got) != 1 || got[0] != "rels://healthy" {
 		t.Fatalf("failed connection remained available: %v", got)
+	}
+}
+
+func TestServerPickerAllCooledDownOrdersByExpiry(t *testing.T) {
+	sp := ServerPicker{CooldownDuration: time.Minute}
+	now := time.Now()
+	// second fails first, so it recovers first and must be retried first
+	sp.markServerFailure("rels://second", now.Add(-30*time.Second), errors.New("handshake failed"))
+	sp.markServerFailure("rels://first", now, errors.New("handshake failed"))
+
+	got := sp.availableServerURLs(pickerConfig{}, []string{"rels://first", "rels://second"}, now)
+	if len(got) != 2 {
+		t.Fatalf("expected full fallback list, got: %v", got)
+	}
+	if got[0] != "rels://second" {
+		t.Fatalf("expected earliest-expiring relay first, got: %v", got)
+	}
+}
+
+func TestServerPickerAllCooledDownKeepsWeightGroups(t *testing.T) {
+	sp := ServerPicker{CooldownDuration: time.Minute}
+	now := time.Now()
+	config := pickerConfig{serverWeights: map[string]int{
+		"rels://heavy": 100,
+		"rels://light": 10,
+	}}
+	// the light relay recovers first, but must not jump the weight group
+	sp.markServerFailure("rels://light", now.Add(-45*time.Second), errors.New("handshake failed"))
+	sp.markServerFailure("rels://heavy", now, errors.New("handshake failed"))
+
+	got := sp.availableServerURLs(config, []string{"rels://heavy", "rels://light"}, now)
+	if len(got) != 2 || got[0] != "rels://heavy" {
+		t.Fatalf("weight grouping must stay authoritative, got: %v", got)
 	}
 }
 
