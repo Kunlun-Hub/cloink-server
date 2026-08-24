@@ -2,18 +2,302 @@
 
 set -e
 
-# NetBird Getting Started with Embedded IdP (Dex)
-# This script sets up NetBird with the embedded Dex identity provider
-# No separate Dex container or reverse proxy needed - IdP is built into management server
+# Cloink Getting Started with Embedded IdP (Dex)
+# This script sets up Cloink with the embedded Dex identity provider.
+# No separate Dex container or reverse proxy needed - IdP is built into the
+# combined server.
+#
+# The installer is bilingual. The language is chosen interactively on start and
+# can be preselected non-interactively with NB_LANG=en|zh.
 
 # Sed pattern to strip base64 padding characters
 SED_STRIP_PADDING='s/=//g'
 
-# Constants for repeated string literals
-readonly MSG_STARTING_SERVICES="\nStarting NetBird services\n"
-readonly MSG_DONE="\nDone!\n"
-readonly MSG_NEXT_STEPS="Next steps:"
-readonly MSG_SEPARATOR="=========================================="
+############################################
+# Localization
+############################################
+
+# NB_LANG selects the message catalog: "en" or "zh". When unset the installer
+# asks on a TTY and falls back to English for non-interactive runs.
+NB_LANG="${NB_LANG:-}"
+
+# msg prints a localized string by key. Extra arguments are substituted into
+# the catalog entry with printf, so callers keep format placeholders in one
+# place instead of concatenating translated fragments.
+msg() {
+  local key="$1"
+  shift
+  local template
+  template="$(lookup_msg "$key")"
+  # shellcheck disable=SC2059 # the template intentionally carries the format
+  printf "$template" "$@"
+}
+
+# msgn prints a localized string followed by a newline.
+msgn() {
+  msg "$@"
+  printf '\n'
+}
+
+# lookup_msg resolves a key for the active language, falling back to English so
+# an untranslated key still prints something actionable instead of an empty
+# line.
+lookup_msg() {
+  local key="$1"
+  local value=""
+  if [[ "$NB_LANG" == "zh" ]]; then
+    value="${MSG_ZH[$key]-}"
+  fi
+  if [[ -z "$value" ]]; then
+    value="${MSG_EN[$key]-}"
+  fi
+  if [[ -z "$value" ]]; then
+    # A missing key is a bug in the catalog, not a user error: surface the key
+    # itself rather than silently printing nothing.
+    value="$key"
+  fi
+  printf '%s' "$value"
+}
+
+declare -A MSG_EN
+declare -A MSG_ZH
+
+load_message_catalog() {
+  MSG_EN=(
+    [lang_prompt]="Select language / 请选择语言:"
+    [lang_option_en]="  [0] English"
+    [lang_option_zh]="  [1] 中文"
+    [lang_choice]="Enter choice [0-1] (default: 0): "
+    [lang_invalid]="Invalid choice. Please enter 0 or 1."
+    [starting_services]="\nStarting Cloink services\n"
+    [done]="\nDone!\n"
+    [next_steps]="Next steps:"
+    [separator]="=========================================="
+    [domain_prompt]="Enter the domain you want to use for Cloink (e.g. cloink.my-domain.com): "
+    [domain_invalid]="The domain %s is invalid. Please enter a valid domain name."
+    [domain_unresolved]="The domain %s does not resolve to this machine's public IP (%s)."
+    [domain_continue]="Continue anyway? [y/N]: "
+    [proxy_type_prompt]="Which reverse proxy will you use?"
+    [proxy_type_0]="  [0] Traefik (recommended - automatic TLS, included in Docker Compose)"
+    [proxy_type_1]="  [1] Existing Traefik (labels for external Traefik instance)"
+    [proxy_type_2]="  [2] Nginx (generates config template)"
+    [proxy_type_3]="  [3] Nginx Proxy Manager (generates config + instructions)"
+    [proxy_type_4]="  [4] External Caddy (generates Caddyfile snippet)"
+    [proxy_type_5]="  [5] Other/Manual (displays setup documentation)"
+    [proxy_type_choice]="Enter choice [0-5] (default: 0): "
+    [proxy_type_invalid]="Invalid choice. Please enter a number between 0 and 5."
+    [traefik_network_hint]="If you have an existing Traefik instance, enter its external network name."
+    [traefik_network_prompt]="External network (leave empty to create 'netbird' network): "
+    [traefik_entrypoint_hint]="Enter the name of your Traefik HTTPS entrypoint."
+    [traefik_entrypoint_prompt]="HTTPS entrypoint name (default: websecure): "
+    [traefik_resolver_hint]="Enter the name of your Traefik certificate resolver (for automatic TLS)."
+    [traefik_resolver_hint2]="Leave empty if you handle TLS termination elsewhere or use a wildcard cert."
+    [traefik_resolver_prompt]="Certificate resolver name (e.g., letsencrypt): "
+    [acme_email_hint]="Enter the email address used for Let's Encrypt certificate registration."
+    [acme_email_prompt]="ACME email address: "
+    [acme_email_invalid]="Please enter a valid email address."
+    [port_binding_hint]="Should the service ports be reachable from outside this machine?"
+    [port_binding_0]="  [0] Bind to localhost only (recommended when a reverse proxy runs here)"
+    [port_binding_1]="  [1] Bind to all interfaces"
+    [port_binding_choice]="Enter choice [0-1] (default: 0): "
+    [proxy_network_hint]="Enter the Docker network your reverse proxy is attached to."
+    [proxy_network_prompt]="Docker network name (leave empty to skip): "
+    [enable_proxy_hint]="Enable the Cloink identity-aware proxy (Agent Network)?"
+    [enable_proxy_prompt]="Enable proxy? [y/N]: "
+    [enable_crowdsec_hint]="Enable CrowdSec intrusion detection in front of Traefik?"
+    [enable_crowdsec_prompt]="Enable CrowdSec? [y/N]: "
+    [existing_install]="An existing installation was found in %s."
+    [existing_overwrite]="Overwrite the generated configuration? [y/N]: "
+    [existing_abort]="Aborted. Existing configuration was left untouched."
+    [generating_config]="Generating configuration files"
+    [config_written]="  wrote %s"
+    [waiting_management]="Waiting for the Cloink server to become ready"
+    [management_ready]="Cloink server is ready."
+    [management_timeout]="Timed out waiting for the Cloink server. Check 'docker compose logs'."
+    [summary_domain]="  - domain: %s"
+    [summary_dashboard_image]="  - dashboard image: %s"
+    [summary_server_image]="  - server image: %s"
+    [summary_proxy_image]="  - proxy image: %s"
+    [err_docker_missing]="Docker is not installed. Please install Docker first: https://docs.docker.com/get-docker/"
+    [err_compose_missing]="docker compose is not available. Please install the Docker Compose plugin."
+    [err_jq_missing]="jq is required but not installed. Please install jq first."
+    [err_docker_sock]="Cannot access the Docker socket %s. Run this script as root or add your user to the docker group."
+    [err_openssl_missing]="openssl is required but not installed. Please install openssl first."
+    [port_binding_hint]="Should container ports be bound to localhost only (127.0.0.1)?"
+    [port_binding_hint2]="Choose 'yes' if your reverse proxy runs on the same host (more secure)."
+    [port_binding_prompt]="Bind to localhost only? [Y/n]: "
+    [proxy_network_hint]="Is %s running in Docker?"
+    [proxy_network_hint2]="If yes, enter the Docker network %s is on (Cloink will join it)."
+    [proxy_network_prompt]="Docker network (leave empty if not in Docker): "
+    [enable_proxy_hint]="Do you want to enable the Cloink Proxy service?"
+    [enable_proxy_hint2]="The proxy allows you to selectively expose internal Cloink network resources"
+    [enable_proxy_hint3]="to the internet. You control which resources are exposed through the dashboard."
+    [enable_proxy_prompt]="Enable proxy? [y/N]: "
+    [enable_crowdsec_hint]="Do you want to enable CrowdSec IP reputation blocking?"
+    [enable_crowdsec_hint2]="CrowdSec checks client IPs against a community threat intelligence database"
+    [enable_crowdsec_hint3]="and blocks known malicious sources before they reach your services."
+    [enable_crowdsec_hint4]="A local CrowdSec LAPI container will be added to your deployment."
+    [enable_crowdsec_prompt]="Enable CrowdSec? [y/N]: "
+    [acme_email_hint]="Enter your email for Let's Encrypt certificate notifications."
+    [acme_email_prompt]="Email address: "
+    [acme_email_required]="Email is required for Let's Encrypt."
+    [setup_complete]="  CLOINK SETUP COMPLETE"
+    [access_dashboard]="You can access the Cloink dashboard at:"
+    [onboarding_hint]="Follow the onboarding steps to set up your Cloink instance."
+    [traefik_tls]="Traefik is handling TLS certificates automatically via Let's Encrypt."
+    [traefik_tls_wait]="If you see certificate warnings, wait a moment for certificate issuance to complete."
+    [open_ports]="Open ports:"
+    [port_https]="  - 443/tcp   (HTTPS - all Cloink services)"
+    [port_http]="  - 80/tcp    (HTTP - redirects to HTTPS)"
+    [port_stun]="  - %s/udp   (STUN - required for NAT traversal)"
+    [port_wireguard]="  - 51820/udp (WIREGUARD - (optional) for P2P proxy connections)"
+  )
+
+  MSG_ZH=(
+    [lang_prompt]="Select language / 请选择语言:"
+    [lang_option_en]="  [0] English"
+    [lang_option_zh]="  [1] 中文"
+    [lang_choice]="请输入选项 [0-1]（默认：0）："
+    [lang_invalid]="选项无效，请输入 0 或 1。"
+    [starting_services]="\n正在启动 Cloink 服务\n"
+    [done]="\n完成！\n"
+    [next_steps]="后续步骤："
+    [separator]="=========================================="
+    [domain_prompt]="请输入用于 Cloink 的域名（例如 cloink.my-domain.com）："
+    [domain_invalid]="域名 %s 无效，请输入合法的域名。"
+    [domain_unresolved]="域名 %s 未解析到本机公网 IP（%s）。"
+    [domain_continue]="仍要继续吗？[y/N]："
+    [proxy_type_prompt]="请选择要使用的反向代理："
+    [proxy_type_0]="  [0] Traefik（推荐 - 自动签发 TLS，已包含在 Docker Compose 中）"
+    [proxy_type_1]="  [1] 已有的 Traefik（为外部 Traefik 实例生成标签）"
+    [proxy_type_2]="  [2] Nginx（生成配置模板）"
+    [proxy_type_3]="  [3] Nginx Proxy Manager（生成配置和操作说明）"
+    [proxy_type_4]="  [4] 外部 Caddy（生成 Caddyfile 片段）"
+    [proxy_type_5]="  [5] 其他/手动（显示配置文档）"
+    [proxy_type_choice]="请输入选项 [0-5]（默认：0）："
+    [proxy_type_invalid]="选项无效，请输入 0 到 5 之间的数字。"
+    [traefik_network_hint]="如果已有 Traefik 实例，请输入其外部网络名称。"
+    [traefik_network_prompt]="外部网络名称（留空则创建 netbird 网络）："
+    [traefik_entrypoint_hint]="请输入 Traefik 的 HTTPS entrypoint 名称。"
+    [traefik_entrypoint_prompt]="HTTPS entrypoint 名称（默认：websecure）："
+    [traefik_resolver_hint]="请输入 Traefik 的证书解析器名称（用于自动签发 TLS）。"
+    [traefik_resolver_hint2]="如果在别处终止 TLS 或使用泛域名证书，请留空。"
+    [traefik_resolver_prompt]="证书解析器名称（例如 letsencrypt）："
+    [acme_email_hint]="请输入用于 Let's Encrypt 证书注册的邮箱地址。"
+    [acme_email_prompt]="ACME 邮箱地址："
+    [acme_email_invalid]="请输入合法的邮箱地址。"
+    [port_binding_hint]="服务端口是否需要从本机以外访问？"
+    [port_binding_0]="  [0] 仅绑定 localhost（本机运行反向代理时推荐）"
+    [port_binding_1]="  [1] 绑定所有网卡"
+    [port_binding_choice]="请输入选项 [0-1]（默认：0）："
+    [proxy_network_hint]="请输入反向代理所在的 Docker 网络。"
+    [proxy_network_prompt]="Docker 网络名称（留空则跳过）："
+    [enable_proxy_hint]="是否启用 Cloink 身份感知代理（Agent Network）？"
+    [enable_proxy_prompt]="启用代理？[y/N]："
+    [enable_crowdsec_hint]="是否在 Traefik 前启用 CrowdSec 入侵检测？"
+    [enable_crowdsec_prompt]="启用 CrowdSec？[y/N]："
+    [existing_install]="在 %s 中发现已有安装。"
+    [existing_overwrite]="是否覆盖已生成的配置？[y/N]："
+    [existing_abort]="已取消，原有配置未被修改。"
+    [generating_config]="正在生成配置文件"
+    [config_written]="  已写入 %s"
+    [waiting_management]="正在等待 Cloink 服务就绪"
+    [management_ready]="Cloink 服务已就绪。"
+    [management_timeout]="等待 Cloink 服务超时，请检查 docker compose logs。"
+    [summary_domain]="  - 域名：%s"
+    [summary_dashboard_image]="  - Dashboard 镜像：%s"
+    [summary_server_image]="  - Server 镜像：%s"
+    [summary_proxy_image]="  - Proxy 镜像：%s"
+    [err_docker_missing]="未安装 Docker，请先安装：https://docs.docker.com/get-docker/"
+    [err_compose_missing]="docker compose 不可用，请安装 Docker Compose 插件。"
+    [err_jq_missing]="需要 jq，但系统未安装，请先安装 jq。"
+    [err_docker_sock]="无法访问 Docker socket %s，请以 root 运行本脚本，或将当前用户加入 docker 组。"
+    [err_openssl_missing]="需要 openssl，但系统未安装，请先安装 openssl。"
+    [port_binding_hint]="是否仅将容器端口绑定到 localhost（127.0.0.1）？"
+    [port_binding_hint2]="如果反向代理运行在同一台主机上，请选择 yes（更安全）。"
+    [port_binding_prompt]="仅绑定 localhost？[Y/n]："
+    [proxy_network_hint]="%s 是否运行在 Docker 中？"
+    [proxy_network_hint2]="如果是，请输入 %s 所在的 Docker 网络（Cloink 将加入该网络）。"
+    [proxy_network_prompt]="Docker 网络（不在 Docker 中则留空）："
+    [enable_proxy_hint]="是否启用 Cloink Proxy 服务？"
+    [enable_proxy_hint2]="该代理可将 Cloink 内网资源按需暴露到公网，"
+    [enable_proxy_hint3]="具体暴露哪些资源由你在 Dashboard 中控制。"
+    [enable_proxy_prompt]="启用 Proxy？[y/N]："
+    [enable_crowdsec_hint]="是否启用 CrowdSec IP 信誉拦截？"
+    [enable_crowdsec_hint2]="CrowdSec 会将来访 IP 与社区威胁情报库比对，"
+    [enable_crowdsec_hint3]="在请求到达服务之前拦截已知的恶意来源。"
+    [enable_crowdsec_hint4]="部署中将新增一个本地 CrowdSec LAPI 容器。"
+    [enable_crowdsec_prompt]="启用 CrowdSec？[y/N]："
+    [acme_email_hint]="请输入用于接收 Let's Encrypt 证书通知的邮箱。"
+    [acme_email_prompt]="邮箱地址："
+    [acme_email_required]="Let's Encrypt 必须提供邮箱地址。"
+    [setup_complete]="  CLOINK 安装完成"
+    [access_dashboard]="可通过以下地址访问 Cloink 控制台："
+    [onboarding_hint]="请按照引导步骤完成 Cloink 实例的初始化配置。"
+    [traefik_tls]="Traefik 已通过 Let's Encrypt 自动管理 TLS 证书。"
+    [traefik_tls_wait]="如果出现证书告警，请稍候片刻，等待证书签发完成。"
+    [open_ports]="需要开放的端口："
+    [port_https]="  - 443/tcp   (HTTPS - 全部 Cloink 服务)"
+    [port_http]="  - 80/tcp    (HTTP - 重定向到 HTTPS)"
+    [port_stun]="  - %s/udp   (STUN - NAT 穿透必需)"
+    [port_wireguard]="  - 51820/udp (WIREGUARD - 可选，用于 P2P 代理连接)"
+  )
+}
+
+# select_language asks for the interface language before any other output, so
+# the whole run stays in one language. A preset NB_LANG is validated and used
+# as-is, which keeps unattended installs reproducible.
+select_language() {
+  if [[ -n "$NB_LANG" ]]; then
+    case "$NB_LANG" in
+      en | zh) return 0 ;;
+      *)
+        echo "Unsupported NB_LANG '$NB_LANG', falling back to English." > /dev/stderr
+        NB_LANG="en"
+        return 0
+        ;;
+    esac
+  fi
+
+  if ! tty_available; then
+    NB_LANG="en"
+    return 0
+  fi
+
+  while true; do
+    echo "" > /dev/stderr
+    lookup_msg lang_prompt > /dev/stderr
+    echo "" > /dev/stderr
+    lookup_msg lang_option_en > /dev/stderr
+    echo "" > /dev/stderr
+    lookup_msg lang_option_zh > /dev/stderr
+    echo "" > /dev/stderr
+    echo "" > /dev/stderr
+    printf '%s' "$(lookup_msg lang_choice)" > /dev/stderr
+    local choice=""
+    read -r choice < /dev/tty
+    case "${choice:-0}" in
+      0)
+        NB_LANG="en"
+        return 0
+        ;;
+      1)
+        NB_LANG="zh"
+        return 0
+        ;;
+      *)
+        lookup_msg lang_invalid > /dev/stderr
+        echo "" > /dev/stderr
+        ;;
+    esac
+  done
+}
+
+load_message_catalog
+
+# Constants for repeated string literals. These stay lazily evaluated through
+# msg() so they follow the language chosen at runtime.
+MSG_SEPARATOR="=========================================="
 
 ############################################
 # Utility Functions
@@ -166,7 +450,7 @@ resolve() {
 
 read_nb_domain() {
   READ_NETBIRD_DOMAIN=""
-  echo -n "Enter the domain you want to use for NetBird (e.g. netbird.my-domain.com): " > /dev/stderr
+  printf '%s' "$(lookup_msg domain_prompt)" > /dev/stderr
   read -r READ_NETBIRD_DOMAIN < /dev/tty
   if ! check_nb_domain "$READ_NETBIRD_DOMAIN"; then
     read_nb_domain
@@ -177,15 +461,15 @@ read_nb_domain() {
 
 read_reverse_proxy_type() {
   echo "" > /dev/stderr
-  echo "Which reverse proxy will you use?" > /dev/stderr
-  echo "  [0] Traefik (recommended - automatic TLS, included in Docker Compose)" > /dev/stderr
-  echo "  [1] Existing Traefik (labels for external Traefik instance)" > /dev/stderr
-  echo "  [2] Nginx (generates config template)" > /dev/stderr
-  echo "  [3] Nginx Proxy Manager (generates config + instructions)" > /dev/stderr
-  echo "  [4] External Caddy (generates Caddyfile snippet)" > /dev/stderr
-  echo "  [5] Other/Manual (displays setup documentation)" > /dev/stderr
+  msgn proxy_type_prompt > /dev/stderr
+  msgn proxy_type_0 > /dev/stderr
+  msgn proxy_type_1 > /dev/stderr
+  msgn proxy_type_2 > /dev/stderr
+  msgn proxy_type_3 > /dev/stderr
+  msgn proxy_type_4 > /dev/stderr
+  msgn proxy_type_5 > /dev/stderr
   echo "" > /dev/stderr
-  echo -n "Enter choice [0-5] (default: 0): " > /dev/stderr
+  printf '%s' "$(lookup_msg proxy_type_choice)" > /dev/stderr
   read -r CHOICE < /dev/tty
 
   if [[ -z "$CHOICE" ]]; then
@@ -193,7 +477,7 @@ read_reverse_proxy_type() {
   fi
 
   if [[ ! "$CHOICE" =~ ^[0-5]$ ]]; then
-    echo "Invalid choice. Please enter a number between 0 and 5." > /dev/stderr
+    msgn proxy_type_invalid > /dev/stderr
     read_reverse_proxy_type
     return
   fi
@@ -204,8 +488,8 @@ read_reverse_proxy_type() {
 
 read_traefik_network() {
   echo "" > /dev/stderr
-  echo "If you have an existing Traefik instance, enter its external network name." > /dev/stderr
-  echo -n "External network (leave empty to create 'netbird' network): " > /dev/stderr
+  msgn traefik_network_hint > /dev/stderr
+  printf '%s' "$(lookup_msg traefik_network_prompt)" > /dev/stderr
   read -r NETWORK < /dev/tty
   echo "$NETWORK"
   return 0
@@ -213,8 +497,8 @@ read_traefik_network() {
 
 read_traefik_entrypoint() {
   echo "" > /dev/stderr
-  echo "Enter the name of your Traefik HTTPS entrypoint." > /dev/stderr
-  echo -n "HTTPS entrypoint name (default: websecure): " > /dev/stderr
+  msgn traefik_entrypoint_hint > /dev/stderr
+  printf '%s' "$(lookup_msg traefik_entrypoint_prompt)" > /dev/stderr
   read -r ENTRYPOINT < /dev/tty
   if [[ -z "$ENTRYPOINT" ]]; then
     ENTRYPOINT="websecure"
@@ -225,9 +509,9 @@ read_traefik_entrypoint() {
 
 read_traefik_certresolver() {
   echo "" > /dev/stderr
-  echo "Enter the name of your Traefik certificate resolver (for automatic TLS)." > /dev/stderr
-  echo "Leave empty if you handle TLS termination elsewhere or use a wildcard cert." > /dev/stderr
-  echo -n "Certificate resolver name (e.g., letsencrypt): " > /dev/stderr
+  msgn traefik_resolver_hint > /dev/stderr
+  msgn traefik_resolver_hint2 > /dev/stderr
+  printf '%s' "$(lookup_msg traefik_resolver_prompt)" > /dev/stderr
   read -r RESOLVER < /dev/tty
   echo "$RESOLVER"
   return 0
@@ -235,9 +519,9 @@ read_traefik_certresolver() {
 
 read_port_binding_preference() {
   echo "" > /dev/stderr
-  echo "Should container ports be bound to localhost only (127.0.0.1)?" > /dev/stderr
-  echo "Choose 'yes' if your reverse proxy runs on the same host (more secure)." > /dev/stderr
-  echo -n "Bind to localhost only? [Y/n]: " > /dev/stderr
+  msgn port_binding_hint > /dev/stderr
+  msgn port_binding_hint2 > /dev/stderr
+  printf '%s' "$(lookup_msg port_binding_prompt)" > /dev/stderr
   read -r CHOICE < /dev/tty
 
   if [[ "$CHOICE" =~ ^[Nn]$ ]]; then
@@ -251,9 +535,9 @@ read_port_binding_preference() {
 read_proxy_docker_network() {
   local proxy_name="$1"
   echo "" > /dev/stderr
-  echo "Is ${proxy_name} running in Docker?" > /dev/stderr
-  echo "If yes, enter the Docker network ${proxy_name} is on (NetBird will join it)." > /dev/stderr
-  echo -n "Docker network (leave empty if not in Docker): " > /dev/stderr
+  msgn proxy_network_hint "$proxy_name" > /dev/stderr
+  msgn proxy_network_hint2 "$proxy_name" > /dev/stderr
+  printf '%s' "$(lookup_msg proxy_network_prompt)" > /dev/stderr
   read -r NETWORK < /dev/tty
   echo "$NETWORK"
   return 0
@@ -261,10 +545,10 @@ read_proxy_docker_network() {
 
 read_enable_proxy() {
   echo "" > /dev/stderr
-  echo "Do you want to enable the NetBird Proxy service?" > /dev/stderr
-  echo "The proxy allows you to selectively expose internal NetBird network resources" > /dev/stderr
-  echo "to the internet. You control which resources are exposed through the dashboard." > /dev/stderr
-  echo -n "Enable proxy? [y/N]: " > /dev/stderr
+  msgn enable_proxy_hint > /dev/stderr
+  msgn enable_proxy_hint2 > /dev/stderr
+  msgn enable_proxy_hint3 > /dev/stderr
+  printf '%s' "$(lookup_msg enable_proxy_prompt)" > /dev/stderr
   read -r CHOICE < /dev/tty
 
   if [[ "$CHOICE" =~ ^[Yy]$ ]]; then
@@ -277,11 +561,11 @@ read_enable_proxy() {
 
 read_enable_crowdsec() {
   echo "" > /dev/stderr
-  echo "Do you want to enable CrowdSec IP reputation blocking?" > /dev/stderr
-  echo "CrowdSec checks client IPs against a community threat intelligence database" > /dev/stderr
-  echo "and blocks known malicious sources before they reach your services." > /dev/stderr
-  echo "A local CrowdSec LAPI container will be added to your deployment." > /dev/stderr
-  echo -n "Enable CrowdSec? [y/N]: " > /dev/stderr
+  msgn enable_crowdsec_hint > /dev/stderr
+  msgn enable_crowdsec_hint2 > /dev/stderr
+  msgn enable_crowdsec_hint3 > /dev/stderr
+  msgn enable_crowdsec_hint4 > /dev/stderr
+  printf '%s' "$(lookup_msg enable_crowdsec_prompt)" > /dev/stderr
   read -r CHOICE < /dev/tty
 
   if [[ "$CHOICE" =~ ^[Yy]$ ]]; then
@@ -294,11 +578,11 @@ read_enable_crowdsec() {
 
 read_traefik_acme_email() {
   echo "" > /dev/stderr
-  echo "Enter your email for Let's Encrypt certificate notifications." > /dev/stderr
-  echo -n "Email address: " > /dev/stderr
+  msgn acme_email_hint > /dev/stderr
+  printf '%s' "$(lookup_msg acme_email_prompt)" > /dev/stderr
   read -r EMAIL < /dev/tty
   if [[ -z "$EMAIL" ]]; then
-    echo "Email is required for Let's Encrypt." > /dev/stderr
+    msgn acme_email_required > /dev/stderr
     read_traefik_acme_email
     return
   fi
@@ -338,7 +622,7 @@ wait_management_proxy() {
     fi
   fi
 
-  echo -n "Waiting for NetBird server to become ready"
+  echo -n "Waiting for Cloink server to become ready"
   counter=1
   while true; do
     # Check the embedded IdP endpoint through the reverse proxy
@@ -369,7 +653,7 @@ wait_management_proxy() {
 wait_management_direct() {
   set +e
   local upstream_host=$(get_upstream_host)
-  echo -n "Waiting for NetBird server to become ready"
+  echo -n "Waiting for Cloink server to become ready"
   counter=1
   while true; do
     # Check the embedded IdP endpoint directly (no reverse proxy)
@@ -405,9 +689,9 @@ initialize_default_values() {
   NETBIRD_STUN_PORT=3478
 
   # Docker images
-  DASHBOARD_IMAGE=${DASHBOARD_IMAGE:-"netbirdio/dashboard:latest"}
+  DASHBOARD_IMAGE=${DASHBOARD_IMAGE:-"ohoimager/cloink-new-dashboard:test"}
   # Combined server replaces separate signal, relay, and management containers
-  NETBIRD_SERVER_IMAGE=${NETBIRD_SERVER_IMAGE:-"netbirdio/netbird-server:latest"}
+  NETBIRD_SERVER_IMAGE=${NETBIRD_SERVER_IMAGE:-"ohoimager/cloink-new-server:test"}
   NETBIRD_PROXY_IMAGE=${NETBIRD_PROXY_IMAGE:-"netbirdio/reverse-proxy:latest"}
   TRAEFIK_IMAGE=${TRAEFIK_IMAGE:-"traefik:v3.6"}
   CROWDSEC_IMAGE=${CROWDSEC_IMAGE:-"crowdsecurity/crowdsec:v1.7.7"}
@@ -425,7 +709,7 @@ initialize_default_values() {
   # Traefik static IP within the internal bridge network
   TRAEFIK_IP="172.30.0.10"
 
-  # NetBird Proxy configuration
+  # Cloink Proxy configuration
   ENABLE_PROXY="false"
   PROXY_TOKEN=""
 
@@ -460,7 +744,7 @@ configure_domain() {
 }
 
 apply_agent_network_preset() {
-  # Agent-network turnkey install: built-in Traefik + NetBird Proxy with
+  # Agent-network turnkey install: built-in Traefik + Cloink Proxy with
   # NB_PROXY_PRIVATE=true, dashboard locked to agent-network-only mode.
   # Bypasses every reverse-proxy / proxy / CrowdSec prompt. The only
   # inputs we still need from the operator are the domain (handled by
@@ -476,7 +760,7 @@ apply_agent_network_preset() {
   echo "" > /dev/stderr
   echo "Agent-network preset enabled (NETBIRD_AGENT_NETWORK=true):" > /dev/stderr
   echo "  - reverse proxy: built-in Traefik" > /dev/stderr
-  echo "  - NetBird Proxy: enabled with NB_PROXY_PRIVATE=true" > /dev/stderr
+  echo "  - Cloink Proxy: enabled with NB_PROXY_PRIVATE=true" > /dev/stderr
   echo "  - server image: ${NETBIRD_SERVER_IMAGE}" > /dev/stderr
   echo "  - proxy image: ${NETBIRD_PROXY_IMAGE}" > /dev/stderr
   echo "  - dashboard: NETBIRD_AGENT_NETWORK_ONLY=true" > /dev/stderr
@@ -498,7 +782,11 @@ configure_reverse_proxy() {
 
   # Handle built-in Traefik prompts (option 0)
   if [[ "$REVERSE_PROXY_TYPE" == "0" ]]; then
-    TRAEFIK_ACME_EMAIL=$(resolve NETBIRD_LETSENCRYPT_EMAIL required read_traefik_acme_email)
+    # Let's Encrypt cannot issue certificates for a bare IP, so an ACME email is
+    # only required when the deployment is reached through a real domain.
+    if [[ "$NETBIRD_HTTP_PROTOCOL" == "https" ]]; then
+      TRAEFIK_ACME_EMAIL=$(resolve NETBIRD_LETSENCRYPT_EMAIL required read_traefik_acme_email)
+    fi
     ENABLE_PROXY=$(resolve NETBIRD_ENABLE_PROXY false read_enable_proxy)
     if [[ "$ENABLE_PROXY" == "true" ]]; then
       ENABLE_CROWDSEC=$(resolve NETBIRD_ENABLE_CROWDSEC false read_enable_crowdsec)
@@ -595,7 +883,7 @@ start_services_and_show_instructions() {
   # For other external proxies, show instructions first and wait for user confirmation
   if [[ "$REVERSE_PROXY_TYPE" == "0" ]]; then
     # Built-in Traefik - two-phase startup if proxy is enabled
-    echo -e "$MSG_STARTING_SERVICES"
+    msg starting_services
 
     if [[ "$ENABLE_PROXY" == "true" ]]; then
       # Phase 1: Start core services (without proxy)
@@ -664,35 +952,35 @@ start_services_and_show_instructions() {
       wait_management_proxy traefik
     fi
 
-    echo -e "$MSG_DONE"
+    msg done
     print_post_setup_instructions
   elif [[ "$REVERSE_PROXY_TYPE" == "1" ]]; then
     # External Traefik - start containers, then show instructions
     # Traefik discovers services via Docker labels, so containers must be running
-    echo -e "$MSG_STARTING_SERVICES"
+    msg starting_services
     $DOCKER_COMPOSE_COMMAND up -d
 
     sleep 3
     wait_management_proxy detect-traefik
 
-    echo -e "$MSG_DONE"
+    msg done
     print_post_setup_instructions
     echo ""
-    echo "NetBird containers are running. Once Traefik is connected, access the dashboard at:"
+    echo "Cloink containers are running. Once Traefik is connected, access the dashboard at:"
     echo "  $NETBIRD_HTTP_PROTOCOL://$NETBIRD_DOMAIN"
   elif [[ "$REVERSE_PROXY_TYPE" == "3" ]]; then
     # NPM - start containers first, then show instructions
     # NPM requires backend services to be running before creating proxy hosts
-    echo -e "$MSG_STARTING_SERVICES"
+    msg starting_services
     $DOCKER_COMPOSE_COMMAND up -d
 
     sleep 3
     wait_management_direct
 
-    echo -e "$MSG_DONE"
+    msg done
     print_post_setup_instructions
     echo ""
-    echo "NetBird containers are running. Configure NPM as shown above, then access:"
+    echo "Cloink containers are running. Configure NPM as shown above, then access:"
     echo "  $NETBIRD_HTTP_PROTOCOL://$NETBIRD_DOMAIN"
   else
     # External proxies (nginx, external Caddy, other) - need manual config first
@@ -703,24 +991,28 @@ start_services_and_show_instructions() {
       echo -n "Press Enter when your reverse proxy is configured (or Ctrl+C to exit)... "
       read -r < /dev/tty
     else
-      echo "Non-interactive mode: starting NetBird containers now. Finish configuring"
+      echo "Non-interactive mode: starting Cloink containers now. Finish configuring"
       echo "your reverse proxy using the instructions above so it can reach them."
     fi
 
-    echo -e "$MSG_STARTING_SERVICES"
+    msg starting_services
     $DOCKER_COMPOSE_COMMAND up -d
 
     sleep 3
     wait_management_direct
 
-    echo -e "$MSG_DONE"
-    echo "NetBird is now running. Access the dashboard at:"
+    msg done
+    echo "Cloink is now running. Access the dashboard at:"
     echo "  $NETBIRD_HTTP_PROTOCOL://$NETBIRD_DOMAIN"
   fi
   return 0
 }
 
 init_environment() {
+  # Language must be resolved before any other output so the whole run stays
+  # in a single language.
+  select_language
+
   # Check if docker compose is installed using check_docker_compose function
   DOCKER_COMPOSE_COMMAND=$(check_docker_compose)
   check_docker_sock_perms
@@ -765,7 +1057,7 @@ render_docker_compose_traefik_builtin() {
     fi
 
     proxy_service="
-  # NetBird Proxy - exposes internal resources to the internet
+  # Cloink Proxy - exposes internal resources to the internet
   proxy:
     image: $NETBIRD_PROXY_IMAGE
     container_name: netbird-proxy
@@ -922,7 +1214,7 @@ $traefik_dynamic_volume
       - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
       - traefik.http.routers.netbird-grpc.priority=100
       # Backend router (relay, WebSocket, API, OAuth2)
-      - traefik.http.routers.netbird-backend.rule=Host(\`$NETBIRD_DOMAIN\`) && (PathPrefix(\`/relay\`) || PathPrefix(\`/ws-proxy/\`) || PathPrefix(\`/api\`) || PathPrefix(\`/oauth2\`))
+      - traefik.http.routers.netbird-backend.rule=Host(\`$NETBIRD_DOMAIN\`) && (Path(\`/relay\`) || PathPrefix(\`/ws-proxy/\`) || PathPrefix(\`/api\`) || PathPrefix(\`/oauth2\`))
       - traefik.http.routers.netbird-backend.entrypoints=websecure
       - traefik.http.routers.netbird-backend.tls=true
       - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
@@ -955,7 +1247,7 @@ EOF
 
 render_combined_yaml() {
   cat <<EOF
-# Combined NetBird Server Configuration (Simplified)
+# Combined Cloink Server Configuration (Simplified)
 # Generated by getting-started.sh
 
 server:
@@ -1014,7 +1306,7 @@ EOF
 
   if [[ "${NETBIRD_AGENT_NETWORK}" == "true" ]]; then
     cat <<EOF
-# Agent-network preset: dashboard hides the standard NetBird surfaces
+# Agent-network preset: dashboard hides the standard Cloink surfaces
 # and exposes only the AI Observability + agent-network configuration
 # pages. Paired with NB_PROXY_PRIVATE=true on the proxy side.
 NETBIRD_AGENT_NETWORK_ONLY=true
@@ -1036,7 +1328,7 @@ EOF
 
 render_proxy_env() {
   cat <<EOF
-# NetBird Proxy Configuration
+# Cloink Proxy Configuration
 NB_PROXY_DEBUG_LOGS=false
 # Use internal Docker network to connect to management (avoids hairpin NAT issues)
 NB_PROXY_MANAGEMENT_ADDRESS=http://netbird-server:80
@@ -1135,7 +1427,7 @@ $(if [[ -n "$tls_labels" ]]; then echo "      - traefik.http.routers.netbird-das
 $(if [[ -n "$tls_labels" ]]; then echo "      - traefik.http.routers.netbird-grpc.${tls_labels}"; fi)
       - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
       # Backend router (relay, WebSocket, API, OAuth2)
-      - traefik.http.routers.netbird-backend.rule=Host(\`$NETBIRD_DOMAIN\`) && (PathPrefix(\`/relay\`) || PathPrefix(\`/ws-proxy/\`) || PathPrefix(\`/api\`) || PathPrefix(\`/oauth2\`))
+      - traefik.http.routers.netbird-backend.rule=Host(\`$NETBIRD_DOMAIN\`) && (Path(\`/relay\`) || PathPrefix(\`/ws-proxy/\`) || PathPrefix(\`/api\`) || PathPrefix(\`/oauth2\`))
       - traefik.http.routers.netbird-backend.entrypoints=$TRAEFIK_ENTRYPOINT
       - traefik.http.routers.netbird-backend.tls=true
 $(if [[ -n "$tls_labels" ]]; then echo "      - traefik.http.routers.netbird-backend.${tls_labels}"; fi)
@@ -1239,7 +1531,7 @@ render_nginx_conf() {
   fi
 
   cat <<EOF
-# NetBird Nginx Configuration
+# Cloink Nginx Configuration
 # Generated by getting-started.sh
 #
 ${install_note}
@@ -1301,7 +1593,7 @@ server {
     grpc_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
     # WebSocket connections (relay, signal, management)
-    location ~ ^/(relay|ws-proxy/) {
+    location ~ ^/(relay$|ws-proxy/) {
         proxy_pass http://netbird_server;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -1348,7 +1640,7 @@ render_external_caddyfile() {
   fi
 
   cat <<EOF
-# NetBird Caddyfile Snippet
+# Cloink Caddyfile Snippet
 # Generated by getting-started.sh
 #
 ${install_note}
@@ -1359,7 +1651,7 @@ $NETBIRD_DOMAIN {
     reverse_proxy @grpc h2c://${server_addr}
 
     # Combined server paths (relay, signal, management, OAuth2)
-    @backend path /relay* /ws-proxy/* /api/* /oauth2/*
+    @backend path /relay /ws-proxy/* /api/* /oauth2/*
     reverse_proxy @backend ${server_addr}
 
     # Dashboard (everything else)
@@ -1389,7 +1681,7 @@ client_header_timeout 1d;
 client_body_timeout 1d;
 
 # WebSocket connections (relay, signal, management)
-location ~ ^/(relay|ws-proxy/) {
+location ~ ^/(relay$|ws-proxy/) {
     proxy_pass http://${server_addr};
     proxy_http_version 1.1;
     proxy_set_header Upgrade \$http_upgrade;
@@ -1428,42 +1720,27 @@ EOF
 print_builtin_traefik_instructions() {
   echo ""
   echo "$MSG_SEPARATOR"
-  echo "  NETBIRD SETUP COMPLETE"
+  msgn setup_complete
   echo "$MSG_SEPARATOR"
   echo ""
-  echo "You can access the NetBird dashboard at:"
+  msgn access_dashboard
   echo "  $NETBIRD_HTTP_PROTOCOL://$NETBIRD_DOMAIN"
   echo ""
-  echo "Follow the onboarding steps to set up your NetBird instance."
+  msgn onboarding_hint
   echo ""
-  echo "Traefik is handling TLS certificates automatically via Let's Encrypt."
-  echo "If you see certificate warnings, wait a moment for certificate issuance to complete."
+  msgn traefik_tls
+  msgn traefik_tls_wait
   echo ""
-  echo "Open ports:"
-  echo "  - 443/tcp   (HTTPS - all NetBird services)"
-  echo "  - 80/tcp    (HTTP - redirects to HTTPS)"
-  echo "  - $NETBIRD_STUN_PORT/udp   (STUN - required for NAT traversal)"
+  msgn open_ports
+  msgn port_https
+  msgn port_http
+  msgn port_stun "$NETBIRD_STUN_PORT"
   if [[ "$ENABLE_PROXY" == "true" ]]; then
-    echo "  - 51820/udp (WIREGUARD - (optional) for P2P proxy connections)"
-  fi
-  echo ""
-  if [[ "${NETBIRD_AGENT_NETWORK}" == "true" ]]; then
-    echo "For enterprise environments requiring high availability and advanced integrations,"
-    echo "consider a commercial on-prem license:"
-    echo ""
-    echo "  Commercial license: https://netbird.ai/pricing"
-    echo "  Documentation: https://docs.netbird.io/agent-network"
-  else
-    echo "This setup is ideal for homelabs and smaller organization deployments."
-    echo "For enterprise environments requiring high availability and advanced integrations,"
-    echo "consider a commercial on-prem license or scaling your open source deployment:"
-    echo ""
-    echo "  Commercial license: https://netbird.io/pricing#on-prem"
-    echo "  Scaling guide:      https://docs.netbird.io/scaling-your-self-hosted-deployment"
+    msgn port_wireguard
   fi
   echo ""
   if [[ "$ENABLE_PROXY" == "true" ]]; then
-    echo "NetBird Proxy:"
+    echo "Cloink Proxy:"
     echo "  The proxy service is enabled and running."
     echo "  Any domain NOT matching $NETBIRD_DOMAIN will be passed through to the proxy."
     echo "  The proxy handles its own TLS certificates via ACME TLS-ALPN-01 challenge."
@@ -1497,7 +1774,7 @@ print_traefik_instructions() {
   echo "  TRAEFIK SETUP"
   echo "$MSG_SEPARATOR"
   echo ""
-  echo "NetBird containers are configured with Traefik labels."
+  echo "Cloink containers are configured with Traefik labels."
   echo ""
   echo "Configuration:"
   echo "  Entrypoint: $TRAEFIK_ENTRYPOINT"
@@ -1510,7 +1787,7 @@ print_traefik_instructions() {
     echo "  Network: netbird"
   fi
   echo ""
-  echo "$MSG_NEXT_STEPS"
+  msgn next_steps
   echo "  - Ensure Traefik is running and configured"
   if [[ -n "$TRAEFIK_EXTERNAL_NETWORK" ]]; then
     echo "  - Traefik must be on the '$TRAEFIK_EXTERNAL_NETWORK' network"
@@ -1539,10 +1816,10 @@ print_nginx_instructions() {
   echo "generated config file. The config includes examples for common certificate sources."
   echo ""
   if [[ -n "$EXTERNAL_PROXY_NETWORK" ]]; then
-    echo "NetBird containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
+    echo "Cloink containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
     echo "The config uses container names for upstream servers."
     echo ""
-    echo "$MSG_NEXT_STEPS"
+    msgn next_steps
     echo "  1. Ensure your Nginx container has access to SSL certificates"
     echo "     (mount certificate directory as volume if needed)"
     echo "  2. Edit nginx-netbird.conf and update SSL certificate paths"
@@ -1550,7 +1827,7 @@ print_nginx_instructions() {
     echo "  3. Include the config in your Nginx container's configuration"
     echo "  4. Reload Nginx"
   else
-    echo "$MSG_NEXT_STEPS"
+    msgn next_steps
     echo "  1. Obtain SSL/TLS certificates (Let's Encrypt recommended)"
     echo "  2. Edit nginx-netbird.conf and update certificate paths"
     echo "  3. Install to /etc/nginx/sites-available/ (Debian) or /etc/nginx/conf.d/ (RHEL)"
@@ -1561,7 +1838,7 @@ print_nginx_instructions() {
     echo ""
     echo "Container ports (bound to ${bind_addr}):"
     echo "  Dashboard:     ${DASHBOARD_HOST_PORT}"
-    echo "  NetBird Server: ${MANAGEMENT_HOST_PORT} (all services)"
+    echo "  Cloink Server: ${MANAGEMENT_HOST_PORT} (all services)"
   fi
   return 0
 }
@@ -1577,7 +1854,7 @@ print_npm_instructions() {
   echo "Generated: npm-advanced-config.txt"
   echo ""
   if [[ -n "$EXTERNAL_PROXY_NETWORK" ]]; then
-    echo "NetBird containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
+    echo "Cloink containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
     echo ""
     echo "In NPM, create a Proxy Host:"
     echo "  Domain: $NETBIRD_DOMAIN"
@@ -1594,7 +1871,7 @@ print_npm_instructions() {
   else
     echo "Container ports (bound to ${bind_addr}):"
     echo "  Dashboard:     ${DASHBOARD_HOST_PORT}"
-    echo "  NetBird Server: ${MANAGEMENT_HOST_PORT} (all services)"
+    echo "  Cloink Server: ${MANAGEMENT_HOST_PORT} (all services)"
     echo ""
     echo "In NPM, create a Proxy Host:"
     echo "  Domain: $NETBIRD_DOMAIN"
@@ -1622,20 +1899,20 @@ print_external_caddy_instructions() {
   echo "Generated: caddyfile-netbird.txt"
   echo ""
   if [[ -n "$EXTERNAL_PROXY_NETWORK" ]]; then
-    echo "NetBird containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
+    echo "Cloink containers have joined the '$EXTERNAL_PROXY_NETWORK' Docker network."
     echo "The config uses container names for upstream servers."
     echo ""
-    echo "$MSG_NEXT_STEPS"
+    msgn next_steps
     echo "  1. Add the contents of caddyfile-netbird.txt to your Caddyfile"
     echo "  2. Reload Caddy"
   else
-    echo "$MSG_NEXT_STEPS"
+    msgn next_steps
     echo "  1. Add the contents of caddyfile-netbird.txt to your Caddyfile"
     echo "  2. Reload Caddy: caddy reload --config /path/to/Caddyfile"
     echo ""
     echo "Container ports (bound to ${bind_addr}):"
     echo "  Dashboard:     ${DASHBOARD_HOST_PORT}"
-    echo "  NetBird Server: ${MANAGEMENT_HOST_PORT} (all services)"
+    echo "  Cloink Server: ${MANAGEMENT_HOST_PORT} (all services)"
   fi
   return 0
 }
@@ -1650,12 +1927,12 @@ print_manual_instructions() {
   echo ""
   echo "Container ports (bound to ${bind_addr}):"
   echo "  Dashboard:     ${DASHBOARD_HOST_PORT}"
-  echo "  NetBird Server: ${MANAGEMENT_HOST_PORT} (all services: management, signal, relay)"
+  echo "  Cloink Server: ${MANAGEMENT_HOST_PORT} (all services: management, signal, relay)"
   echo ""
   echo "Configure your reverse proxy with these routes (all go to the same backend):"
   echo ""
   echo "  WebSocket (relay, signal, management WS proxy):"
-  echo "    /relay*, /ws-proxy/*           -> ${upstream_host}:${MANAGEMENT_HOST_PORT}"
+  echo "    /relay, /ws-proxy/*            -> ${upstream_host}:${MANAGEMENT_HOST_PORT}"
   echo "    (HTTP with WebSocket upgrade, extended timeout)"
   echo ""
   echo "  Native gRPC (signal + management):"
