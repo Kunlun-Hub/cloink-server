@@ -13,6 +13,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/netbirdio/netbird/client/netsweep"
 	auth "github.com/netbirdio/netbird/shared/relay/auth/hmac"
 )
 
@@ -45,6 +46,7 @@ type ServerPicker struct {
 	MTU               uint16
 	ConnectionTimeout time.Duration
 	TransportFallback *transportFallback
+	Sweeper           *netsweep.Sweeper
 	CooldownDuration  time.Duration
 
 	cooldownMu sync.Mutex
@@ -244,6 +246,7 @@ func (sp *ServerPicker) startConnection(connectCtx, lifecycleCtx context.Context
 	log.Infof("try to connecting to relay server: %s", url)
 	relayClient := NewClient(url, sp.TokenStore, sp.PeerID, sp.MTU)
 	relayClient.SetTransportFallback(sp.TransportFallback)
+	relayClient.sweeper = sp.Sweeper
 	err := relayClient.connectWithContexts(connectCtx, lifecycleCtx)
 	resultChan <- connResult{
 		RelayClient: relayClient,
