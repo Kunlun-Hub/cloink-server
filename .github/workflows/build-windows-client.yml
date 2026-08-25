@@ -55,7 +55,7 @@ jobs:
       - name: Install mingw-w64 and NSIS
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis nsis-pluginapi osslsigncode
+          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis nsis-pluginapi osslsigncode libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Install NSIS plugins (EnVar + ShellExecAsUser, unicode)
         run: |
