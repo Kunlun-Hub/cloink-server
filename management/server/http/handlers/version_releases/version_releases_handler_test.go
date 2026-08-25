@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -147,6 +148,37 @@ func TestDownloadUsesPrimaryAccountArtifact(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "installer", recorder.Body.String())
 	require.Equal(t, "checksum", recorder.Header().Get("X-Checksum-Sha256"))
+	mediaType, params, err := mime.ParseMediaType(recorder.Header().Get("Content-Disposition"))
+	require.NoError(t, err)
+	require.Equal(t, "attachment", mediaType)
+	require.Equal(t, "cloink.exe", params["filename"])
+}
+
+func TestDownloadSanitizesArtifactFilename(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockStore := store.NewMockStore(ctrl)
+	artifactID := uuid.NewString()
+	mockStore.EXPECT().GetAllAccounts(gomock.Any()).Return([]*types.Account{{Id: "account-a", IsDomainPrimaryAccount: true}})
+	mockStore.EXPECT().GetVersionReleaseArtifact(gomock.Any(), "account-a", artifactID).Return(&types.VersionReleaseArtifact{
+		ID: artifactID, AccountID: "account-a", FileName: "installer\r\nX-Injected: yes.exe", SHA256: "checksum",
+	}, nil)
+
+	storage := newArtifactStorage(t.TempDir())
+	_, _, err := storage.save(artifactID, bytes.NewBufferString("installer"))
+	require.NoError(t, err)
+	h := &handler{store: mockStore, storage: storage}
+	req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, artifactURLPrefix+artifactID, nil), map[string]string{"id": artifactID})
+	recorder := httptest.NewRecorder()
+	h.download(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	disposition := recorder.Header().Get("Content-Disposition")
+	require.NotContains(t, disposition, "\r")
+	require.NotContains(t, disposition, "\n")
+	mediaType, params, err := mime.ParseMediaType(disposition)
+	require.NoError(t, err)
+	require.Equal(t, "attachment", mediaType)
+	require.Equal(t, "installerX-Injected: yes.exe", params["filename"])
 }
 
 func TestLatestReleaseRequiresChecksum(t *testing.T) {

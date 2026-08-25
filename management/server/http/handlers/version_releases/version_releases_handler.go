@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -327,7 +328,26 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 	w.Header().Set("X-Checksum-Sha256", artifact.SHA256)
 	w.Header().Set("Cache-Control", "public, max-age=3600, immutable")
+	w.Header().Set("Content-Disposition", attachmentDisposition(artifact.FileName))
 	http.ServeContent(w, r, artifact.FileName, artifact.CreatedAt, file)
+}
+
+func attachmentDisposition(filename string) string {
+	filename = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, filepath.Base(filename))
+	if filename == "" || filename == "." {
+		filename = "download"
+	}
+	if disposition := mime.FormatMediaType("attachment", map[string]string{
+		"filename": filename,
+	}); disposition != "" {
+		return disposition
+	}
+	return `attachment; filename="download"`
 }
 
 func (h *handler) authorize(w http.ResponseWriter, r *http.Request, operation operations.Operation) (auth.UserAuth, context.Context, bool) {
