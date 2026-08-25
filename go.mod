@@ -50,7 +50,7 @@ require (
 	github.com/dexidp/dex/api/v2 v2.4.0
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/docker/go-connections v0.6.0
-	github.com/ebitengine/purego v0.9.1
+	github.com/ebitengine/purego v0.10.2
 	github.com/eko/gocache/lib/v4 v4.2.0
 	github.com/eko/gocache/store/go_cache/v4 v4.2.2
 	github.com/eko/gocache/store/redis/v4 v4.2.2
