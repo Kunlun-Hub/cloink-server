@@ -448,18 +448,24 @@ func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
 		util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
 		return
 	}
-	accountID, err := verifyRelaySetupToken(req.SetupKey, h.config.Secret)
+	claims, err := parseRelaySetupToken(req.SetupKey, h.config.Secret)
 	if err != nil {
 		util.WriteErrorResponse("invalid relay setup token", http.StatusUnauthorized, w)
 		return
 	}
+	accountID := claims.AccountID
 	if accountID == "" {
 		util.WriteErrorResponse("invalid relay setup token", http.StatusUnauthorized, w)
 		return
 	}
 
 	priority := normalizeRelayPriority(req.Priority)
-	if storedPriority, ok := h.storedRelayPriority(r.Context(), accountID, req.ID, req.Address); ok {
+	storedPriority, stored := h.storedRelayPriority(r.Context(), accountID, req.ID, req.Address)
+	if claims.Expired(time.Now()) && !stored {
+		util.WriteErrorResponse("invalid relay setup token", http.StatusUnauthorized, w)
+		return
+	}
+	if stored {
 		priority = storedPriority
 	}
 
@@ -952,38 +958,56 @@ func signRelaySetupToken(secret string, expiresAt int64, accountID string) (stri
 	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
+type relaySetupTokenClaims struct {
+	AccountID string
+	ExpiresAt int64
+}
+
+func (c relaySetupTokenClaims) Expired(now time.Time) bool {
+	return c.ExpiresAt != relaySetupTokenNeverExpires && now.Unix() >= c.ExpiresAt
+}
+
 func verifyRelaySetupToken(token, secret string) (string, error) {
+	claims, err := parseRelaySetupToken(token, secret)
+	if err != nil {
+		return "", err
+	}
+	if claims.Expired(time.Now()) {
+		return "", errors.New("relay setup token has expired")
+	}
+	return claims.AccountID, nil
+}
+
+func parseRelaySetupToken(token, secret string) (relaySetupTokenClaims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return "", errors.New("invalid token format")
+		return relaySetupTokenClaims{}, errors.New("invalid token format")
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", err
+		return relaySetupTokenClaims{}, err
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", err
+		return relaySetupTokenClaims{}, err
 	}
 	payload := string(payloadBytes)
 	if !hmac.Equal(signature, relaySetupTokenSignature(secret, payload)) {
-		return "", errors.New("invalid token signature")
+		return relaySetupTokenClaims{}, errors.New("invalid token signature")
 	}
 	payloadParts := strings.Split(payload, ":")
 	if (len(payloadParts) != 3 && len(payloadParts) != 4) || payloadParts[0] != relaySetupTokenVersion {
-		return "", errors.New("invalid token payload")
+		return relaySetupTokenClaims{}, errors.New("invalid token payload")
 	}
 	expiresAt, err := strconv.ParseInt(payloadParts[1], 10, 64)
 	if err != nil {
-		return "", err
+		return relaySetupTokenClaims{}, err
 	}
-	if expiresAt != relaySetupTokenNeverExpires && time.Now().Unix() >= expiresAt {
-		return "", errors.New("relay setup token has expired")
-	}
+	claims := relaySetupTokenClaims{ExpiresAt: expiresAt}
 	if len(payloadParts) == 4 {
-		return payloadParts[3], nil
+		claims.AccountID = payloadParts[3]
 	}
-	return "", nil
+	return claims, nil
 }
 
 func relaySetupTokenSignature(secret, payload string) []byte {

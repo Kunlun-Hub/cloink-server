@@ -9,19 +9,23 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// setFlagsFromEnvVars reads and updates flag values from environment variables with prefix NB_
+// setFlagsFromEnvVars reads flag values from NB_ variables, falling back to CL_.
 func setFlagsFromEnvVars(cmd *cobra.Command) {
 	flags := cmd.PersistentFlags()
 	flags.VisitAll(func(f *pflag.Flag) {
-		newEnvVar := flagNameToEnvVar(f.Name, "NB_")
-		value, present := os.LookupEnv(newEnvVar)
+		envVar := flagNameToEnvVar(f.Name, "NB_")
+		value, present := os.LookupEnv(envVar)
+		if !present {
+			envVar = flagNameToEnvVar(f.Name, "CL_")
+			value, present = os.LookupEnv(envVar)
+		}
 		if !present {
 			return
 		}
 
 		err := flags.Set(f.Name, value)
 		if err != nil {
-			log.Infof("unable to configure flag %s using variable %s, err: %v", f.Name, newEnvVar, err)
+			log.Infof("unable to configure flag %s using variable %s, err: %v", f.Name, envVar, err)
 		}
 	})
 }

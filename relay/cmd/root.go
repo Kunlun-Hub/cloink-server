@@ -1,15 +1,21 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,6 +32,14 @@ import (
 	"github.com/netbirdio/netbird/stun"
 	"github.com/netbirdio/netbird/trustedproxy"
 	"github.com/netbirdio/netbird/util"
+	"github.com/netbirdio/netbird/version"
+)
+
+const (
+	defaultRelayPriority      = 30
+	maxRelayPriority          = 1000
+	relayRegistrationInterval = 30 * time.Second
+	relayRegistrationTimeout  = 10 * time.Second
 )
 
 type Config struct {
@@ -43,6 +57,11 @@ type Config struct {
 	TlsCertFile              string
 	TlsKeyFile               string
 	AuthSecret               string
+	RelayID                  string
+	RelayName                string
+	RelayPriority            int
+	SetupKey                 string
+	ManagementURL            string
 	LogLevel                 string
 	LogFile                  string
 	HealthcheckListenAddress string
@@ -55,12 +74,33 @@ type Config struct {
 	STUNLogLevel string
 }
 
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
+	c.applyCloinkDefaults()
 	if c.ExposedAddress == "" {
 		return fmt.Errorf("exposed address is required")
 	}
 	if c.AuthSecret == "" {
 		return fmt.Errorf("auth secret is required")
+	}
+
+	c.RelayID = strings.TrimSpace(c.RelayID)
+	c.RelayName = strings.TrimSpace(c.RelayName)
+	c.SetupKey = strings.TrimSpace(c.SetupKey)
+	c.ManagementURL = strings.TrimSpace(c.ManagementURL)
+	registrationEnabled := c.SetupKey != "" || c.ManagementURL != ""
+	if registrationEnabled && (c.SetupKey == "" || c.ManagementURL == "") {
+		return fmt.Errorf("setup key and management URL must be configured together")
+	}
+	if registrationEnabled && c.RelayID == "" {
+		return fmt.Errorf("relay ID is required when management registration is enabled")
+	}
+	if c.RelayPriority < 0 || c.RelayPriority > maxRelayPriority {
+		return fmt.Errorf("relay priority must be between 0 and %d", maxRelayPriority)
+	}
+	if registrationEnabled {
+		if _, err := relayRegistrationURL(c.ManagementURL); err != nil {
+			return fmt.Errorf("invalid management URL: %w", err)
+		}
 	}
 
 	// Validate STUN configuration
@@ -82,6 +122,47 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) applyCloinkDefaults() {
+	if c.AuthSecret == "" {
+		c.AuthSecret = strings.TrimSpace(os.Getenv("CL_AUTH_SECRET"))
+	}
+	if c.ExposedAddress != "" {
+		return
+	}
+	if address := strings.TrimSpace(os.Getenv("CL_RELAY_ADDRESS")); address != "" {
+		c.ExposedAddress = address
+		return
+	}
+
+	domain := strings.TrimSpace(os.Getenv("CL_RELAY_DOMAIN"))
+	if domain == "" {
+		return
+	}
+	port := strings.TrimSpace(os.Getenv("CL_RELAY_PORT"))
+	if port == "" {
+		port = exposedPortFromListenAddress(c.ListenAddress)
+	}
+	scheme := strings.TrimSpace(os.Getenv("CL_RELAY_SCHEME"))
+	if scheme == "" {
+		scheme = server.SchemeRELS
+	}
+	c.ExposedAddress = fmt.Sprintf("%s://%s", scheme, domain)
+	if port != "" {
+		c.ExposedAddress += ":" + port
+	}
+}
+
+func exposedPortFromListenAddress(address string) string {
+	_, port, err := net.SplitHostPort(address)
+	if err == nil {
+		return port
+	}
+	if strings.HasPrefix(address, ":") {
+		return strings.TrimPrefix(address, ":")
+	}
+	return ""
 }
 
 func (c Config) HasCertConfig() bool {
@@ -117,6 +198,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cobraConfig.TlsCertFile, "tls-cert-file", "c", "", "")
 	rootCmd.PersistentFlags().StringVarP(&cobraConfig.TlsKeyFile, "tls-key-file", "k", "", "")
 	rootCmd.PersistentFlags().StringVarP(&cobraConfig.AuthSecret, "auth-secret", "s", "", "auth secret")
+	rootCmd.PersistentFlags().StringVar(&cobraConfig.RelayID, "relay-id", "", "stable identifier of this relay instance")
+	rootCmd.PersistentFlags().StringVar(&cobraConfig.RelayName, "relay-name", "", "human readable name for this relay instance")
+	rootCmd.PersistentFlags().IntVar(&cobraConfig.RelayPriority, "relay-priority", defaultRelayPriority, "relay selection priority advertised to management")
+	rootCmd.PersistentFlags().StringVar(&cobraConfig.SetupKey, "setup-key", "", "relay registration setup token")
+	rootCmd.PersistentFlags().StringVar(&cobraConfig.ManagementURL, "management-url", "", "management server URL for relay registration")
 	rootCmd.PersistentFlags().StringVar(&cobraConfig.LogLevel, "log-level", "info", "log level")
 	rootCmd.PersistentFlags().StringVar(&cobraConfig.LogFile, "log-file", "console", "log file")
 	rootCmd.PersistentFlags().StringVarP(&cobraConfig.HealthcheckListenAddress, "health-listen-address", "H", ":9000", "listen address of healthcheck server")
@@ -190,6 +276,7 @@ func execute(cmd *cobra.Command, args []string) error {
 	cfg := server.Config{
 		Meter:          metricsServer.Meter,
 		ExposedAddress: cobraConfig.ExposedAddress,
+		InstanceID:     cobraConfig.RelayID,
 		AuthValidator:  authenticator,
 		TLSSupport:     tlsSupport,
 	}
@@ -216,9 +303,16 @@ func execute(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start all servers (only after all resources are successfully created)
+	registrationCtx, stopRegistration := context.WithCancel(context.Background())
+	defer stopRegistration()
+
 	startServers(&wg, metricsServer, srv, srvListenerCfg, httpHealthcheck, stunServer)
+	if cobraConfig.SetupKey != "" {
+		startRegistrationLoop(registrationCtx, &wg, cobraConfig, srv)
+	}
 
 	waitForExitSignal()
+	stopRegistration()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -268,6 +362,128 @@ func startServers(wg *sync.WaitGroup, metricsServer *metrics.Metrics, srv *serve
 			}
 		}()
 	}
+}
+
+type relayRegistrationRequest struct {
+	SetupKey         string `json:"setup_key"`
+	ID               string `json:"id"`
+	Name             string `json:"name,omitempty"`
+	Address          string `json:"address"`
+	Priority         int    `json:"priority,omitempty"`
+	ManagementURL    string `json:"management_url,omitempty"`
+	Version          string `json:"version,omitempty"`
+	ConnectedClients *int   `json:"connected_clients,omitempty"`
+}
+
+type relayRegistrationSource interface {
+	InstanceURL() url.URL
+	InstanceID() string
+	ConnectedPeerCount() int
+}
+
+var relayRegistrationHTTPClient = &http.Client{
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return errors.New("relay registration redirects are not allowed")
+	},
+}
+
+func startRegistrationLoop(ctx context.Context, wg *sync.WaitGroup, cfg *Config, source relayRegistrationSource) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		send := func() {
+			if err := registerRelay(ctx, cfg, source); err != nil {
+				log.Warnf("register relay with management server: %v", err)
+				return
+			}
+			log.Debug("relay registration heartbeat sent to management server")
+		}
+
+		send()
+		ticker := time.NewTicker(relayRegistrationInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				send()
+			}
+		}
+	}()
+}
+
+func registerRelay(ctx context.Context, cfg *Config, source relayRegistrationSource) error {
+	registrationURL, err := relayRegistrationURL(cfg.ManagementURL)
+	if err != nil {
+		return fmt.Errorf("resolve registration URL: %w", err)
+	}
+
+	relayID := strings.TrimSpace(cfg.RelayID)
+	if relayID == "" {
+		relayID = strings.TrimSpace(source.InstanceID())
+	}
+	if relayID == "" {
+		return errors.New("relay ID is empty")
+	}
+
+	instanceURL := source.InstanceURL()
+	connectedClients := source.ConnectedPeerCount()
+	body, err := json.Marshal(relayRegistrationRequest{
+		SetupKey:         cfg.SetupKey,
+		ID:               relayID,
+		Name:             cfg.RelayName,
+		Address:          instanceURL.String(),
+		Priority:         cfg.RelayPriority,
+		ManagementURL:    cfg.ManagementURL,
+		Version:          version.NetbirdVersion(),
+		ConnectedClients: &connectedClients,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal relay registration request: %w", err)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, relayRegistrationTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, registrationURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build relay registration request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := relayRegistrationHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("management server returned %s", resp.Status)
+	}
+	return nil
+}
+
+func relayRegistrationURL(rawManagementURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawManagementURL))
+	if err != nil {
+		return "", err
+	}
+	if parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", errors.New("management URL must use HTTP or HTTPS and include a host")
+	}
+	if parsed.User != nil {
+		return "", errors.New("management URL must not include user credentials")
+	}
+	if port := parsed.Port(); port != "" {
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return "", errors.New("management URL contains an invalid port")
+		}
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/relays/register"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func shutdownServers(ctx context.Context, metricsServer *metrics.Metrics, srv *server.Server, httpHealthcheck *healthcheck.Server, stunServer *stun.Server) error {

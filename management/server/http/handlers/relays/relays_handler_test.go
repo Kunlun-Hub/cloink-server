@@ -183,6 +183,61 @@ func TestRegisterRelayKeepsStoredPriorityAndScopesRegistry(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestRegisterRelayAcceptsExpiredTokenForStoredIdentity(t *testing.T) {
+	const accountID, secret = "account-id", "relay-secret"
+	activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)}
+	t.Cleanup(func() { activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)} })
+
+	ctrl := gomock.NewController(t)
+	settings := &types.Settings{Extra: &types.ExtraSettings{RegisteredRelays: map[string]types.RegisteredRelay{
+		"relay-1": {ID: "relay-1", Address: "rels://relay.example.com:443", Priority: 80, LastSeen: time.Now().Add(-time.Minute)},
+	}}}
+	storeMock := store.NewMockStore(ctrl)
+	gomock.InOrder(
+		storeMock.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, accountID).Return(settings, nil),
+		storeMock.EXPECT().ExecuteInTransaction(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, f func(store.Store) error) error { return f(storeMock) }),
+		storeMock.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthUpdate, accountID).Return(settings, nil),
+		storeMock.EXPECT().SaveAccountSettings(gomock.Any(), accountID, gomock.Any()).Return(nil),
+	)
+	h := &Handler{
+		config:         &nbconfig.Relay{Secret: secret},
+		accountManager: &mock_server.MockAccountManager{GetStoreFunc: func() store.Store { return storeMock }},
+	}
+	setupKey, err := signRelaySetupToken(secret, time.Now().Add(-time.Minute).Unix(), accountID)
+	require.NoError(t, err)
+	body, err := json.Marshal(registerRelayRequest{SetupKey: setupKey, ID: "relay-1", Address: "rels://relay.example.com:443", Priority: 30})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+
+	h.registerRelay(recorder, httptest.NewRequest(http.MethodPost, "/api/relays/register", bytes.NewReader(body)))
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	priority, ok := activeRelayRegistry.priorityFor(accountID, "relay-1", "")
+	require.True(t, ok)
+	require.Equal(t, 80, priority)
+}
+
+func TestRegisterRelayRejectsExpiredTokenForNewIdentity(t *testing.T) {
+	const accountID, secret = "account-id", "relay-secret"
+	ctrl := gomock.NewController(t)
+	settings := &types.Settings{Extra: &types.ExtraSettings{RegisteredRelays: map[string]types.RegisteredRelay{}}}
+	storeMock := store.NewMockStore(ctrl)
+	storeMock.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, accountID).Return(settings, nil)
+	h := &Handler{
+		config:         &nbconfig.Relay{Secret: secret},
+		accountManager: &mock_server.MockAccountManager{GetStoreFunc: func() store.Store { return storeMock }},
+	}
+	setupKey, err := signRelaySetupToken(secret, time.Now().Add(-time.Minute).Unix(), accountID)
+	require.NoError(t, err)
+	body, err := json.Marshal(registerRelayRequest{SetupKey: setupKey, ID: "relay-new", Address: "rels://relay.example.com:443"})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+
+	h.registerRelay(recorder, httptest.NewRequest(http.MethodPost, "/api/relays/register", bytes.NewReader(body)))
+
+	require.Equal(t, http.StatusUnauthorized, recorder.Code, recorder.Body.String())
+}
+
 func TestRelayRegistryIsAccountScoped(t *testing.T) {
 	registry := &relayRegistry{relays: make(map[string]registeredRelay)}
 	registry.upsert("account-a", registeredRelay{ID: "same-id", Address: "rels://a", Priority: 10})

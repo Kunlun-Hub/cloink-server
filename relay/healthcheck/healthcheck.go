@@ -28,6 +28,8 @@ const (
 type ServiceChecker interface {
 	ListenerProtocols() []protocol.Protocol
 	InstanceURL() url.URL
+	InstanceID() string
+	ConnectedPeerCount() int
 }
 
 type HealthStatus struct {
@@ -35,6 +37,8 @@ type HealthStatus struct {
 	Timestamp        time.Time           `json:"timestamp"`
 	Listeners        []protocol.Protocol `json:"listeners"`
 	CertificateValid bool                `json:"certificate_valid"`
+	ConnectedPeers   int                 `json:"connected_peers"`
+	RelayID          string              `json:"relay_id,omitempty"`
 }
 
 type Config struct {
@@ -126,6 +130,8 @@ func (s *Server) getHealthStatus(ctx context.Context) (*HealthStatus, bool) {
 		Timestamp:        time.Now(),
 		Status:           statusHealthy,
 		CertificateValid: true,
+		ConnectedPeers:   s.config.ServiceChecker.ConnectedPeerCount(),
+		RelayID:          s.config.ServiceChecker.InstanceID(),
 	}
 
 	listeners, ok := s.validateListeners()

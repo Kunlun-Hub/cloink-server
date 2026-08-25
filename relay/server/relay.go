@@ -29,6 +29,7 @@ type Listener interface {
 type Config struct {
 	Meter          metric.Meter
 	ExposedAddress string
+	InstanceID     string
 	TLSSupport     bool
 	AuthValidator  Validator
 
@@ -64,6 +65,7 @@ type Relay struct {
 	store          *store.Store
 	notifier       *store.PeerNotifier
 	instanceURL    url.URL
+	instanceID     string
 	exposedAddress string
 	preparedMsg    *preparedMsg
 
@@ -102,6 +104,7 @@ func NewRelay(config Config) (*Relay, error) {
 		metricsCancel:  metricsCancel,
 		validator:      config.AuthValidator,
 		instanceURL:    config.instanceURL,
+		instanceID:     config.InstanceID,
 		exposedAddress: config.ExposedAddress,
 		store:          store.NewStore(),
 		notifier:       store.NewPeerNotifier(),
@@ -197,4 +200,22 @@ func (r *Relay) Shutdown(ctx context.Context) {
 // InstanceURL returns the instance URL of the relay server
 func (r *Relay) InstanceURL() url.URL {
 	return r.instanceURL
+}
+
+// InstanceID returns the stable identifier advertised to management.
+func (r *Relay) InstanceID() string {
+	return r.instanceID
+}
+
+// ConnectedPeerCount returns active non-healthcheck relay connections.
+func (r *Relay) ConnectedPeerCount() int {
+	count := 0
+	for _, peer := range r.store.Peers() {
+		peerID := peer.ID()
+		if peerid.IsHealthCheck(&peerID) {
+			continue
+		}
+		count++
+	}
+	return count
 }
