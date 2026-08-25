@@ -85,7 +85,9 @@ type uploadResponse struct {
 func AddEndpoints(accountManager account.Manager, permissionsManager permissions.Manager, router *mux.Router) {
 	rootDir := os.Getenv("NB_VERSION_RELEASES_DIR")
 	if rootDir == "" {
-		rootDir = "/var/lib/cloink/version-releases"
+		// Keep uploaded installers inside the persisted data directory so they
+		// survive container rebuilds; /var/lib/netbird is the mounted volume.
+		rootDir = "/var/lib/netbird/version-releases"
 	}
 	h := &handler{
 		store:              accountManager.GetStore(),
