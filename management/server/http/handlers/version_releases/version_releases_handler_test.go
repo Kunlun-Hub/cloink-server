@@ -103,14 +103,14 @@ func TestCreateSignedLatestRelease(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }
 
-func TestPublicListExcludesUnsignedReleases(t *testing.T) {
+func TestPublicListExcludesReleasesWithoutChecksum(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockStore := store.NewMockStore(ctrl)
 	mockStore.EXPECT().GetAllAccounts(gomock.Any()).Return([]*types.Account{{
 		Id: "account-a", IsDomainPrimaryAccount: true,
 	}})
 	mockStore.EXPECT().ListVersionReleases(gomock.Any(), "account-a").Return([]*types.VersionRelease{
-		{ID: "signed", Platform: types.VersionReleasePlatformLinux, Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel, SHA256: "abc", Signature: validTestSignature, IsLatest: true},
+		{ID: "unsigned", Platform: types.VersionReleasePlatformLinux, Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel, SHA256: "abc", IsLatest: true},
 		{ID: "draft", Platform: types.VersionReleasePlatformLinux, Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel, IsLatest: false},
 	}, nil)
 
@@ -123,7 +123,7 @@ func TestPublicListExcludesUnsignedReleases(t *testing.T) {
 	var response []releaseResponse
 	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
 	require.Len(t, response, 1)
-	require.Equal(t, "signed", response[0].ID)
+	require.Equal(t, "unsigned", response[0].ID)
 }
 
 func TestDownloadUsesPrimaryAccountArtifact(t *testing.T) {
@@ -149,16 +149,24 @@ func TestDownloadUsesPrimaryAccountArtifact(t *testing.T) {
 	require.Equal(t, "checksum", recorder.Header().Get("X-Checksum-Sha256"))
 }
 
-func TestLatestReleaseRequiresSignature(t *testing.T) {
-	release := &types.VersionRelease{
+func TestLatestReleaseRequiresChecksum(t *testing.T) {
+	withChecksum := &types.VersionRelease{
 		Version: "0.77.0", Platform: types.VersionReleasePlatformLinux,
 		Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel,
 		DownloadURL: "https://download.example.com/cloink.deb", SHA256: "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
 		IsLatest: true,
 	}
 	h := &handler{}
-	err := h.prepareRelease(context.Background(), release)
-	require.ErrorContains(t, err, "require sha256 and signature")
+	require.NoError(t, h.prepareRelease(context.Background(), withChecksum))
+
+	withoutChecksum := &types.VersionRelease{
+		Version: "0.77.0", Platform: types.VersionReleasePlatformLinux,
+		Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel,
+		DownloadURL: "https://download.example.com/cloink.deb",
+		IsLatest:    true,
+	}
+	err := h.prepareRelease(context.Background(), withoutChecksum)
+	require.ErrorContains(t, err, "require sha256")
 }
 
 func withUserAuth(req *http.Request) *http.Request {

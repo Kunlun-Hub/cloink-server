@@ -133,7 +133,7 @@ func (h *handler) listPublic(w http.ResponseWriter, r *http.Request) {
 	latestOnly := r.URL.Query().Get("latest") == "true"
 	filtered := make([]*types.VersionRelease, 0, len(releases))
 	for _, release := range releases {
-		if release == nil || release.SHA256 == "" || release.Signature == "" {
+		if release == nil || release.SHA256 == "" {
 			continue
 		}
 		if platform != "" && release.Platform != platform ||
@@ -369,8 +369,8 @@ func (h *handler) prepareRelease(ctx context.Context, release *types.VersionRele
 		release.ArtifactID = artifact.ID
 		release.SHA256 = artifact.SHA256
 	}
-	if release.IsLatest && (release.SHA256 == "" || release.Signature == "") {
-		return status.Errorf(status.InvalidArgument, "latest releases require sha256 and signature")
+	if release.IsLatest && release.SHA256 == "" {
+		return status.Errorf(status.InvalidArgument, "latest releases require sha256")
 	}
 	return nil
 }
