@@ -1,0 +1,26 @@
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY . .
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG VERSION=dev
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ "$TARGETARCH" = "arm" ]; then export GOARM="${TARGETVARIANT#v}"; fi; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath \
+    -ldflags="-s -w \
+    -X github.com/netbirdio/netbird/version.version=$VERSION" \
+    -o /out/netbird-relay ./relay
+
+FROM gcr.io/distroless/base:debug
+ENTRYPOINT [ "/go/bin/netbird-relay" ]
+ENV NB_LOG_FILE=console
+COPY --from=builder /out/netbird-relay /go/bin/netbird-relay

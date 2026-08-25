@@ -4,3 +4,8 @@
 *.key
 *.crt
 *.p12
+.git
+**/node_modules
+**/dist
+dist
+*.syso

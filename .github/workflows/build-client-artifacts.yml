@@ -1,0 +1,230 @@
+name: Build Cloink client artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed (for example 0.77.1); defaults to git describe"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-client-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve build metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      commit: ${{ steps.meta.outputs.commit }}
+      date: ${{ steps.meta.outputs.date }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(git describe --tags --always)
+          fi
+          version=${version#v}
+          if ! [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+            echo "Invalid version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+
+  build-cli:
+    name: CLI ${{ matrix.os }}/${{ matrix.label }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: arm64
+            label: arm64
+            goarm: ""
+            extension: ""
+            archive: tar.gz
+          - os: linux
+            arch: arm
+            label: armv7
+            goarm: "7"
+            extension: ""
+            archive: tar.gz
+          - os: darwin
+            arch: amd64
+            label: amd64
+            goarm: ""
+            extension: ""
+            archive: tar.gz
+          - os: darwin
+            arch: arm64
+            label: arm64
+            goarm: ""
+            extension: ""
+            archive: tar.gz
+          - os: windows
+            arch: arm64
+            label: arm64
+            goarm: ""
+            extension: .exe
+            archive: zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and package CLI
+        env:
+          BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+          BUILD_COMMIT: ${{ needs.prepare.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare.outputs.date }}
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_LABEL: ${{ matrix.label }}
+          TARGET_GOARM: ${{ matrix.goarm }}
+          TARGET_EXTENSION: ${{ matrix.extension }}
+          ARCHIVE_FORMAT: ${{ matrix.archive }}
+        run: |
+          bundle="dist/cloink_${TARGET_OS}_${TARGET_LABEL}_${BUILD_VERSION}"
+          mkdir -p "$bundle"
+          build_env=(env CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH")
+          if [ -n "$TARGET_GOARM" ]; then
+            build_env+=(GOARM="$TARGET_GOARM")
+          fi
+          "${build_env[@]}" go build -tags load_wgnt_from_rsrc \
+            -ldflags "-s -w -X github.com/netbirdio/netbird/version.version=$BUILD_VERSION -X main.commit=$BUILD_COMMIT -X main.date=$BUILD_DATE -X main.builtBy=github-actions" \
+            -o "$bundle/cloink${TARGET_EXTENSION}" ./client
+
+          archive="cloink_${TARGET_OS}_${TARGET_LABEL}_${BUILD_VERSION}.${ARCHIVE_FORMAT}"
+          if [ "$ARCHIVE_FORMAT" = "zip" ]; then
+            (cd "$bundle" && zip -9 "../$archive" "cloink${TARGET_EXTENSION}")
+          else
+            tar -C dist -czf "dist/$archive" "$(basename "$bundle")"
+          fi
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloink-client-${{ matrix.os }}-${{ matrix.label }}
+          path: |
+            dist/*.${{ matrix.archive }}
+            dist/*.sha256
+          retention-days: 30
+
+  build-linux-amd64:
+    name: Linux amd64 CLI and desktop UI
+    needs: prepare
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install wails3 CLI
+        run: |
+          WAILS_VERSION=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
+
+      - name: Build Wails frontend
+        working-directory: client/ui/frontend
+        run: |
+          pnpm install --frozen-lockfile
+          cd .. && wails3 generate bindings -clean=true -ts
+          cd frontend && pnpm build
+
+      - name: Build and package Linux bundle
+        env:
+          BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+          BUILD_COMMIT: ${{ needs.prepare.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare.outputs.date }}
+        run: |
+          bundle="dist/cloink_linux_amd64_${BUILD_VERSION}"
+          mkdir -p "$bundle"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags load_wgnt_from_rsrc \
+            -ldflags "-s -w -X github.com/netbirdio/netbird/version.version=$BUILD_VERSION -X main.commit=$BUILD_COMMIT -X main.date=$BUILD_DATE -X main.builtBy=github-actions" \
+            -o "$bundle/cloink" ./client
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags production \
+            -ldflags "-s -w -X github.com/netbirdio/netbird/version.version=$BUILD_VERSION -X main.commit=$BUILD_COMMIT -X main.date=$BUILD_DATE -X main.builtBy=github-actions" \
+            -o "$bundle/cloink-ui" ./client/ui
+
+          archive="cloink_linux_amd64_${BUILD_VERSION}.tar.gz"
+          tar -C dist -czf "dist/$archive" "$(basename "$bundle")"
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Upload Linux bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloink-client-linux-amd64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          retention-days: 30
+
+  publish-release:
+    name: Attach client artifacts to release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-cli
+      - build-linux-amd64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download client artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cloink-client-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach artifacts to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
