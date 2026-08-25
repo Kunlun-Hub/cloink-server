@@ -184,7 +184,7 @@ func (c *EmbeddedIdPConfig) ToYAMLConfig() (*dex.YAMLConfig, error) {
 			GrantTypes:         c.GrantTypes,
 		},
 		Frontend: dex.Frontend{
-			Issuer: "NetBird",
+			Issuer: "Cloink",
 			Theme:  "light",
 		},
 		// Always enable password DB initially - we disable the local connector after startup if needed.
@@ -265,7 +265,7 @@ func configureMFA(cfg *dex.YAMLConfig, sessionMaxLifetime, sessionIdleTimeout st
 		// Has to be caps otherwise it will fail
 		Type: "TOTP",
 		Config: map[string]interface{}{
-			"issuer": "NetBird",
+			"issuer": "Cloink",
 		},
 		ConnectorTypes: []string{LocalConnectorID},
 	}}

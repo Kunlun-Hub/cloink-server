@@ -14,6 +14,8 @@
     "Sign in":"登录",
     "Choose your login method":"选择登录方式",
     "Enter your credentials":"请输入凭据",
+    "Email Address":"邮箱地址",
+    "Enter your email address":"输入邮箱地址",
     "Password":"密码",
     "Enter your password":"输入密码",
     "Invalid":"无效的",
@@ -21,7 +23,10 @@
     "Choose another login method":"选择其他登录方式",
     "Not Found":"未找到",
     "Bad Request":"错误请求",
-    "Continue with {name}":"使用 {name} 登录"
+    "Continue with {name}":"使用 {name} 登录",
+    "Logged Out":"已退出登录",
+    "You have been successfully logged out.":"你已成功退出登录。",
+    "Back to Application":"返回应用"
   };
 
   function getLang(){
@@ -55,7 +60,9 @@
     for(var i=0;i<nodes.length;i++){
       var en=origText(nodes[i]);
       var key=nodes[i].getAttribute("data-i18n");
-      nodes[i].textContent=isZh?(zh[key]||en):en;
+      var translated=isZh?(zh[key]||en):en;
+      if(key==="Back to Application") translated="\u2190 "+translated;
+      nodes[i].textContent=translated;
     }
 
     /* data-i18n-continue: "Continue with {name}" */

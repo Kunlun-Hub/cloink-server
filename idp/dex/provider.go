@@ -124,7 +124,7 @@ func NewProvider(ctx context.Context, config *Config) (*Provider, error) {
 		IDTokensValidFor:           24 * time.Hour,
 		RefreshTokenPolicy:         refreshPolicy,
 		Web: server.WebConfig{
-			Issuer: "NetBird",
+			Issuer: "Cloink",
 		},
 		Signer: localSigner,
 	}
@@ -304,7 +304,7 @@ func buildDexConfig(yamlConfig *YAMLConfig, stor storage.Storage, logger *slog.L
 		cfg.IDTokensValidFor = 24 * time.Hour
 	}
 	if cfg.Web.Issuer == "" {
-		cfg.Web.Issuer = "NetBird"
+		cfg.Web.Issuer = "Cloink"
 	}
 	if len(cfg.SupportedResponseTypes) == 0 {
 		cfg.SupportedResponseTypes = []string{"code"}
@@ -452,13 +452,13 @@ func (p *Provider) EnsureDefaultClients(ctx context.Context, dashboardURIs, cliU
 	clients := []storage.Client{
 		{
 			ID:           "netbird-dashboard",
-			Name:         "NetBird Dashboard",
+			Name:         "Cloink Dashboard",
 			RedirectURIs: dashboardURIs,
 			Public:       true,
 		},
 		{
 			ID:           "netbird-cli",
-			Name:         "NetBird CLI",
+			Name:         "Cloink CLI",
 			RedirectURIs: cliURIs,
 			Public:       true,
 		},
@@ -477,6 +477,7 @@ func (p *Provider) EnsureDefaultClients(ctx context.Context, dashboardURIs, cliU
 		}
 		// Update if exists
 		if err := p.storage.UpdateClient(ctx, client.ID, func(old storage.Client) (storage.Client, error) {
+			old.Name = client.Name
 			old.RedirectURIs = client.RedirectURIs
 			return old, nil
 		}); err != nil {
