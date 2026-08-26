@@ -11,7 +11,7 @@ import (
 )
 
 func TestAdmissionStats(t *testing.T) {
-	l := New(nil, netip.Prefix{}, netip.Prefix{})
+	l := New(nil, netip.MustParsePrefix("100.80.0.0/16"), netip.Prefix{})
 	event := types.EventFields{
 		FlowID:   uuid.New(),
 		SourceIP: netip.MustParseAddr("100.64.0.1"),
@@ -42,7 +42,7 @@ func TestAdmissionStats(t *testing.T) {
 }
 
 func TestStoreEventFiltersSystemLocalAddresses(t *testing.T) {
-	l := New(nil, netip.Prefix{}, netip.Prefix{})
+	l := New(nil, netip.MustParsePrefix("100.80.0.0/16"), netip.Prefix{})
 	l.Enable()
 	t.Cleanup(l.Close)
 
@@ -55,6 +55,7 @@ func TestStoreEventFiltersSystemLocalAddresses(t *testing.T) {
 		{name: "IPv6 multicast destination", source: "fdaf:6fa3::1", destination: "ff02::16"},
 		{name: "IPv4 link local source", source: "169.254.1.10", destination: "100.80.165.252"},
 		{name: "IPv6 loopback source", source: "::1", destination: "fdaf:6fa3::1"},
+		{name: "overlay directed broadcast", source: "100.80.165.252", destination: "100.80.255.255"},
 	}
 
 	for _, test := range tests {

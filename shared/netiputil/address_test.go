@@ -36,3 +36,27 @@ func TestIsSystemLocalAddress(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPrefixBroadcast(t *testing.T) {
+	tests := []struct {
+		name   string
+		addr   string
+		prefix string
+		want   bool
+	}{
+		{name: "overlay broadcast", addr: "100.80.255.255", prefix: "100.80.0.0/16", want: true},
+		{name: "overlay host", addr: "100.80.165.252", prefix: "100.80.0.0/16", want: false},
+		{name: "outside prefix", addr: "100.81.255.255", prefix: "100.80.0.0/16", want: false},
+		{name: "host prefix", addr: "100.80.165.252", prefix: "100.80.165.252/32", want: false},
+		{name: "IPv6 has no broadcast", addr: "fdaf:6fa3::ffff", prefix: "fdaf:6fa3::/64", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := IsPrefixBroadcast(netip.MustParseAddr(test.addr), netip.MustParsePrefix(test.prefix))
+			if got != test.want {
+				t.Fatalf("IsPrefixBroadcast(%s, %s) = %v, want %v", test.addr, test.prefix, got, test.want)
+			}
+		})
+	}
+}

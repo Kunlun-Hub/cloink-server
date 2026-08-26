@@ -69,7 +69,10 @@ func (l *Logger) StoreEvent(flowEvent types.EventFields) {
 		return
 	}
 	if !isDNSFlow(&flowEvent) &&
-		(netiputil.IsSystemLocalAddress(flowEvent.SourceIP) || netiputil.IsSystemLocalAddress(flowEvent.DestIP)) {
+		(netiputil.IsSystemLocalAddress(flowEvent.SourceIP) ||
+			netiputil.IsSystemLocalAddress(flowEvent.DestIP) ||
+			netiputil.IsPrefixBroadcast(flowEvent.SourceIP, l.wgIfaceNet) ||
+			netiputil.IsPrefixBroadcast(flowEvent.DestIP, l.wgIfaceNet)) {
 		l.stats.filtered.Add(1)
 		return
 	}
