@@ -133,58 +133,6 @@ func TestFlowAggregationPreservesLifecycleIdentity(t *testing.T) {
 	}
 }
 
-func TestFlowAggregationCombinesMatchingFlowSignatures(t *testing.T) {
-	store := NewAggregatingMemoryStore()
-	flowIDs := []uuid.UUID{uuid.New(), uuid.New()}
-	for _, flowID := range flowIDs {
-		for _, eventType := range []types.Type{types.TypeStart, types.TypeEnd} {
-			fields := types.EventFields{
-				FlowID: flowID, Type: eventType, Protocol: types.TCP,
-				Direction: types.Ingress, SourceIP: netip.MustParseAddr("1.1.1.1"),
-				DestIP: netip.MustParseAddr("2.2.2.2"), DestPort: 443,
-			}
-			if eventType == types.TypeStart {
-				fields.RuleID = []byte("rule")
-				fields.DestResourceID = []byte("resource")
-			}
-			store.StoreEvent(&types.Event{ID: uuid.New(), EventFields: fields})
-		}
-	}
-
-	events := store.GetAggregatedEvents()
-	assert.Len(t, events, 1)
-	assert.Equal(t, uint64(2), events[0].NumOfStarts)
-	assert.Equal(t, uint64(2), events[0].NumOfEnds)
-	assert.Equal(t, []byte("rule"), events[0].RuleID)
-	assert.Equal(t, []byte("resource"), events[0].DestResourceID)
-}
-
-func TestFlowAggregationSeparatesTargetsAndBlockedTraffic(t *testing.T) {
-	store := NewAggregatingMemoryStore()
-	for _, event := range []*types.Event{
-		{ID: uuid.New(), EventFields: types.EventFields{
-			FlowID: uuid.New(), Type: types.TypeStart, Protocol: types.TCP, Direction: types.Egress,
-			SourceIP: netip.MustParseAddr("100.64.0.1"), DestIP: netip.MustParseAddr("100.64.0.2"), DestPort: 443,
-		}},
-		{ID: uuid.New(), EventFields: types.EventFields{
-			FlowID: uuid.New(), Type: types.TypeStart, Protocol: types.TCP, Direction: types.Egress,
-			SourceIP: netip.MustParseAddr("100.64.0.1"), DestIP: netip.MustParseAddr("100.64.0.3"), DestPort: 443,
-		}},
-		{ID: uuid.New(), EventFields: types.EventFields{
-			FlowID: uuid.New(), Type: types.TypeDrop, Protocol: types.TCP, Direction: types.Egress,
-			SourceIP: netip.MustParseAddr("100.64.0.1"), DestIP: netip.MustParseAddr("100.64.0.2"), DestPort: 443,
-		}},
-	} {
-		store.StoreEvent(event)
-	}
-
-	events := store.GetAggregatedEvents()
-	assert.Len(t, events, 3)
-	for _, event := range events {
-		assert.False(t, event.NumOfStarts > 0 && event.NumOfDrops > 0)
-	}
-}
-
 func TestDropAggregationPreservesAttributionWithoutPacketCardinality(t *testing.T) {
 	store := NewAggregatingMemoryStore()
 	for i := 0; i < 100; i++ {

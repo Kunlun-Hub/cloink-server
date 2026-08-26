@@ -215,6 +215,7 @@ type aggregationKey struct {
 	protocol       uint8
 	icmpType       uint8
 	kind           types.Type
+	flowID         uuid.UUID
 	ruleID         string
 	sourceResource string
 	destResource   string
@@ -222,84 +223,38 @@ type aggregationKey struct {
 }
 
 func aggregationKeyFor(event *types.Event) aggregationKey {
-	key := aggregationKey{
-		srcAddr:        event.SourceIP,
-		destAddr:       event.DestIP,
-		destPort:       event.DestPort,
-		direction:      int(event.Direction),
-		protocol:       uint8(event.Protocol),
-		icmpType:       event.ICMPType,
-		ruleID:         string(event.RuleID),
-		sourceResource: string(event.SourceResourceID),
-		destResource:   string(event.DestResourceID),
-	}
-	switch event.Protocol {
-	case types.ICMP, types.ICMPv6, types.UDP, types.TCP:
-		if event.Type == types.TypeDrop {
-			key.kind = types.TypeDrop
-		} else {
-			key.kind = types.TypeStart
+	if event.Type != types.TypeDrop && event.FlowID != uuid.Nil {
+		switch event.Protocol {
+		case types.ICMP, types.ICMPv6, types.UDP, types.TCP:
+			return aggregationKey{kind: types.TypeStart, flowID: event.FlowID}
 		}
-	default:
-		key.kind = event.Type
-		key.unique = event.ID
 	}
+
+	key := aggregationKey{
+		srcAddr:   event.SourceIP,
+		destAddr:  event.DestIP,
+		destPort:  event.DestPort,
+		direction: int(event.Direction),
+		protocol:  uint8(event.Protocol),
+		icmpType:  event.ICMPType,
+		kind:      event.Type,
+	}
+	if event.Type == types.TypeDrop {
+		key.ruleID = string(event.RuleID)
+		key.sourceResource = string(event.SourceResourceID)
+		key.destResource = string(event.DestResourceID)
+		return key
+	}
+	key.unique = event.ID
 	return key
-}
-
-type flowAttribution struct {
-	ruleID         []byte
-	sourceResource []byte
-	destResource   []byte
-}
-
-func eventWithFlowAttribution(event *types.Event, attributionByFlow map[uuid.UUID]flowAttribution) *types.Event {
-	if event.FlowID == uuid.Nil {
-		return event
-	}
-	attribution, ok := attributionByFlow[event.FlowID]
-	if !ok {
-		return event
-	}
-
-	resolved := event.Clone()
-	if len(resolved.RuleID) == 0 {
-		resolved.RuleID = slices.Clone(attribution.ruleID)
-	}
-	if len(resolved.SourceResourceID) == 0 {
-		resolved.SourceResourceID = slices.Clone(attribution.sourceResource)
-	}
-	if len(resolved.DestResourceID) == 0 {
-		resolved.DestResourceID = slices.Clone(attribution.destResource)
-	}
-	return resolved
 }
 
 func (am *AggregatingMemory) GetAggregatedEvents() []*types.Event {
 	am.mux.Lock()
 	defer am.mux.Unlock()
 
-	attributionByFlow := make(map[uuid.UUID]flowAttribution)
-	for _, event := range am.events {
-		if event.FlowID == uuid.Nil {
-			continue
-		}
-		attribution := attributionByFlow[event.FlowID]
-		if len(event.RuleID) != 0 {
-			attribution.ruleID = slices.Clone(event.RuleID)
-		}
-		if len(event.SourceResourceID) != 0 {
-			attribution.sourceResource = slices.Clone(event.SourceResourceID)
-		}
-		if len(event.DestResourceID) != 0 {
-			attribution.destResource = slices.Clone(event.DestResourceID)
-		}
-		attributionByFlow[event.FlowID] = attribution
-	}
-
 	aggregated := make(map[aggregationKey]*types.Event)
 	for _, v := range am.events {
-		v = eventWithFlowAttribution(v, attributionByFlow)
 		lookupKey := aggregationKeyFor(v)
 		if _, ok := aggregated[lookupKey]; !ok {
 			event := v.Clone()
