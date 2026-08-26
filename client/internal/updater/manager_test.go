@@ -223,5 +223,21 @@ func Test_EnforcedMetadata(t *testing.T) {
 	m2.Stop()
 }
 
+func Test_SetVersionNeverEnablesSilentUpdates(t *testing.T) {
+	m := &Manager{
+		autoUpdateSupported: func() bool { return true },
+		mgmUpdateChan:       make(chan struct{}, 1),
+	}
+
+	m.SetVersion("1.0.1", true)
+
+	if m.forceUpdate {
+		t.Fatal("management directive enabled a silent update")
+	}
+	if m.expectedVersion == nil || m.expectedVersion.String() != "1.0.1" {
+		t.Fatalf("expected prompt target 1.0.1, got %v", m.expectedVersion)
+	}
+}
+
 // ensure the proto import is used
 var _ = cProto.SystemEvent_INFO

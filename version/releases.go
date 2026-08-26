@@ -2,9 +2,13 @@ package version
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,10 +36,18 @@ type PublicRelease struct {
 // EnvReleaseAPIURL configures the management endpoint used to fetch signed releases.
 const EnvReleaseAPIURL = "CLOINK_RELEASE_API_URL"
 
+const (
+	DefaultReleaseAPIURL = "https://one.4w.ink/api/version-releases/public"
+	releaseSignatureV1   = "cloink-release-v1"
+	updatePublicKeyPEM   = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARwD+OWz6NI8nYVgPMyGtgsLtkqxUcb+JEu+0RK+MGj8=
+-----END PUBLIC KEY-----`
+)
+
 func publicReleaseAPIURL() (string, error) {
 	value := strings.TrimSpace(os.Getenv(EnvReleaseAPIURL))
 	if value == "" {
-		return "", fmt.Errorf("%s is not configured", EnvReleaseAPIURL)
+		return DefaultReleaseAPIURL, nil
 	}
 	return value, nil
 }
@@ -91,6 +103,12 @@ func FetchPublicReleases(ctx context.Context, platform, architecture, channel, t
 		if strings.TrimSpace(release.Version) == "" || release.DownloadURL == "" || release.SHA256 == "" || release.Signature == "" {
 			continue
 		}
+		if platform != "" && !strings.EqualFold(release.Platform, platform) ||
+			architecture != "" && !strings.EqualFold(release.Architecture, architecture) ||
+			channel != "" && !strings.EqualFold(release.Channel, channel) ||
+			target == "" && !release.IsLatest {
+			continue
+		}
 		if target != "" && normalizeReleaseVersion(release.Version) != normalizeReleaseVersion(target) {
 			continue
 		}
@@ -99,12 +117,55 @@ func FetchPublicReleases(ctx context.Context, platform, architecture, channel, t
 			continue
 		}
 		release.DownloadURL = endpoint.ResolveReference(artifactURL).String()
+		if err := VerifyReleaseSignature(release); err != nil {
+			continue
+		}
 		filtered = append(filtered, release)
 	}
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no signed %s/%s release for version %q", platform, architecture, target)
 	}
 	return filtered, nil
+}
+
+// ReleaseSignaturePayload returns the stable metadata representation signed by
+// the offline Cloink release key. DownloadURL is intentionally excluded: the
+// signed SHA256 binds any permitted URL to the exact artifact bytes.
+func ReleaseSignaturePayload(release PublicRelease) []byte {
+	return []byte(fmt.Sprintf(
+		"%s\nversion=%s\nplatform=%s\narchitecture=%s\nchannel=%s\nsha256=%s\n",
+		releaseSignatureV1,
+		normalizeReleaseVersion(release.Version),
+		strings.ToLower(strings.TrimSpace(release.Platform)),
+		strings.ToLower(strings.TrimSpace(release.Architecture)),
+		strings.ToLower(strings.TrimSpace(release.Channel)),
+		strings.ToLower(strings.TrimSpace(release.SHA256)),
+	))
+}
+
+// VerifyReleaseSignature verifies release metadata against the public key
+// embedded in every Cloink client build.
+func VerifyReleaseSignature(release PublicRelease) error {
+	block, _ := pem.Decode([]byte(updatePublicKeyPEM))
+	if block == nil {
+		return fmt.Errorf("decode embedded update public key")
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse embedded update public key: %w", err)
+	}
+	publicKey, ok := parsed.(ed25519.PublicKey)
+	if !ok {
+		return fmt.Errorf("embedded update public key is not Ed25519")
+	}
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(release.Signature))
+	if err != nil {
+		return fmt.Errorf("decode release signature: %w", err)
+	}
+	if !ed25519.Verify(publicKey, ReleaseSignaturePayload(release), signature) {
+		return fmt.Errorf("invalid release signature")
+	}
+	return nil
 }
 
 func normalizeReleaseVersion(value string) string {

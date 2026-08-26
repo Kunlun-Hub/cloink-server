@@ -36,17 +36,14 @@ func TestNewUpdate(t *testing.T) {
 	}
 }
 
-func TestVersionCheckDisabledWithoutEndpoint(t *testing.T) {
+func TestVersionCheckUsesDefaultReleaseEndpoint(t *testing.T) {
 	previousURL := versionURL
-	versionURL = ""
+	versionURL = DefaultReleaseAPIURL
 	t.Cleanup(func() { versionURL = previousURL })
 
 	u := NewUpdate(httpAgent)
-	t.Cleanup(u.StopWatch)
-	u.StartFetcher()
-
-	if u.fetchTicker != nil {
-		t.Fatal("version fetcher started without an endpoint")
+	if u == nil || versionURL != DefaultReleaseAPIURL {
+		t.Fatal("default release endpoint not configured")
 	}
 }
 

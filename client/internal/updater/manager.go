@@ -165,7 +165,10 @@ func (m *Manager) SetDownloadOnly() {
 }
 
 func (m *Manager) SetVersion(expectedVersion string, forceUpdate bool) {
-	log.Infof("expected version changed to %s, force update: %t", expectedVersion, forceUpdate)
+	if forceUpdate {
+		log.Warnf("forced silent updates are disabled; prompting for version %s", expectedVersion)
+	}
+	log.Infof("expected version changed to %s, prompt update: true", expectedVersion)
 
 	if !m.autoUpdateSupported() {
 		log.Warnf("auto-update not supported on this platform")
@@ -201,7 +204,8 @@ func (m *Manager) SetVersion(expectedVersion string, forceUpdate bool) {
 
 	m.lastTrigger = time.Time{}
 	m.downloadOnly = false
-	m.forceUpdate = forceUpdate
+	// Cloink never installs management-directed updates without user action.
+	m.forceUpdate = false
 
 	select {
 	case m.mgmUpdateChan <- struct{}{}:

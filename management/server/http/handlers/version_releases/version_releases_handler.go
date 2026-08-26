@@ -2,6 +2,7 @@ package version_releases
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"mime"
@@ -27,6 +28,7 @@ import (
 	"github.com/netbirdio/netbird/shared/auth"
 	"github.com/netbirdio/netbird/shared/management/http/util"
 	"github.com/netbirdio/netbird/shared/management/status"
+	clientversion "github.com/netbirdio/netbird/version"
 )
 
 const (
@@ -394,6 +396,21 @@ func (h *handler) prepareRelease(ctx context.Context, release *types.VersionRele
 	if release.IsLatest && release.SHA256 == "" {
 		return status.Errorf(status.InvalidArgument, "latest releases require sha256")
 	}
+	if release.IsLatest && release.Signature == "" {
+		return status.Errorf(status.InvalidArgument, "latest releases require an Ed25519 signature")
+	}
+	if release.Signature != "" {
+		if err := clientversion.VerifyReleaseSignature(clientversion.PublicRelease{
+			Version:      release.Version,
+			Platform:     string(release.Platform),
+			Architecture: string(release.Architecture),
+			Channel:      release.Channel,
+			SHA256:       release.SHA256,
+			Signature:    release.Signature,
+		}); err != nil {
+			return status.Errorf(status.InvalidArgument, "invalid release signature: %v", err)
+		}
+	}
 	return nil
 }
 
@@ -447,21 +464,15 @@ func validateDownloadURL(downloadURL string) error {
 }
 
 func validateSignature(raw string) error {
-	if len(raw) > maxSignatureBytes || !json.Valid([]byte(raw)) {
-		return status.Errorf(status.InvalidArgument, "signature must be a valid signature JSON document")
+	if len(raw) > maxSignatureBytes {
+		return status.Errorf(status.InvalidArgument, "signature is too large")
 	}
-	var signature struct {
-		Signature string `json:"signature"`
-		KeyID     string `json:"key_id"`
-	}
-	if err := json.Unmarshal([]byte(raw), &signature); err != nil {
-		return status.Errorf(status.InvalidArgument, "invalid signature: %v", err)
-	}
-	if signature.Signature == "" || signature.KeyID == "" {
-		return status.Errorf(status.InvalidArgument, "signature and key_id are required")
-	}
-	if _, err := base64.StdEncoding.DecodeString(signature.Signature); err != nil {
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
 		return status.Errorf(status.InvalidArgument, "signature is not valid base64")
+	}
+	if len(signature) != ed25519.SignatureSize {
+		return status.Errorf(status.InvalidArgument, "signature must be a 64-byte Ed25519 signature")
 	}
 	return nil
 }

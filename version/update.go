@@ -27,6 +27,12 @@ var (
 	versionURL = strings.TrimSpace(os.Getenv(EnvVersionCheckURL))
 )
 
+func init() {
+	if versionURL == "" {
+		versionURL = DefaultReleaseAPIURL
+	}
+}
+
 // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
 // daemon version are deprecated
 type Update struct {
@@ -131,11 +137,6 @@ func (u *Update) StartFetcher() {
 	u.fetchLock.Lock()
 	if u.fetchTicker != nil {
 		u.fetchLock.Unlock()
-		return
-	}
-	if versionURL == "" {
-		u.fetchLock.Unlock()
-		log.Debugf("version check disabled: %s is not configured", EnvVersionCheckURL)
 		return
 	}
 	u.fetchTicker = time.NewTicker(fetchPeriod)

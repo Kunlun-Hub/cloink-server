@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
@@ -17,7 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/client/internal/updater/downloader"
-	"github.com/netbirdio/netbird/client/internal/updater/reposign"
+	"github.com/netbirdio/netbird/version"
 )
 
 type Installer struct {
@@ -73,16 +73,6 @@ func (u *Installer) RunInstallation(ctx context.Context, targetVersion string) (
 			return err
 		}
 
-		artifactVerify, err := reposign.NewArtifactVerify(DefaultSigningKeysBaseURL)
-		if err != nil {
-			log.Errorf("failed to create artifact verify: %v", err)
-			return err
-		}
-
-		if err := artifactVerify.Verify(ctx, targetVersion, installerFile); err != nil {
-			log.Errorf("artifact verification error: %v", err)
-			return err
-		}
 	}
 
 	log.Infof("running installer")
@@ -181,7 +171,18 @@ func (u *Installer) CleanUpInstallerFiles() error {
 }
 
 func (u *Installer) downloadInstaller(ctx context.Context, installerType Type, targetVersion string) (string, error) {
-	fileURL := urlWithVersionArch(installerType, targetVersion)
+	releases, err := version.FetchPublicReleases(
+		ctx,
+		releasePlatformForUpdater(),
+		runtime.GOARCH,
+		"stable",
+		targetVersion,
+	)
+	if err != nil {
+		return "", err
+	}
+	release := releases[0]
+	fileURL := release.DownloadURL
 
 	// Clean up temp directory on error
 	var success bool
@@ -193,18 +194,45 @@ func (u *Installer) downloadInstaller(ctx context.Context, installerType Type, t
 		}
 	}()
 
-	fileName := path.Base(fileURL)
-	if fileName == "." || fileName == "/" || fileName == "" {
-		return "", fmt.Errorf("invalid file URL: %s", fileURL)
-	}
-
-	outputFilePath := filepath.Join(u.tempDir, fileName)
+	outputFilePath := filepath.Join(u.tempDir, "cloink-update"+installerExtension(installerType))
 	if err := downloader.DownloadToFile(ctx, downloader.DefaultRetryDelay, fileURL, outputFilePath); err != nil {
 		return "", err
+	}
+	file, err := os.Open(outputFilePath)
+	if err != nil {
+		return "", err
+	}
+	verifyErr := version.VerifySHA256(file, release.SHA256)
+	closeErr := file.Close()
+	if verifyErr != nil {
+		return "", verifyErr
+	}
+	if closeErr != nil {
+		return "", closeErr
 	}
 
 	success = true
 	return outputFilePath, nil
+}
+
+func releasePlatformForUpdater() string {
+	if runtime.GOOS == "darwin" {
+		return "macos"
+	}
+	return runtime.GOOS
+}
+
+func installerExtension(installerType Type) string {
+	switch strings.ToLower(installerType.name) {
+	case "exe":
+		return ".exe"
+	case "msi":
+		return ".msi"
+	case "pkg":
+		return ".pkg"
+	default:
+		return ".bin"
+	}
 }
 
 func (u *Installer) TempDir() string {

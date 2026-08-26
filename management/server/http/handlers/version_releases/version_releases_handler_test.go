@@ -27,7 +27,7 @@ import (
 	"github.com/netbirdio/netbird/shared/auth"
 )
 
-const validTestSignature = `{"signature":"AQID","key_id":"test-key","timestamp":"2026-08-14T06:00:00Z","algorithm":"ed25519","hash_algo":"sha512"}`
+const validTestSignature = "ygHmBMLUYsS7Dy4bQf9gmz0sighEg4z5ZzOjomJSFq2ufKMvWXpIijffyDohtHnWhjKTW/UyluShW92rgQgHCQ=="
 
 func TestUploadStreamsArtifactAndReturnsChecksum(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -186,7 +186,7 @@ func TestLatestReleaseRequiresChecksum(t *testing.T) {
 		Version: "0.77.0", Platform: types.VersionReleasePlatformLinux,
 		Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel,
 		DownloadURL: "https://download.example.com/cloink.deb", SHA256: "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
-		IsLatest: true,
+		Signature: validTestSignature, IsLatest: true,
 	}
 	h := &handler{}
 	require.NoError(t, h.prepareRelease(context.Background(), withChecksum))
