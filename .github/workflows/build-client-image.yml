@@ -52,7 +52,8 @@ jobs:
       - name: Resolve build metadata
         id: build
         run: |
-          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          version=$(git describe --tags --always)
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
           echo "date=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
