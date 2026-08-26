@@ -15,6 +15,8 @@ import (
 	"github.com/netbirdio/netbird/shared/management/status"
 )
 
+const networkTrafficSourceKeyExpression = "COALESCE(NULLIF(source_id, ''), NULLIF(source_name, ''), source_address)"
+
 // CreateNetworkTrafficEvent stores one client-reported flow event. Replayed
 // event IDs are treated as successful writes so the client can discard them.
 func (s *SqlStore) CreateNetworkTrafficEvent(ctx context.Context, event *networktraffic.Event) error {
@@ -87,15 +89,21 @@ func (s *SqlStore) GetAccountNetworkTrafficGroups(ctx context.Context, lockStren
 	filtered := func() *gorm.DB {
 		return applyNetworkTrafficFilters(s.db.WithContext(ctx).Model(&networktraffic.Event{}).Where("account_id = ?", accountID), filter)
 	}
-	grouped := filtered().Select(`window_start,
+	grouped := filtered().Select(`MIN(window_start) AS window_start, MAX(timestamp) AS latest_timestamp,
 		user_id, MAX(user_name) AS user_name, MAX(user_email) AS user_email, reporter_id,
-		COUNT(*) AS detail_count, COALESCE(SUM(rx_bytes), 0) AS rx_bytes, COALESCE(SUM(rx_packets), 0) AS rx_packets,
+		` + networkTrafficSourceKeyExpression + ` AS source_key,
+		MAX(source_id) AS source_id, MAX(source_type) AS source_type, MAX(source_name) AS source_name, MAX(source_address) AS source_address,
+		destination_id, MAX(destination_type) AS destination_type, MAX(destination_name) AS destination_name, destination_address,
+		protocol, direction, connection_type,
+		COUNT(*) AS detail_count,
+		COALESCE(SUM(CASE WHEN num_of_starts > 0 THEN num_of_starts WHEN num_of_drops > 0 THEN num_of_drops ELSE 1 END), 0) AS flow_count,
+		COALESCE(SUM(rx_bytes), 0) AS rx_bytes, COALESCE(SUM(rx_packets), 0) AS rx_packets,
 		COALESCE(SUM(tx_bytes), 0) AS tx_bytes, COALESCE(SUM(tx_packets), 0) AS tx_packets,
 		COALESCE(SUM(num_of_starts), 0) AS num_of_starts, COALESCE(SUM(num_of_ends), 0) AS num_of_ends, COALESCE(SUM(num_of_drops), 0) AS num_of_drops`).
-		Group("window_start, user_id, reporter_id")
+		Group("user_id, reporter_id, " + networkTrafficSourceKeyExpression + ", destination_id, destination_address, protocol, direction, connection_type")
 	query := s.db.WithContext(ctx).Table("(?) AS network_traffic_groups", grouped).
 		Select("network_traffic_groups.*, COUNT(*) OVER() AS total_groups").
-		Order("window_start DESC, user_id DESC, reporter_id DESC").
+		Order("latest_timestamp DESC, user_id DESC, reporter_id DESC, source_key DESC, destination_address DESC").
 		Limit(filter.PageSize).Offset(filter.Offset())
 	var groups []*networktraffic.Group
 	if err := query.Scan(&groups).Error; err != nil {
@@ -119,8 +127,11 @@ func (s *SqlStore) GetAccountNetworkTrafficGroupEvents(ctx context.Context, lock
 	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > networktraffic.MaxPageSize {
 		return nil, 0, status.Errorf(status.InvalidArgument, "invalid network traffic detail pagination")
 	}
+	// windowStart remains in the method contract for compatibility with older
+	// dashboards. The active date filter defines the selected grouping range.
+	_ = windowStart
 	query := s.db.WithContext(ctx).Model(&networktraffic.Event{}).
-		Where("account_id = ? AND window_start = ? AND user_id = ? AND reporter_id = ?", accountID, windowStart, userID, reporterID)
+		Where("account_id = ? AND user_id = ? AND reporter_id = ?", accountID, userID, reporterID)
 	query = applyNetworkTrafficFilters(query, filter)
 
 	var total int64
@@ -205,8 +216,14 @@ func applyNetworkTrafficFilters(query *gorm.DB, filter networktraffic.Filter) *g
 	if filter.SourceID != nil {
 		query = query.Where("source_id = ?", *filter.SourceID)
 	}
+	if filter.SourceKey != nil {
+		query = query.Where(networkTrafficSourceKeyExpression+" = ?", *filter.SourceKey)
+	}
 	if filter.DestinationID != nil {
 		query = query.Where("destination_id = ?", *filter.DestinationID)
+	}
+	if filter.DestinationAddress != nil {
+		query = query.Where("destination_address = ?", *filter.DestinationAddress)
 	}
 	if filter.Protocol != nil {
 		query = query.Where("protocol = ?", *filter.Protocol)

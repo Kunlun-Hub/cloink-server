@@ -177,19 +177,31 @@ func (h *handler) writeNetworkTrafficGroups(ctx stdcontext.Context, w http.Respo
 			continue
 		}
 		data = append(data, api.NetworkTrafficGroup{
-			Key:         networkTrafficGroupKey(group),
-			Scope:       api.NetworkTrafficGroupScopeOVERLAYDATAPLANE,
-			WindowStart: group.WindowStart,
-			User:        api.NetworkTrafficUser{Id: group.UserID, Name: group.UserName, Email: group.UserEmail},
-			ReporterId:  group.ReporterID,
-			DetailCount: group.DetailCount,
-			RxBytes:     group.RxBytes,
-			RxPackets:   group.RxPackets,
-			TxBytes:     group.TxBytes,
-			TxPackets:   group.TxPackets,
-			NumOfStarts: group.NumOfStarts,
-			NumOfEnds:   group.NumOfEnds,
-			NumOfDrops:  group.NumOfDrops,
+			Key:             networkTrafficGroupKey(group),
+			Scope:           api.NetworkTrafficGroupScopeOVERLAYDATAPLANE,
+			WindowStart:     group.WindowStart.Time,
+			LatestTimestamp: group.LatestTimestamp.Time,
+			User:            api.NetworkTrafficUser{Id: group.UserID, Name: group.UserName, Email: group.UserEmail},
+			ReporterId:      group.ReporterID,
+			SourceKey:       group.SourceKey,
+			Source: api.NetworkTrafficEndpoint{
+				Id: group.SourceID, Type: group.SourceType, Name: group.SourceName, Address: group.SourceAddress,
+			},
+			Destination: api.NetworkTrafficEndpoint{
+				Id: group.DestinationID, Type: group.DestinationType, Name: group.DestinationName, Address: group.DestinationAddress,
+			},
+			Protocol:       group.Protocol,
+			Direction:      group.Direction,
+			ConnectionType: group.ConnectionType,
+			DetailCount:    group.DetailCount,
+			FlowCount:      group.FlowCount,
+			RxBytes:        group.RxBytes,
+			RxPackets:      group.RxPackets,
+			TxBytes:        group.TxBytes,
+			TxPackets:      group.TxPackets,
+			NumOfStarts:    group.NumOfStarts,
+			NumOfEnds:      group.NumOfEnds,
+			NumOfDrops:     group.NumOfDrops,
 		})
 	}
 	util.WriteJSONObject(ctx, w, &api.NetworkTrafficGroupsResponse{
@@ -202,7 +214,8 @@ func (h *handler) writeNetworkTrafficGroups(ctx stdcontext.Context, w http.Respo
 }
 
 func networkTrafficGroupKey(group *networktraffic.Group) string {
-	value := fmt.Sprintf("%q:%q:%q", group.WindowStart.UTC().Format(time.RFC3339Nano), group.UserID, group.ReporterID)
+	value := fmt.Sprintf("%q:%q:%q:%q:%q:%d:%q:%q", group.UserID, group.ReporterID, group.SourceKey,
+		group.DestinationAddress, group.DestinationID, group.Protocol, group.Direction, group.ConnectionType)
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }

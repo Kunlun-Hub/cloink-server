@@ -37,17 +37,19 @@ type Filter struct {
 	SortBy   string
 	SortOrd  string
 
-	Search         *string
-	UserID         *string
-	ReporterID     *string
-	SourceID       *string
-	DestinationID  *string
-	Protocol       *int
-	EventType      *string
-	ConnectionType *string
-	Direction      *string
-	StartDate      *time.Time
-	EndDate        *time.Time
+	Search             *string
+	UserID             *string
+	ReporterID         *string
+	SourceID           *string
+	SourceKey          *string
+	DestinationID      *string
+	DestinationAddress *string
+	Protocol           *int
+	EventType          *string
+	ConnectionType     *string
+	Direction          *string
+	StartDate          *time.Time
+	EndDate            *time.Time
 }
 
 // ParseFromRequest parses and bounds query parameters from an HTTP request.
@@ -82,7 +84,13 @@ func (f *Filter) ParseFromRequest(r *http.Request) error {
 	if f.SourceID, err = optionalQueryString(query, "source_id", false); err != nil {
 		return err
 	}
+	if f.SourceKey, err = optionalQueryString(query, "source_key", false); err != nil {
+		return err
+	}
 	if f.DestinationID, err = optionalQueryString(query, "destination_id", false); err != nil {
+		return err
+	}
+	if f.DestinationAddress, err = optionalQueryString(query, "destination_address", false); err != nil {
 		return err
 	}
 	if f.Protocol, err = optionalProtocol(query); err != nil {

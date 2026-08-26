@@ -1,12 +1,54 @@
 package networktraffic
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"net/netip"
 	"time"
 
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
+
+// QueryTime accepts the timestamp representations returned by both SQLite and
+// PostgreSQL aggregate queries.
+type QueryTime struct {
+	time.Time
+}
+
+func (t *QueryTime) Scan(value any) error {
+	switch value := value.(type) {
+	case time.Time:
+		t.Time = value
+		return nil
+	case string:
+		return t.parse(value)
+	case []byte:
+		return t.parse(string(value))
+	default:
+		return fmt.Errorf("scan query time from %T", value)
+	}
+}
+
+func (t QueryTime) Value() (driver.Value, error) {
+	return t.Time, nil
+}
+
+func (t *QueryTime) parse(value string) error {
+	formats := []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999",
+	}
+	for _, format := range formats {
+		parsed, err := time.Parse(format, value)
+		if err == nil {
+			t.Time = parsed
+			return nil
+		}
+	}
+	return fmt.Errorf("parse query time %q", value)
+}
 
 const (
 	EndpointTypeUnknown      = "UNKNOWN"
@@ -17,22 +59,36 @@ const (
 	ConnectionTypeRouted = "ROUTED"
 )
 
-// Group is a read-only projection of persisted events sharing a collection window.
+// Group is a read-only projection of persisted events sharing one flow signature.
 type Group struct {
-	WindowStart time.Time
-	UserID      string
-	UserName    string
-	UserEmail   string
-	ReporterID  string
-	DetailCount int64
-	TotalGroups int64 `json:"-" gorm:"column:total_groups"`
-	RxBytes     int64
-	RxPackets   int64
-	TxBytes     int64
-	TxPackets   int64
-	NumOfStarts int64
-	NumOfEnds   int64
-	NumOfDrops  int64
+	WindowStart        QueryTime
+	LatestTimestamp    QueryTime
+	UserID             string
+	UserName           string
+	UserEmail          string
+	ReporterID         string
+	SourceKey          string
+	SourceID           string
+	SourceType         string
+	SourceName         string
+	SourceAddress      string
+	DestinationID      string
+	DestinationType    string
+	DestinationName    string
+	DestinationAddress string
+	Protocol           int
+	Direction          string
+	ConnectionType     string
+	DetailCount        int64
+	FlowCount          int64
+	TotalGroups        int64 `json:"-" gorm:"column:total_groups"`
+	RxBytes            int64
+	RxPackets          int64
+	TxBytes            int64
+	TxPackets          int64
+	NumOfStarts        int64
+	NumOfEnds          int64
+	NumOfDrops         int64
 }
 
 // Event is a client-reported, aggregated network flow window.

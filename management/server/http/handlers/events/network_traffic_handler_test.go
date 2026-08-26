@@ -50,7 +50,10 @@ func TestNetworkTrafficHandlerModes(t *testing.T) {
 			query: "grouped=true&start_date=2026-08-22T05%3A55%3A00Z&end_date=2026-08-22T06%3A00%3A00Z",
 			set: func(db *store.MockStore) {
 				db.EXPECT().GetAccountNetworkTrafficGroups(gomock.Any(), store.LockingStrengthNone, accountID, gomock.Any()).
-					Return([]*networktraffic.Group{{WindowStart: window, UserID: "owner", ReporterID: "peer-a", DetailCount: 2}}, int64(1), nil)
+					Return([]*networktraffic.Group{{
+						WindowStart: networktraffic.QueryTime{Time: window}, LatestTimestamp: networktraffic.QueryTime{Time: window},
+						UserID: "owner", ReporterID: "peer-a", DetailCount: 2,
+					}}, int64(1), nil)
 			},
 			check: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				var response api.NetworkTrafficGroupsResponse

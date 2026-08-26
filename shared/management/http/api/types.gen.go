@@ -4134,21 +4134,29 @@ type NetworkTrafficEventsResponse struct {
 
 // NetworkTrafficGroup defines model for NetworkTrafficGroup.
 type NetworkTrafficGroup struct {
-	DetailCount int64 `json:"detail_count"`
+	ConnectionType string                 `json:"connection_type"`
+	Destination    NetworkTrafficEndpoint `json:"destination"`
+	DetailCount    int64                  `json:"detail_count"`
+	Direction      string                 `json:"direction"`
+	FlowCount      int64                  `json:"flow_count"`
 
-	// Key Opaque identity for this group. Use the explicit window_start, user.id, and reporter_id fields for detail requests.
-	Key         string                   `json:"key"`
-	NumOfDrops  int64                    `json:"num_of_drops"`
-	NumOfEnds   int64                    `json:"num_of_ends"`
-	NumOfStarts int64                    `json:"num_of_starts"`
-	ReporterId  string                   `json:"reporter_id"`
-	RxBytes     int64                    `json:"rx_bytes"`
-	RxPackets   int64                    `json:"rx_packets"`
-	Scope       NetworkTrafficGroupScope `json:"scope"`
-	TxBytes     int64                    `json:"tx_bytes"`
-	TxPackets   int64                    `json:"tx_packets"`
-	User        NetworkTrafficUser       `json:"user"`
-	WindowStart time.Time                `json:"window_start"`
+	// Key Opaque identity for a device, target, direction, port, and protocol group.
+	Key             string                   `json:"key"`
+	LatestTimestamp time.Time                `json:"latest_timestamp"`
+	NumOfDrops      int64                    `json:"num_of_drops"`
+	NumOfEnds       int64                    `json:"num_of_ends"`
+	NumOfStarts     int64                    `json:"num_of_starts"`
+	Protocol        int                      `json:"protocol"`
+	ReporterId      string                   `json:"reporter_id"`
+	RxBytes         int64                    `json:"rx_bytes"`
+	RxPackets       int64                    `json:"rx_packets"`
+	Scope           NetworkTrafficGroupScope `json:"scope"`
+	Source          NetworkTrafficEndpoint   `json:"source"`
+	SourceKey       string                   `json:"source_key"`
+	TxBytes         int64                    `json:"tx_bytes"`
+	TxPackets       int64                    `json:"tx_packets"`
+	User            NetworkTrafficUser       `json:"user"`
+	WindowStart     time.Time                `json:"window_start"`
 }
 
 // NetworkTrafficGroupScope defines model for NetworkTrafficGroup.Scope.

@@ -113,3 +113,67 @@ func TestSqlStoreNetworkTrafficGroupsAreScopedAndDeterministic(t *testing.T) {
 	require.Zero(t, filteredTotal)
 	require.Empty(t, filteredGroups)
 }
+
+func TestSqlStoreNetworkTrafficGroupsFoldByFlowSignature(t *testing.T) {
+	ctx := context.Background()
+	dbStore, cleanup, err := NewTestStoreFromSQL(ctx, "", t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	window := time.Now().UTC().Truncate(time.Microsecond)
+	add := func(id, sourceID, sourceAddress, destinationAddress, direction string, protocol int) {
+		require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, &networktraffic.Event{
+			ID: id, AccountID: "account", FlowID: "flow-" + id,
+			Timestamp: window.Add(time.Duration(len(id)) * time.Millisecond), WindowStart: window, WindowEnd: window.Add(time.Minute),
+			UserID: "user", ReporterID: "reporter", SourceID: sourceID, SourceName: "client", SourceAddress: sourceAddress,
+			DestinationID: "resource", DestinationName: "target", DestinationAddress: destinationAddress,
+			Protocol: protocol, Direction: direction, ConnectionType: networktraffic.ConnectionTypeRouted,
+			RxBytes: 10, TxBytes: 20, NumOfStarts: 1,
+		}))
+	}
+
+	add("same-a", "client-a", "100.64.0.1:51001", "10.0.0.5:443", "EGRESS", 6)
+	add("same-b", "client-a", "100.64.0.1:51002", "10.0.0.5:443", "EGRESS", 6)
+	add("other-port", "client-a", "100.64.0.1:51003", "10.0.0.5:8443", "EGRESS", 6)
+	add("other-direction", "client-a", "100.64.0.1:51004", "10.0.0.5:443", "INGRESS", 6)
+	add("other-target", "client-a", "100.64.0.1:51005", "10.0.0.6:443", "EGRESS", 6)
+	add("other-protocol", "client-a", "100.64.0.1:51006", "10.0.0.5:443", "EGRESS", 17)
+	add("other-client", "client-b", "100.64.0.2:51001", "10.0.0.5:443", "EGRESS", 6)
+
+	start, end := window.Add(-time.Minute), window.Add(time.Minute)
+	filter := networktraffic.Filter{Page: 1, PageSize: 20, StartDate: &start, EndDate: &end}
+	groups, total, err := dbStore.GetAccountNetworkTrafficGroups(ctx, LockingStrengthNone, "account", filter)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), total)
+	require.Len(t, groups, 6)
+
+	var folded *networktraffic.Group
+	for _, group := range groups {
+		if group.SourceKey == "client-a" && group.DestinationAddress == "10.0.0.5:443" && group.Direction == "EGRESS" && group.Protocol == 6 {
+			folded = group
+			break
+		}
+	}
+	require.NotNil(t, folded)
+	require.Equal(t, int64(2), folded.DetailCount)
+	require.Equal(t, int64(2), folded.FlowCount)
+	require.Equal(t, int64(20), folded.RxBytes)
+	require.Equal(t, int64(40), folded.TxBytes)
+
+	sourceKey := folded.SourceKey
+	destinationAddress := folded.DestinationAddress
+	protocol := folded.Protocol
+	direction := folded.Direction
+	connectionType := folded.ConnectionType
+	filter.SourceKey = &sourceKey
+	filter.DestinationAddress = &destinationAddress
+	filter.Protocol = &protocol
+	filter.Direction = &direction
+	filter.ConnectionType = &connectionType
+	details, detailTotal, err := dbStore.GetAccountNetworkTrafficGroupEvents(
+		ctx, LockingStrengthNone, "account", filter, window, "user", "reporter",
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), detailTotal)
+	require.Len(t, details, 2)
+}

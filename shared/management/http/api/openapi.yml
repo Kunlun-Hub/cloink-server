@@ -3063,18 +3063,36 @@ components:
       properties:
         key:
           type: string
-          description: Opaque identity for this group. Use the explicit window_start, user.id, and reporter_id fields for detail requests.
+          description: Opaque identity for a device, target, direction, port, and protocol group.
         scope:
           type: string
           enum: [ OVERLAY_DATA_PLANE ]
         window_start:
           type: string
           format: date-time
+        latest_timestamp:
+          type: string
+          format: date-time
         user:
           $ref: '#/components/schemas/NetworkTrafficUser'
         reporter_id:
           type: string
+        source_key:
+          type: string
+        source:
+          $ref: '#/components/schemas/NetworkTrafficEndpoint'
+        destination:
+          $ref: '#/components/schemas/NetworkTrafficEndpoint'
+        protocol:
+          type: integer
+        direction:
+          type: string
+        connection_type:
+          type: string
         detail_count:
+          type: integer
+          format: int64
+        flow_count:
           type: integer
           format: int64
         rx_bytes:
@@ -3102,9 +3120,17 @@ components:
         - key
         - scope
         - window_start
+        - latest_timestamp
         - user
         - reporter_id
+        - source_key
+        - source
+        - destination
+        - protocol
+        - direction
+        - connection_type
         - detail_count
+        - flow_count
         - rx_bytes
         - rx_packets
         - tx_bytes
