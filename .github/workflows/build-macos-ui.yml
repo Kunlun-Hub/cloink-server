@@ -1,0 +1,104 @@
+name: Build macOS UI
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build (for example v0.77.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-macos-ui-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GORELEASER_VERSION: v2.16.0
+
+jobs:
+  build-macos-ui:
+    name: Build macOS amd64, arm64 and universal UI
+    runs-on: macos-latest
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          fi
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Wails CLI
+        run: |
+          WAILS_VERSION=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
+
+      - name: Build macOS UI archives
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --config .goreleaser_ui_darwin.yaml --clean --skip=publish
+
+      - name: Verify UI archives
+        run: |
+          set -euo pipefail
+          test -f dist/cloink-ui_*_darwin_amd64.tar.gz
+          test -f dist/cloink-ui_*_darwin_arm64.tar.gz
+          test -f dist/cloink-ui_*_darwin_all.tar.gz
+          test -f dist/cloink-ui_darwin_checksums.txt
+          (cd dist && shasum -a 256 -c cloink-ui_darwin_checksums.txt)
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloink-macos-ui-${{ steps.release.outputs.tag }}
+          path: |
+            dist/cloink-ui_*_darwin_amd64.tar.gz
+            dist/cloink-ui_*_darwin_arm64.tar.gz
+            dist/cloink-ui_*_darwin_all.tar.gz
+            dist/cloink-ui_darwin_checksums.txt
+          retention-days: 30
+
+      - name: Attach UI archives to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: |
+            dist/cloink-ui_*_darwin_amd64.tar.gz
+            dist/cloink-ui_*_darwin_arm64.tar.gz
+            dist/cloink-ui_*_darwin_all.tar.gz
+            dist/cloink-ui_darwin_checksums.txt
