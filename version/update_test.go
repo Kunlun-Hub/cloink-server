@@ -38,12 +38,25 @@ func TestNewUpdate(t *testing.T) {
 
 func TestVersionCheckUsesDefaultReleaseEndpoint(t *testing.T) {
 	previousURL := versionURL
-	versionURL = DefaultReleaseAPIURL
+	versionURL = ""
 	t.Cleanup(func() { versionURL = previousURL })
 
-	u := NewUpdate(httpAgent)
+	u := NewUpdate("nb/client")
 	if u == nil || versionURL != DefaultReleaseAPIURL {
 		t.Fatal("default release endpoint not configured")
+	}
+}
+
+func TestManagementVersionCheckStaysDisabledWithoutEndpoint(t *testing.T) {
+	previousURL := versionURL
+	versionURL = ""
+	t.Cleanup(func() { versionURL = previousURL })
+
+	u := NewUpdate("nb/management")
+	u.StartFetcher()
+
+	if u.fetchTicker != nil {
+		t.Fatal("management version fetcher started without an endpoint")
 	}
 }
 
