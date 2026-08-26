@@ -47,6 +47,12 @@ func TestFlowServerEventsPersistsAndAcknowledges(t *testing.T) {
 		IP:        netipMustParse("100.64.0.1"),
 		Name:      "laptop",
 	}
+	destinationPeer := &peer.Peer{
+		ID:        "peer-2",
+		AccountID: "account-1",
+		IP:        netipMustParse("100.64.0.2"),
+		Name:      "server",
+	}
 	settings := &types.Settings{Extra: &types.ExtraSettings{FlowEnabled: true}}
 	dbStore.EXPECT().GetPeerByPeerPubKey(gomock.Any(), store.LockingStrengthNone, publicKey.String()).Return(reporter, nil)
 	dbStore.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, "account-1").Return(settings, nil)
@@ -54,6 +60,9 @@ func TestFlowServerEventsPersistsAndAcknowledges(t *testing.T) {
 	dbStore.EXPECT().GetPeerByIP(gomock.Any(), store.LockingStrengthNone, "account-1", gomock.Any()).DoAndReturn(func(_ context.Context, _ store.LockingStrength, _ string, ip net.IP) (*peer.Peer, error) {
 		if ip.String() == reporter.IP.String() {
 			return reporter, nil
+		}
+		if ip.String() == destinationPeer.IP.String() {
+			return destinationPeer, nil
 		}
 		return nil, status.Errorf(status.NotFound, "peer not found")
 	}).AnyTimes()
@@ -109,7 +118,7 @@ func TestFlowServerEventsPersistsAndAcknowledges(t *testing.T) {
 	require.Equal(t, flowID.String(), saved.FlowID)
 	require.Equal(t, "account-1", saved.AccountID)
 	require.Equal(t, networktraffic.EndpointTypePeer, saved.SourceType)
-	require.Equal(t, networktraffic.EndpointTypeUnknown, saved.DestinationType)
+	require.Equal(t, networktraffic.EndpointTypePeer, saved.DestinationType)
 	require.NoError(t, stream.CloseSend())
 }
 
@@ -140,6 +149,69 @@ func TestFlowServerEventsRejectsMissingOrTamperedToken(t *testing.T) {
 			_, err = stream.Recv()
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "Unauthenticated")
+		})
+	}
+}
+
+func TestShouldFilterFlowAddresses(t *testing.T) {
+	tests := []struct {
+		name        string
+		source      string
+		destination string
+		want        bool
+	}{
+		{name: "IPv4 multicast", source: "100.80.165.252", destination: "224.0.0.252", want: true},
+		{name: "IPv6 multicast", source: "fdaf:6fa3::1", destination: "ff02::16", want: true},
+		{name: "IPv4 link local", source: "169.254.1.1", destination: "100.80.165.252", want: true},
+		{name: "IPv6 link local", source: "fdaf:6fa3::1", destination: "fe80::1", want: true},
+		{name: "loopback", source: "127.0.0.1", destination: "100.80.165.252", want: true},
+		{name: "overlay to private", source: "100.80.165.252", destination: "192.168.1.20", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fields := &flowproto.FlowFields{
+				SourceIp: net.ParseIP(test.source),
+				DestIp:   net.ParseIP(test.destination),
+			}
+			require.Equal(t, test.want, shouldFilterFlowAddresses(fields))
+		})
+	}
+}
+
+func TestShouldPersistFlow(t *testing.T) {
+	peer := &resolvedFlowEndpoint{Type: networktraffic.EndpointTypePeer}
+	resource := &resolvedFlowEndpoint{Type: networktraffic.EndpointTypeHostResource}
+	unknown := &resolvedFlowEndpoint{Type: networktraffic.EndpointTypeUnknown}
+	dnsFields := &flowproto.FlowFields{
+		Protocol: flowProtocolUDP,
+		ConnectionInfo: &flowproto.FlowFields_PortInfo{PortInfo: &flowproto.PortInfo{
+			DestPort: 53,
+		}},
+	}
+	exitNodeFields := &flowproto.FlowFields{DestResourceId: []byte("exit-network")}
+
+	tests := []struct {
+		name        string
+		fields      *flowproto.FlowFields
+		source      *resolvedFlowEndpoint
+		destination *resolvedFlowEndpoint
+		settings    *types.ExtraSettings
+		want        bool
+	}{
+		{name: "peer to peer", fields: &flowproto.FlowFields{}, source: peer, destination: peer, want: true},
+		{name: "peer to published resource", fields: &flowproto.FlowFields{}, source: peer, destination: resource, want: true},
+		{name: "published resource to peer", fields: &flowproto.FlowFields{}, source: resource, destination: peer, want: true},
+		{name: "peer to unknown internet", fields: &flowproto.FlowFields{}, source: peer, destination: unknown, want: false},
+		{name: "DNS enabled", fields: dnsFields, source: peer, destination: unknown, settings: &types.ExtraSettings{FlowDnsCollectionEnabled: true}, want: true},
+		{name: "DNS disabled", fields: dnsFields, source: peer, destination: unknown, settings: &types.ExtraSettings{}, want: false},
+		{name: "exit node enabled", fields: exitNodeFields, source: peer, destination: unknown, settings: &types.ExtraSettings{FlowENCollectionEnabled: true}, want: true},
+		{name: "exit node disabled", fields: exitNodeFields, source: peer, destination: unknown, settings: &types.ExtraSettings{}, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, shouldPersistFlow(test.fields, test.source, test.destination, test.settings))
 		})
 	}
 }

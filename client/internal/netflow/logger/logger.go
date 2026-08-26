@@ -13,6 +13,7 @@ import (
 	"github.com/netbirdio/netbird/client/internal/netflow/types"
 	"github.com/netbirdio/netbird/client/internal/peer"
 	"github.com/netbirdio/netbird/dns"
+	"github.com/netbirdio/netbird/shared/netiputil"
 )
 
 const (
@@ -22,6 +23,7 @@ const (
 
 type admissionStats struct {
 	accepted        atomic.Uint64
+	filtered        atomic.Uint64
 	disabled        atomic.Uint64
 	full            atomic.Uint64
 	closing         atomic.Uint64
@@ -30,6 +32,7 @@ type admissionStats struct {
 
 type Stats struct {
 	Accepted         uint64
+	Filtered         uint64
 	Disabled         uint64
 	CaptureQueueFull uint64
 	Closing          uint64
@@ -63,6 +66,11 @@ func New(statusRecorder *peer.Status, wgIfaceIPNet, wgIfaceIPNetV6 netip.Prefix)
 func (l *Logger) StoreEvent(flowEvent types.EventFields) {
 	if !l.enabled.Load() {
 		l.stats.disabled.Add(1)
+		return
+	}
+	if !isDNSFlow(&flowEvent) &&
+		(netiputil.IsSystemLocalAddress(flowEvent.SourceIP) || netiputil.IsSystemLocalAddress(flowEvent.DestIP)) {
+		l.stats.filtered.Add(1)
 		return
 	}
 
@@ -164,6 +172,7 @@ func (l *Logger) Close() {
 func (l *Logger) Stats() Stats {
 	return Stats{
 		Accepted:         l.stats.accepted.Load(),
+		Filtered:         l.stats.filtered.Load(),
 		Disabled:         l.stats.disabled.Load(),
 		CaptureQueueFull: l.stats.full.Load(),
 		Closing:          l.stats.closing.Load(),
@@ -193,16 +202,18 @@ func (l *Logger) isOverlayIP(ip netip.Addr) bool {
 }
 
 func (l *Logger) shouldStore(event *types.EventFields, isExitNode bool) bool {
-	// check dns collection
-	if !l.dnsCollection.Load() && event.Protocol == types.UDP &&
-		(event.DestPort == 53 || event.DestPort == dns.ForwarderClientPort || event.DestPort == dns.ForwarderServerPort) {
-		return false
+	if isDNSFlow(event) {
+		return l.dnsCollection.Load()
 	}
-
-	// check exit node collection
-	if !l.exitNodeCollection.Load() && isExitNode {
-		return false
+	if isExitNode {
+		return l.exitNodeCollection.Load()
 	}
+	isP2P := l.isOverlayIP(event.SourceIP) && l.isOverlayIP(event.DestIP)
+	hasPublishedResource := len(event.SourceResourceID) > 0 || len(event.DestResourceID) > 0
+	return isP2P || hasPublishedResource
+}
 
-	return true
+func isDNSFlow(event *types.EventFields) bool {
+	return event.Protocol == types.UDP &&
+		(event.DestPort == 53 || event.DestPort == dns.ForwarderClientPort || event.DestPort == dns.ForwarderServerPort)
 }

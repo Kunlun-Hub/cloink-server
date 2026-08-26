@@ -130,6 +130,7 @@ func TestSendEventReceiveAck(t *testing.T) {
 		FlowID:    uuid.New(),
 		Type:      types.TypeStart,
 		Direction: types.Ingress,
+		SourceIP:  ipAddr("172.16.1.3"),
 		DestIP:    ipAddr("172.16.1.2"),
 		DestPort:  2345,
 		Protocol:  6,
@@ -139,6 +140,7 @@ func TestSendEventReceiveAck(t *testing.T) {
 		FlowID:    uuid.New(),
 		Type:      types.TypeStart,
 		Direction: types.Ingress,
+		SourceIP:  ipAddr("172.16.1.3"),
 		DestIP:    ipAddr("172.16.1.1"),
 		DestPort:  1234,
 		Protocol:  6,
@@ -206,6 +208,7 @@ func TestRetryEvents(t *testing.T) {
 		FlowID:    uuid.New(),
 		Type:      types.TypeStart,
 		Direction: types.Ingress,
+		SourceIP:  ipAddr("172.16.1.3"),
 		DestIP:    ipAddr("172.16.1.2"),
 		DestPort:  2345,
 		Protocol:  6,
@@ -215,6 +218,7 @@ func TestRetryEvents(t *testing.T) {
 		FlowID:    uuid.New(),
 		Type:      types.TypeStart,
 		Direction: types.Ingress,
+		SourceIP:  ipAddr("172.16.1.3"),
 		DestIP:    ipAddr("172.16.1.1"),
 		DestPort:  1234,
 		Protocol:  6,
@@ -269,7 +273,7 @@ func createManager(t *testing.T, serverAddr string, retryInterval time.Duration)
 
 	mockIFace := &mockIFaceMapper{
 		address: wgaddr.Address{
-			Network: netip.MustParsePrefix("192.168.1.1/32"),
+			Network: netip.MustParsePrefix("172.16.1.0/24"),
 		},
 		isUserspaceBind: true,
 	}

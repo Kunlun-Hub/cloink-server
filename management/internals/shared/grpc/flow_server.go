@@ -19,19 +19,23 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/netbirdio/netbird/dns"
 	"github.com/netbirdio/netbird/flow/proto"
 	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/server/account"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/store"
 	"github.com/netbirdio/netbird/management/server/telemetry"
+	mgmtypes "github.com/netbirdio/netbird/management/server/types"
 	internalStatus "github.com/netbirdio/netbird/shared/management/status"
+	"github.com/netbirdio/netbird/shared/netiputil"
 )
 
 const (
 	maxFlowAddressPort = math.MaxUint16
 	maxFlowFutureSkew  = 5 * time.Minute
 	maxFlowIDLength    = 1024
+	flowProtocolUDP    = 17
 )
 
 type permanentFlowError struct {
@@ -244,6 +248,9 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	}
 
 	fields := event.GetFlowFields()
+	if !isDNSFlowFields(fields) && shouldFilterFlowAddresses(fields) {
+		return nil
+	}
 	sourcePort, destinationPort, icmpType, icmpCode := flowConnectionValues(fields)
 	source, err := s.resolveEndpoint(ctx, claims.AccountID, fields.GetSourceIp(), sourcePort, fields.GetSourceResourceId())
 	if err != nil {
@@ -252,6 +259,9 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	destination, err := s.resolveEndpoint(ctx, claims.AccountID, fields.GetDestIp(), destinationPort, fields.GetDestResourceId())
 	if err != nil {
 		return err
+	}
+	if !shouldPersistFlow(fields, source, destination, settings.Extra) {
+		return nil
 	}
 
 	userName, userEmail := flowUser(ctx, s.accountManager.GetStore(), reporter)
@@ -325,6 +335,35 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	}
 	s.metrics.RecordStore(ctx, result, time.Since(started))
 	return err
+}
+
+func shouldFilterFlowAddresses(fields *proto.FlowFields) bool {
+	source, sourceOK := netip.AddrFromSlice(fields.GetSourceIp())
+	destination, destinationOK := netip.AddrFromSlice(fields.GetDestIp())
+	return !sourceOK || !destinationOK ||
+		netiputil.IsSystemLocalAddress(source) || netiputil.IsSystemLocalAddress(destination)
+}
+
+func shouldPersistFlow(fields *proto.FlowFields, source, destination *resolvedFlowEndpoint, settings *mgmtypes.ExtraSettings) bool {
+	if isDNSFlowFields(fields) {
+		return settings != nil && settings.FlowDnsCollectionEnabled
+	}
+	if source == nil || destination == nil {
+		return false
+	}
+	isP2P := source.Type == networktraffic.EndpointTypePeer && destination.Type == networktraffic.EndpointTypePeer
+	hasPublishedResource := source.Type == networktraffic.EndpointTypeHostResource || destination.Type == networktraffic.EndpointTypeHostResource
+	isExitNode := settings != nil && settings.FlowENCollectionEnabled &&
+		(len(fields.GetSourceResourceId()) > 0 || len(fields.GetDestResourceId()) > 0)
+	return isP2P || hasPublishedResource || isExitNode
+}
+
+func isDNSFlowFields(fields *proto.FlowFields) bool {
+	if fields == nil || fields.GetProtocol() != flowProtocolUDP {
+		return false
+	}
+	_, destinationPort, _, _ := flowConnectionValues(fields)
+	return destinationPort == 53 || destinationPort == int(dns.ForwarderClientPort) || destinationPort == int(dns.ForwarderServerPort)
 }
 
 func validateFlowEvent(event *proto.FlowEvent) error {
