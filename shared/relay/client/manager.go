@@ -144,6 +144,7 @@ type Manager struct {
 	// transportFallback is shared across home and foreign relay clients so a
 	// datagram-too-large failure makes that server avoid datagram-sized transports across reconnects.
 	transportFallback *transportFallback
+	dataPlaneFailures *relayDataPlaneFailures
 }
 
 // NewManager creates a new manager instance.
@@ -158,6 +159,7 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 		tokenStore:          tokenStore,
 		mtu:                 mtu,
 		transportFallback:   tf,
+		dataPlaneFailures:   newRelayDataPlaneFailures(),
 		relayServerCooldown: relayServerCooldown,
 		serverPicker: &ServerPicker{
 			TokenStore:        tokenStore,
@@ -184,6 +186,88 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 	})
 	m.reconnectGuard = NewGuard(m.serverPicker, m.maxBackoffInterval, m.netState)
 	return m
+}
+
+// ReportDataPlaneFailure records a WireGuard handshake timeout on a connection
+// using relayAddress. Repeated failures rebuild the underlying Relay client,
+// even when its transport still reports connected.
+func (m *Manager) ReportDataPlaneFailure(relayAddress, peerKey string) {
+	if m.dataPlaneFailures == nil || !m.dataPlaneFailures.reportFailure(relayAddress, peerKey) {
+		return
+	}
+	go m.recoverRelayDataPlane(relayAddress)
+}
+
+// ReportDataPlaneSuccess clears a peer's pending Relay data-plane failures.
+func (m *Manager) ReportDataPlaneSuccess(relayAddress, peerKey string) {
+	if m.dataPlaneFailures != nil {
+		m.dataPlaneFailures.reportSuccess(relayAddress, peerKey)
+	}
+}
+
+func (m *Manager) recoverRelayDataPlane(relayAddress string) {
+	m.switchMu.Lock()
+	defer m.switchMu.Unlock()
+	if !m.running.Load() || m.ctx.Err() != nil {
+		return
+	}
+
+	m.relayClientMu.Lock()
+	home := m.relayClient
+	isHome := false
+	homeURL := ""
+	if home != nil {
+		homeURL = home.connectionURL
+		instanceURL, err := home.ServerInstanceURL()
+		isHome = relayAddress == homeURL || err == nil && relayAddress == instanceURL
+	}
+	if isHome {
+		home.SetOnDisconnectListener(nil)
+		m.relayClient = nil
+	}
+	m.relayClientMu.Unlock()
+
+	if isHome {
+		log.Warnf("Relay data plane is unresponsive on %s; rebuilding the home Relay client", homeURL)
+		m.markDataPlaneServerFailure(homeURL)
+		m.notifyOnDisconnectListeners(homeURL)
+		if err := home.Close(); err != nil {
+			log.Warnf("failed to close unresponsive home Relay client %s: %v", homeURL, err)
+		}
+		client, err := m.serverPicker.PickServer(m.ctx)
+		if err != nil {
+			log.Errorf("failed to recover Relay data plane: %v", err)
+			go m.reconnectGuard.StartReconnectTrys(m.ctx, nil)
+			return
+		}
+		m.storeClient(client)
+		m.onServerConnected()
+		return
+	}
+
+	m.relayClientsMutex.RLock()
+	track := m.relayClients[relayAddress]
+	m.relayClientsMutex.RUnlock()
+	if track == nil {
+		return
+	}
+	track.RLock()
+	foreign := track.relayClient
+	track.RUnlock()
+	if foreign != nil {
+		log.Warnf("Relay data plane is unresponsive on foreign server %s; rebuilding it", relayAddress)
+		_ = foreign.Close()
+	}
+}
+
+func (m *Manager) markDataPlaneServerFailure(relayURL string) {
+	m.relayConfigMu.RLock()
+	forced := m.forcedRelayURL != ""
+	m.relayConfigMu.RUnlock()
+	if forced {
+		return
+	}
+	m.serverPicker.markServerFailure(relayURL, time.Now(), fmt.Errorf("relay data plane handshake timeouts"))
 }
 
 // Serve starts the manager, attempting to establish a connection with the relay server.

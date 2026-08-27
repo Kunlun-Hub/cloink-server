@@ -52,10 +52,16 @@ type ServiceDependencies struct {
 	Signaler           *Signaler
 	IFaceDiscover      stdnet.ExternalIFaceDiscover
 	RelayManager       *relayClient.Manager
+	RelayDataPlane     RelayDataPlaneMonitor
 	SrWatcher          *guard.SRWatcher
 	PeerConnDispatcher *dispatcher.ConnectionDispatcher
 	PortForwardManager *portforward.Manager
 	MetricsRecorder    MetricsRecorder
+}
+
+type RelayDataPlaneMonitor interface {
+	ReportDataPlaneFailure(relayAddress, peerKey string)
+	ReportDataPlaneSuccess(relayAddress, peerKey string)
 }
 
 type WgConfig struct {
@@ -110,6 +116,7 @@ type Conn struct {
 	signaler           *Signaler
 	iFaceDiscover      stdnet.ExternalIFaceDiscover
 	relayManager       *relayClient.Manager
+	relayDataPlane     RelayDataPlaneMonitor
 	srWatcher          *guard.SRWatcher
 	portForwardManager *portforward.Manager
 
@@ -120,6 +127,7 @@ type Conn struct {
 	statusRelay         *worker.AtomicWorkerStatus
 	statusICE           *worker.AtomicWorkerStatus
 	currentConnPriority conntype.ConnPriority
+	activeRelayAddress  string
 	opened              bool // this flag is used to prevent close in case of not opened connection
 
 	workerICE   *WorkerICE
@@ -202,6 +210,7 @@ func NewConn(config ConnConfig, services ServiceDependencies) (*Conn, error) {
 		signaler:           services.Signaler,
 		iFaceDiscover:      services.IFaceDiscover,
 		relayManager:       services.RelayManager,
+		relayDataPlane:     services.RelayDataPlane,
 		srWatcher:          services.SrWatcher,
 		portForwardManager: services.PortForwardManager,
 		statusRelay:        worker.NewAtomicStatus(),
@@ -580,6 +589,7 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	conn.dumpState.NewLocalProxy()
 
 	conn.Log.Infof("created new wgProxy for relay connection: %s", wgProxy.EndpointAddr().String())
+	conn.activeRelayAddress = rci.relayAddress
 
 	if conn.isICEActive() {
 		conn.Log.Debugf("do not switch to relay because current priority is: %s", conn.currentConnPriority.String())
@@ -641,6 +651,7 @@ func (conn *Conn) handleRelayDisconnectedLocked() {
 			conn.Log.Errorf("failed to remove wg endpoint: %v", err)
 		}
 	}
+	conn.activeRelayAddress = ""
 
 	if conn.wgProxyRelay != nil {
 		_ = conn.wgProxyRelay.CloseConn()
@@ -687,6 +698,7 @@ func (conn *Conn) onWGDisconnected(watcherCtx context.Context) {
 	}
 
 	conn.Log.Warnf("WireGuard handshake timeout detected, closing current connection")
+	conn.reportRelayDataPlaneFailureLocked()
 
 	// Close the active connection based on current priority
 	switch conn.currentConnPriority {
@@ -700,6 +712,12 @@ func (conn *Conn) onWGDisconnected(watcherCtx context.Context) {
 	}
 
 	conn.escalateWGTimeoutLocked()
+}
+
+func (conn *Conn) reportRelayDataPlaneFailureLocked() {
+	if conn.currentConnPriority == conntype.Relay && conn.activeRelayAddress != "" && conn.relayDataPlane != nil {
+		conn.relayDataPlane.ReportDataPlaneFailure(conn.activeRelayAddress, conn.config.Key)
+	}
 }
 
 // escalateWGTimeoutLocked resets the peer's rosenpass state after repeated
@@ -951,7 +969,14 @@ func (conn *Conn) onWGHandshakeSuccess(when time.Time) {
 func (conn *Conn) onWGCheckSuccess() {
 	conn.mu.Lock()
 	conn.wgTimeouts = 0
+	// A successful handshake over any transport proves this peer is no longer
+	// evidence of a Relay-wide blackhole. Clear its pending Relay failure even
+	// when ICE upgraded the active path while a standby Relay remains open.
+	relayAddress := conn.activeRelayAddress
 	conn.mu.Unlock()
+	if relayAddress != "" && conn.relayDataPlane != nil {
+		conn.relayDataPlane.ReportDataPlaneSuccess(relayAddress, conn.config.Key)
+	}
 }
 
 // recordConnectionMetrics records connection stage timestamps as metrics
