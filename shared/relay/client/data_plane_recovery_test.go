@@ -120,6 +120,7 @@ func TestManagerDataPlaneFailureDoesNotFallbackFromWebSocket(t *testing.T) {
 }
 
 func TestManagerDataPlaneFailuresRebuildHomeRelayClient(t *testing.T) {
+	t.Setenv(EnvRelayTransport, string(TransportModeAuto))
 	address, _ := freeAddr(t)
 	srv, err := server.NewServer(server.Config{
 		Meter:          otel.Meter("relay-data-plane-recovery-test"),
@@ -142,6 +143,9 @@ func TestManagerDataPlaneFailuresRebuildHomeRelayClient(t *testing.T) {
 	manager.relayClientMu.RLock()
 	oldClient := manager.relayClient
 	manager.relayClientMu.RUnlock()
+	oldClient.mu.Lock()
+	oldClient.transport = "quic"
+	oldClient.mu.Unlock()
 	relayAddress, _, err := manager.RelayInstanceAddress()
 	require.NoError(t, err)
 
@@ -151,6 +155,7 @@ func TestManagerDataPlaneFailuresRebuildHomeRelayClient(t *testing.T) {
 	require.Eventually(t, func() bool {
 		manager.relayClientMu.RLock()
 		defer manager.relayClientMu.RUnlock()
-		return manager.relayClient != nil && manager.relayClient != oldClient && manager.relayClient.Ready()
+		return manager.relayClient != nil && manager.relayClient != oldClient && manager.relayClient.Ready() && manager.relayClient.Transport() == "ws"
 	}, 5*time.Second, 20*time.Millisecond, "home Relay client was not rebuilt after data-plane failures")
+	require.True(t, manager.transportFallback.avoidDatagramSized(oldClient.connectionURL), "QUIC failure should persist a WebSocket fallback across client recreation")
 }
