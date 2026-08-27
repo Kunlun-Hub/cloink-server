@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +92,7 @@ type PKCEAuthorizationFlow struct {
 	state          string
 	codeVerifier   string
 	oAuthConfig    *oauth2.Config
+	redirectChan   chan string
 }
 
 // NewPKCEAuthorizationFlow returns new PKCE authorization code flow.
@@ -124,7 +126,49 @@ func NewPKCEAuthorizationFlow(config PKCEAuthProviderConfig) (*PKCEAuthorization
 	return &PKCEAuthorizationFlow{
 		providerConfig: config,
 		oAuthConfig:    cfg,
+		redirectChan:   make(chan string, 1),
 	}, nil
+}
+
+// UseExternalRedirectURL selects a non-HTTP redirect URI advertised by the
+// management server. Exact matching prevents a mobile caller from redirecting
+// authorization codes to an untrusted application.
+func (p *PKCEAuthorizationFlow) UseExternalRedirectURL(redirectURL string) error {
+	parsed, err := url.Parse(redirectURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("invalid external redirect URL")
+	}
+	if parsed.Scheme == "http" || parsed.Scheme == "https" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("external redirect URL must use an application scheme")
+	}
+	if !slices.Contains(p.providerConfig.RedirectURLs, redirectURL) {
+		return fmt.Errorf("external redirect URL is not allowed by management")
+	}
+	p.oAuthConfig.RedirectURL = redirectURL
+	return nil
+}
+
+// HandleExternalRedirect validates and queues a mobile OAuth callback for the
+// active PKCE flow. The state and authorization code are validated later by
+// the same handleRequest path used for loopback callbacks.
+func (p *PKCEAuthorizationFlow) HandleExternalRedirect(callbackURL string) error {
+	expected, err := url.Parse(p.oAuthConfig.RedirectURL)
+	if err != nil || expected.Scheme == "http" || expected.Scheme == "https" {
+		return fmt.Errorf("external redirect is not configured")
+	}
+	callback, err := url.Parse(callbackURL)
+	if err != nil {
+		return fmt.Errorf("parse external redirect: %w", err)
+	}
+	if callback.Scheme != expected.Scheme || callback.Host != expected.Host || callback.EscapedPath() != expected.EscapedPath() || callback.User != nil || callback.Fragment != "" {
+		return fmt.Errorf("external redirect target does not match")
+	}
+	select {
+	case p.redirectChan <- callbackURL:
+		return nil
+	default:
+		return fmt.Errorf("external redirect already received")
+	}
 }
 
 // GetClientID returns the provider client id
@@ -197,6 +241,9 @@ func (p *PKCEAuthorizationFlow) WaitToken(ctx context.Context, info AuthFlowInfo
 	if err != nil {
 		return TokenInfo{}, fmt.Errorf("failed to parse redirect URL: %v", err)
 	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return p.waitExternalRedirect(waitCtx)
+	}
 
 	server := &http.Server{Addr: fmt.Sprintf(":%s", parsedURL.Port())}
 	defer func() {
@@ -217,6 +264,23 @@ func (p *PKCEAuthorizationFlow) WaitToken(ctx context.Context, info AuthFlowInfo
 		return p.parseOAuthToken(token)
 	case err := <-errChan:
 		return TokenInfo{}, err
+	}
+}
+
+func (p *PKCEAuthorizationFlow) waitExternalRedirect(ctx context.Context) (TokenInfo, error) {
+	select {
+	case <-ctx.Done():
+		return TokenInfo{}, ctx.Err()
+	case callbackURL := <-p.redirectChan:
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL, nil)
+		if err != nil {
+			return TokenInfo{}, fmt.Errorf("create external redirect request: %w", err)
+		}
+		token, err := p.handleRequest(req)
+		if err != nil {
+			return TokenInfo{}, fmt.Errorf("PKCE authorization flow failed: %w", err)
+		}
+		return p.parseOAuthToken(token)
 	}
 }
 

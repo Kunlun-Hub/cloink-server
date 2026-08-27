@@ -2,5 +2,5 @@
 
 package configurer
 
-// WgInterfaceDefault is a default interface name of Netbird
-const WgInterfaceDefault = "wt0"
+// WgInterfaceDefault is the default Cloink interface name.
+const WgInterfaceDefault = "Cloink"

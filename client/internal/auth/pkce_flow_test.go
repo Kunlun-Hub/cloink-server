@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,6 +75,33 @@ func TestPromptLogin(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPKCEExternalRedirectValidation(t *testing.T) {
+	const redirectURL = "io.cloink.client://oauth2/callback"
+	pkce, err := NewPKCEAuthorizationFlow(PKCEAuthProviderConfig{
+		ClientID:              "test-client-id",
+		Audience:              "test-audience",
+		TokenEndpoint:         "https://test-token-endpoint.com/token",
+		Scope:                 "openid email profile",
+		AuthorizationEndpoint: "https://test-auth-endpoint.com/authorize",
+		RedirectURLs:          []string{"http://127.0.0.1:33992/", redirectURL},
+	})
+	require.NoError(t, err)
+	require.Error(t, pkce.UseExternalRedirectURL("io.attacker.app://oauth2/callback"))
+	require.Error(t, pkce.UseExternalRedirectURL("http://127.0.0.1:33992/"))
+	require.NoError(t, pkce.UseExternalRedirectURL(redirectURL))
+
+	info, err := pkce.RequestAuthInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, info.VerificationURIComplete, "redirect_uri="+url.QueryEscape(redirectURL))
+
+	require.Error(t, pkce.HandleExternalRedirect("io.attacker.app://oauth2/callback?code=code&state=state"))
+	require.Error(t, pkce.HandleExternalRedirect("io.cloink.client://other/callback?code=code&state=state"))
+	require.NoError(t, pkce.HandleExternalRedirect(redirectURL+"?code=code&state=wrong-state"))
+
+	_, err = pkce.WaitToken(context.Background(), info)
+	require.ErrorContains(t, err, "Invalid state")
 }
 
 func TestIsPortInExcludedRange(t *testing.T) {

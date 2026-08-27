@@ -28,6 +28,7 @@ const (
 
 	defaultCLIRedirectURL1        = "http://localhost:53000/"
 	defaultCLIRedirectURL2        = "http://localhost:54000/"
+	androidCLIRedirectURL         = "io.cloink.client://oauth2/callback"
 	defaultScopes                 = "openid profile email groups"
 	defaultUserIDClaim            = "sub"
 	sessionCookieEncryptionKeyEnv = "NB_IDP_SESSION_COOKIE_ENCRYPTION_KEY"
@@ -149,7 +150,8 @@ func (c *EmbeddedIdPConfig) ToYAMLConfig() (*dex.YAMLConfig, error) {
 	// Build CLI redirect URIs including the device callback. Dex uses the issuer-relative
 	// path (for example, /oauth2/device/callback) when completing the device flow, so
 	// include it explicitly in addition to the legacy bare path and absolute URL.
-	cliRedirectURIs := c.CLIRedirectURIs
+	cliRedirectURIs := append([]string{}, c.CLIRedirectURIs...)
+	cliRedirectURIs = append(cliRedirectURIs, androidCLIRedirectURL)
 	cliRedirectURIs = append(cliRedirectURIs, "/device/callback")
 	cliRedirectURIs = append(cliRedirectURIs, issuerRelativeDeviceCallback(c.Issuer))
 	cliRedirectURIs = append(cliRedirectURIs, strings.TrimSuffix(c.Issuer, "/")+"/device/callback")
@@ -749,9 +751,10 @@ func (m *EmbeddedIdPManager) GetCLIClientID() string {
 // GetCLIRedirectURLs returns the redirect URLs configured for the CLI client.
 func (m *EmbeddedIdPManager) GetCLIRedirectURLs() []string {
 	if len(m.config.CLIRedirectURIs) == 0 {
-		return []string{defaultCLIRedirectURL1, defaultCLIRedirectURL2}
+		return []string{defaultCLIRedirectURL1, defaultCLIRedirectURL2, androidCLIRedirectURL}
 	}
-	return m.config.CLIRedirectURIs
+	redirects := append([]string{}, m.config.CLIRedirectURIs...)
+	return append(redirects, androidCLIRedirectURL)
 }
 
 // GetKeyFetcher returns a KeyFetcher that reads keys directly from Dex storage.

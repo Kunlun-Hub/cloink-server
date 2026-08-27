@@ -114,6 +114,8 @@ type Client struct {
 
 	extendMu     sync.Mutex
 	extendCancel context.CancelFunc
+	authMu       sync.RWMutex
+	activeAuth   *Auth
 }
 
 func (c *Client) setState(cfg *profilemanager.Config, cacheDir string, cfgPath string, cc *internal.ConnectClient) {
@@ -197,6 +199,8 @@ func (c *Client) Run(platformFiles PlatformFiles, urlOpener URLOpener, isAndroid
 	c.ctxCancelLock.Unlock()
 
 	auth := NewAuthWithConfig(ctx, cfg, cfgFile)
+	c.setActiveAuth(auth)
+	defer c.setActiveAuth(nil)
 	err = auth.login(urlOpener, isAndroidTV)
 	if err != nil {
 		return err
@@ -213,6 +217,24 @@ func (c *Client) Run(platformFiles PlatformFiles, urlOpener URLOpener, isAndroid
 	// that prompted this login, and would re-latch what was just cleared.
 	c.clearLoginRequired()
 	return connectClient.RunOnAndroid(c.tunAdapter, c.iFaceDiscover, c.networkChangeListener, slices.Clone(dns.items), dnsReadyListener, stateFile, cacheDir)
+}
+
+// HandleAuthRedirect delivers an Android OAuth callback to the currently
+// running interactive login.
+func (c *Client) HandleAuthRedirect(callbackURL string) error {
+	c.authMu.RLock()
+	activeAuth := c.activeAuth
+	c.authMu.RUnlock()
+	if activeAuth == nil {
+		return fmt.Errorf("no interactive login is active")
+	}
+	return activeAuth.HandleAuthRedirect(callbackURL)
+}
+
+func (c *Client) setActiveAuth(activeAuth *Auth) {
+	c.authMu.Lock()
+	c.activeAuth = activeAuth
+	c.authMu.Unlock()
 }
 
 // RunWithoutLogin we apply this type of run function when the backed has been started without UI (i.e. after reboot).

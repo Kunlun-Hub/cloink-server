@@ -297,6 +297,8 @@ func (c *Client) extendAuthSession(ctx context.Context, urlOpener URLOpener, isA
 	// renews the session of the account already signed in, so it must not stop to
 	// offer a choice.
 	a := NewAuthWithConfig(ctx, cfg, cfgPath)
+	c.setActiveAuth(a)
+	defer c.setActiveAuth(nil)
 	tokenInfo, err := a.foregroundGetTokenInfo(authClient, urlOpener, isAndroidTV)
 	if err != nil {
 		return fmt.Errorf("interactive sso login failed: %v", err)

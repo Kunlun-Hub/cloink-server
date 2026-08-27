@@ -167,7 +167,7 @@ func TestNewProfileDefaults(t *testing.T) {
 	assert.NotEmpty(t, config.PrivateKey, "PrivateKey should be generated")
 	assert.NotEmpty(t, config.SSHKey, "SSHKey should be generated")
 	assert.Equal(t, iface.WgInterfaceDefault, config.WgIface, "WgIface should have default")
-	assert.Equal(t, iface.DefaultWgPort, config.WgPort, "WgPort should default to 51820")
+	assert.Equal(t, iface.DefaultWgPort, config.WgPort, "WgPort should default to a random port")
 	assert.Equal(t, uint16(iface.DefaultMTU), config.MTU, "MTU should have default")
 	assert.Equal(t, dynamic.DefaultInterval, config.DNSRouteInterval, "DNSRouteInterval should have default")
 	assert.NotNil(t, config.ServerSSHAllowed, "ServerSSHAllowed should be set")
@@ -211,7 +211,7 @@ func TestWireguardPortDefaultVsExplicit(t *testing.T) {
 			name:          "no port specified uses default",
 			wireguardPort: nil,
 			expectedPort:  iface.DefaultWgPort,
-			description:   "When user doesn't specify port, default to 51820",
+			description:   "When user doesn't specify port, default to a random port",
 		},
 		{
 			name:          "explicit zero for random port",

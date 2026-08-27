@@ -29,7 +29,7 @@ const (
 	DefaultMTU         = 1280
 	MinMTU             = 576
 	MaxMTU             = 8192
-	DefaultWgPort      = 51820
+	DefaultWgPort      = 0
 	WgInterfaceDefault = configurer.WgInterfaceDefault
 )
 

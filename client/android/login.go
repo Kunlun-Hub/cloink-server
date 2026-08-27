@@ -3,6 +3,7 @@ package android
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/netbirdio/netbird/client/internal/profilemanager"
 	"github.com/netbirdio/netbird/client/system"
 )
+
+const androidSSORedirectURL = "io.cloink.client://oauth2/callback"
 
 // SSOListener is async listener for mobile framework
 type SSOListener interface {
@@ -35,6 +38,8 @@ type Auth struct {
 	ctx     context.Context
 	config  *profilemanager.Config
 	cfgPath string
+	flowMu  sync.RWMutex
+	pkce    *auth.PKCEAuthorizationFlow
 }
 
 // NewAuth instantiate Auth struct and validate the management URL
@@ -196,8 +201,34 @@ func (a *Auth) foregroundGetTokenInfo(authClient *auth.Auth, urlOpener URLOpener
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OAuth flow: %v", err)
 	}
+	if pkce, ok := oAuthFlow.(*auth.PKCEAuthorizationFlow); ok {
+		if err := pkce.UseExternalRedirectURL(androidSSORedirectURL); err != nil {
+			log.Debugf("Android app redirect is unavailable, retaining loopback callback: %v", err)
+		} else {
+			a.setPKCEFlow(pkce)
+			defer a.setPKCEFlow(nil)
+		}
+	}
 
 	return runOAuthFlow(a.ctx, oAuthFlow, urlOpener, nil)
+}
+
+// HandleAuthRedirect passes an Android app-link callback to the active PKCE
+// flow. The flow performs target, state, and authorization-code validation.
+func (a *Auth) HandleAuthRedirect(callbackURL string) error {
+	a.flowMu.RLock()
+	pkce := a.pkce
+	a.flowMu.RUnlock()
+	if pkce == nil {
+		return fmt.Errorf("no Android SSO callback is pending")
+	}
+	return pkce.HandleExternalRedirect(callbackURL)
+}
+
+func (a *Auth) setPKCEFlow(pkce *auth.PKCEAuthorizationFlow) {
+	a.flowMu.Lock()
+	a.pkce = pkce
+	a.flowMu.Unlock()
 }
 
 // profileLoginHint returns the stored account email for the profile at cfgPath.

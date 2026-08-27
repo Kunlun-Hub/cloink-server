@@ -340,6 +340,7 @@ func TestEmbeddedIdPConfig_ToYAMLConfig_IncludesDeviceCallbackRedirectURI(t *tes
 	assert.Contains(t, cliRedirectURIs, "/device/callback")
 	assert.Contains(t, cliRedirectURIs, "/oauth2/device/callback")
 	assert.Contains(t, cliRedirectURIs, "https://example.com/oauth2/device/callback")
+	assert.Contains(t, cliRedirectURIs, androidCLIRedirectURL)
 }
 
 func TestEmbeddedIdPConfig_ToYAMLConfig_SessionCookieEncryptionKey(t *testing.T) {
