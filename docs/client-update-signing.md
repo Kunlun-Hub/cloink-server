@@ -6,9 +6,9 @@ Windows Authenticode, and Apple Developer ID signing.
 
 ## Key custody
 
-- Keep the private key offline or in the `CLOINK_UPDATE_SIGNING_KEY` GitHub
-  Actions secret.
-- Never copy the private key to a management server, release database, image,
+- Keep the private key in the `CLOINK_UPDATE_SIGNING_KEY` GitHub Actions secret
+  and mount it read-only into the management container when automatic release
+  signing is enabled. Never store it in the release database, container image,
   or source repository.
 - Back up the private key and its recovery instructions in a second protected
   location. Losing it prevents existing clients from trusting future updates.
@@ -18,7 +18,20 @@ Windows Authenticode, and Apple Developer ID signing.
   4e304fa3373a78c3cc482bdd4edd533b26bbc1b808e9ef7399294c287ad89ff5
   ```
 
-## Sign a release
+## Automatic signing
+
+Set `NB_VERSION_RELEASE_SIGNING_KEY_FILE` in the management container to the
+path of the PEM Ed25519 private key. The file should be mounted read-only and
+accessible only to the management process. When a release has a SHA256, the
+management service signs its normalized metadata automatically. The dashboard
+does not request or transmit a signature.
+
+Existing API integrations may still submit a manual signature when automatic
+signing is not configured. A latest release always requires either automatic
+signing or a valid manual signature so existing clients never receive metadata
+they will reject.
+
+## Manual signing
 
 Build the final artifact first and calculate its SHA256. Sign the exact
 platform, architecture, channel, version, and checksum that will be entered in
