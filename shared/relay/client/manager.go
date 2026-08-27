@@ -142,7 +142,7 @@ type Manager struct {
 	keepUnusedServerTime time.Duration
 
 	// transportFallback is shared across home and foreign relay clients so a
-	// datagram-too-large failure makes that server avoid datagram-sized transports across reconnects.
+	// datagram transport failure is remembered across reconnects.
 	transportFallback *transportFallback
 	dataPlaneFailures *relayDataPlaneFailures
 }
@@ -229,6 +229,7 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 
 	if isHome {
 		log.Warnf("Relay data plane is unresponsive on %s; rebuilding the home Relay client", homeURL)
+		m.markDataPlaneTransportFailure(home)
 		m.markDataPlaneServerFailure(homeURL)
 		m.notifyOnDisconnectListeners(homeURL)
 		if err := home.Close(); err != nil {
@@ -258,6 +259,18 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 		log.Warnf("Relay data plane is unresponsive on foreign server %s; rebuilding it", relayAddress)
 		_ = foreign.Close()
 	}
+}
+
+func (m *Manager) markDataPlaneTransportFailure(relayClient *Client) {
+	if relayClient == nil || relayClient.Transport() != "quic" || m.transportFallback == nil {
+		return
+	}
+	if mode := transportModeFromEnv(); !mode.allowsAutomaticFallback() {
+		return
+	}
+
+	window := m.transportFallback.recordFailure(relayClient.connectionURL)
+	log.Warnf("QUIC Relay data plane failed on %s; avoiding QUIC for %s", relayClient.connectionURL, window)
 }
 
 func (m *Manager) markDataPlaneServerFailure(relayURL string) {

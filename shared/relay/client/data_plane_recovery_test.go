@@ -83,6 +83,42 @@ func TestManagerForcedRelayDoesNotEnterCooldownOnDataPlaneFailure(t *testing.T) 
 	require.Contains(t, manager.serverPicker.cooldowns, "rel://relay-a:80", "automatic selection should avoid a blackholed Relay")
 }
 
+func TestManagerDataPlaneFailureFallsBackFromQUICInAutomaticMode(t *testing.T) {
+	const relayURL = "rels://relay-a:443"
+	t.Setenv(EnvRelayTransport, string(TransportModeAuto))
+	manager := NewManager(context.Background(), []string{relayURL}, "peer-local", iface.DefaultMTU)
+	client := NewClient(relayURL, manager.tokenStore, "peer-local", iface.DefaultMTU)
+	client.transport = "quic"
+
+	manager.markDataPlaneTransportFailure(client)
+
+	require.True(t, manager.transportFallback.avoidDatagramSized(relayURL), "automatic mode should temporarily avoid a blackholed QUIC transport")
+}
+
+func TestManagerDataPlaneFailureRespectsPinnedQUIC(t *testing.T) {
+	const relayURL = "rels://relay-a:443"
+	t.Setenv(EnvRelayTransport, string(TransportModeQUIC))
+	manager := NewManager(context.Background(), []string{relayURL}, "peer-local", iface.DefaultMTU)
+	client := NewClient(relayURL, manager.tokenStore, "peer-local", iface.DefaultMTU)
+	client.transport = "quic"
+
+	manager.markDataPlaneTransportFailure(client)
+
+	require.False(t, manager.transportFallback.avoidDatagramSized(relayURL), "explicit QUIC mode must not be overridden")
+}
+
+func TestManagerDataPlaneFailureDoesNotFallbackFromWebSocket(t *testing.T) {
+	const relayURL = "rels://relay-a:443"
+	t.Setenv(EnvRelayTransport, string(TransportModeAuto))
+	manager := NewManager(context.Background(), []string{relayURL}, "peer-local", iface.DefaultMTU)
+	client := NewClient(relayURL, manager.tokenStore, "peer-local", iface.DefaultMTU)
+	client.transport = "ws"
+
+	manager.markDataPlaneTransportFailure(client)
+
+	require.False(t, manager.transportFallback.avoidDatagramSized(relayURL), "WebSocket failure must not create a QUIC fallback entry")
+}
+
 func TestManagerDataPlaneFailuresRebuildHomeRelayClient(t *testing.T) {
 	address, _ := freeAddr(t)
 	srv, err := server.NewServer(server.Config{

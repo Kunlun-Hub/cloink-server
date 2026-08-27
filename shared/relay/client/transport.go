@@ -64,12 +64,18 @@ func (m TransportMode) sequential() bool {
 	return m == TransportModePreferQUIC || m == TransportModePreferWS
 }
 
-// transportFallback tracks relay servers that have rejected a datagram-sized
-// transport (a write too large for the path) and should temporarily avoid such
-// transports. It is shared across the relay manager so the preference survives
-// client recreation (foreign relay clients are evicted and rebuilt on
-// disconnect). Entries are keyed by server URL and expire after a window that
-// grows on repeated failures.
+// allowsAutomaticFallback reports whether a runtime transport failure may
+// temporarily override the mode's normal QUIC preference. Explicit pins are
+// operator choices and must remain authoritative.
+func (m TransportMode) allowsAutomaticFallback() bool {
+	return m == TransportModeAuto || m == TransportModePreferQUIC || m == TransportModePreferWS
+}
+
+// transportFallback tracks relay servers whose datagram-sized transport has
+// failed, either on write or as a blackholed data plane, and should temporarily
+// be avoided. It is shared across the relay manager so the preference survives
+// client recreation. Entries are keyed by server URL and expire after a window
+// that grows on repeated failures.
 type transportFallback struct {
 	mu      sync.Mutex
 	entries map[string]*fallbackEntry
