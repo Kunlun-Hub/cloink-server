@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"mime"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/management/server/account"
 	nbcontext "github.com/netbirdio/netbird/management/server/context"
@@ -36,6 +38,10 @@ const (
 	artifactURLPrefix    = "/api/version-releases/files/"
 	maxMetadataBodyBytes = 1024 * 1024
 	maxSignatureBytes    = 16 * 1024
+
+	// EnvVersionReleaseSigningKeyFile points to the PEM Ed25519 private key
+	// used to sign client update metadata automatically.
+	EnvVersionReleaseSigningKeyFile = "NB_VERSION_RELEASE_SIGNING_KEY_FILE"
 )
 
 var (
@@ -47,6 +53,7 @@ type handler struct {
 	store              store.Store
 	permissionsManager permissions.Manager
 	storage            *artifactStorage
+	signer             releaseSigner
 }
 
 type releaseRequest struct {
@@ -92,10 +99,15 @@ func AddEndpoints(accountManager account.Manager, permissionsManager permissions
 		// survive container rebuilds; /var/lib/netbird is the mounted volume.
 		rootDir = "/var/lib/netbird/version-releases"
 	}
+	signer, err := loadReleaseSigner(strings.TrimSpace(os.Getenv(EnvVersionReleaseSigningKeyFile)))
+	if err != nil && !errors.Is(err, errReleaseSignerNotConfigured) {
+		log.Errorf("automatic version release signing is unavailable: %v", err)
+	}
 	h := &handler{
 		store:              accountManager.GetStore(),
 		permissionsManager: permissionsManager,
 		storage:            newArtifactStorage(rootDir),
+		signer:             signer,
 	}
 	router.HandleFunc("/version-releases", h.list).Methods(http.MethodGet, http.MethodOptions)
 	router.HandleFunc("/version-releases", h.create).Methods(http.MethodPost, http.MethodOptions)
@@ -396,22 +408,38 @@ func (h *handler) prepareRelease(ctx context.Context, release *types.VersionRele
 	if release.IsLatest && release.SHA256 == "" {
 		return status.Errorf(status.InvalidArgument, "latest releases require sha256")
 	}
+	automaticallySigned := false
+	if h.signer != nil && release.SHA256 != "" {
+		signature, err := h.signer.sign(toPublicRelease(release))
+		if err != nil {
+			return status.Errorf(status.Internal, "automatically sign release: %v", err)
+		}
+		release.Signature = signature
+		automaticallySigned = true
+	}
 	if release.IsLatest && release.Signature == "" {
-		return status.Errorf(status.InvalidArgument, "latest releases require an Ed25519 signature")
+		return status.Errorf(status.PreconditionFailed, "automatic release signing is not configured")
 	}
 	if release.Signature != "" {
-		if err := clientversion.VerifyReleaseSignature(clientversion.PublicRelease{
-			Version:      release.Version,
-			Platform:     string(release.Platform),
-			Architecture: string(release.Architecture),
-			Channel:      release.Channel,
-			SHA256:       release.SHA256,
-			Signature:    release.Signature,
-		}); err != nil {
+		if err := clientversion.VerifyReleaseSignature(toPublicRelease(release)); err != nil {
+			if automaticallySigned {
+				return status.Errorf(status.Internal, "automatic release signing key does not match the client public key: %v", err)
+			}
 			return status.Errorf(status.InvalidArgument, "invalid release signature: %v", err)
 		}
 	}
 	return nil
+}
+
+func toPublicRelease(release *types.VersionRelease) clientversion.PublicRelease {
+	return clientversion.PublicRelease{
+		Version:      release.Version,
+		Platform:     string(release.Platform),
+		Architecture: string(release.Architecture),
+		Channel:      release.Channel,
+		SHA256:       release.SHA256,
+		Signature:    release.Signature,
+	}
 }
 
 func validateRelease(release *types.VersionRelease) error {

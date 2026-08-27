@@ -25,6 +25,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/store"
 	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/shared/auth"
+	clientversion "github.com/netbirdio/netbird/version"
 )
 
 const validTestSignature = "ygHmBMLUYsS7Dy4bQf9gmz0sighEg4z5ZzOjomJSFq2ufKMvWXpIijffyDohtHnWhjKTW/UyluShW92rgQgHCQ=="
@@ -199,6 +200,40 @@ func TestLatestReleaseRequiresChecksum(t *testing.T) {
 	}
 	err := h.prepareRelease(context.Background(), withoutChecksum)
 	require.ErrorContains(t, err, "require sha256")
+}
+
+func TestPrepareReleaseAutomaticallySignsMetadata(t *testing.T) {
+	release := &types.VersionRelease{
+		Version: "0.77.0", Platform: types.VersionReleasePlatformLinux,
+		Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel,
+		DownloadURL: "https://download.example.com/cloink.deb",
+		SHA256:      "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+		IsLatest:    true,
+	}
+	h := &handler{signer: func(metadata clientversion.PublicRelease) (string, error) {
+		require.Equal(t, release.Version, metadata.Version)
+		require.Equal(t, string(release.Platform), metadata.Platform)
+		require.Equal(t, string(release.Architecture), metadata.Architecture)
+		require.Equal(t, release.Channel, metadata.Channel)
+		require.Equal(t, release.SHA256, metadata.SHA256)
+		return validTestSignature, nil
+	}}
+
+	require.NoError(t, h.prepareRelease(context.Background(), release))
+	require.Equal(t, validTestSignature, release.Signature)
+}
+
+func TestLatestReleaseRequiresAutomaticSignerOrManualSignature(t *testing.T) {
+	release := &types.VersionRelease{
+		Version: "0.77.0", Platform: types.VersionReleasePlatformLinux,
+		Architecture: types.VersionReleaseArchitectureAMD64, Channel: defaultChannel,
+		DownloadURL: "https://download.example.com/cloink.deb",
+		SHA256:      "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+		IsLatest:    true,
+	}
+
+	err := (&handler{}).prepareRelease(context.Background(), release)
+	require.ErrorContains(t, err, "automatic release signing is not configured")
 }
 
 func withUserAuth(req *http.Request) *http.Request {
