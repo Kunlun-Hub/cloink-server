@@ -7,11 +7,14 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	relayClient "github.com/netbirdio/netbird/shared/relay/client"
 )
+
+var relayPeerMigrationGrace = 30 * time.Second
 
 type RelayConnInfo struct {
 	relayedConn     net.Conn

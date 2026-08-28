@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/client/netstate"
@@ -23,11 +24,13 @@ import (
 )
 
 var (
-	relayCleanupInterval = 60 * time.Second
-	keepUnusedServerTime = 5 * time.Second
-	relayProbeTimeout    = 6 * time.Second
-	relayServerCooldown  = 2 * time.Minute
-	defaultRelayWeight   = 30
+	relayCleanupInterval  = 60 * time.Second
+	keepUnusedServerTime  = 5 * time.Second
+	relayProbeTimeout     = 6 * time.Second
+	relayServerCooldown   = 2 * time.Minute
+	relayMigrationGrace   = 30 * time.Second
+	relayMigrationMinWait = time.Second
+	defaultRelayWeight    = 30
 
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
 )
@@ -102,6 +105,16 @@ func WithSweeper(sweeper *netsweep.Sweeper) ManagerOption {
 	return func(m *Manager) { m.sweeper = sweeper }
 }
 
+// WithRelayMigrationGrace sets how long an old home Relay client may remain
+// alive while peer connections migrate to its replacement.
+func WithRelayMigrationGrace(d time.Duration) ManagerOption {
+	return func(m *Manager) {
+		if d > 0 {
+			m.relayMigrationGrace = d
+		}
+	}
+}
+
 // Manager is a manager for the relay client instances. It establishes one persistent connection to the given relay URL
 // and automatically reconnect to them in case disconnection.
 // The manager also manage temporary relay connection. If a client wants to communicate with a client on a
@@ -123,20 +136,22 @@ type Manager struct {
 	relayClients      map[string]*RelayTrack
 	relayClientsMutex sync.RWMutex
 
-	onDisconnectedListeners map[string]*list.List
+	onDisconnectedListeners map[*Client]*list.List
 	onReconnectedListenerFn func()
 	listenerLock            sync.Mutex
 
-	mtu                 uint16
-	maxBackoffInterval  time.Duration
-	netState            *netstate.State
-	sweeper             *netsweep.Sweeper
-	relayServerCooldown time.Duration
-	switchMu            sync.Mutex
-	relayConfigMu       sync.RWMutex
-	configuredRelayURLs []string
-	relayWeights        map[string]int
-	forcedRelayURL      string
+	mtu                   uint16
+	maxBackoffInterval    time.Duration
+	netState              *netstate.State
+	sweeper               *netsweep.Sweeper
+	relayServerCooldown   time.Duration
+	switchMu              sync.Mutex
+	relayConfigMu         sync.RWMutex
+	configuredRelayURLs   []string
+	relayWeights          map[string]int
+	forcedRelayURL        string
+	relayConfigGeneration atomic.Uint64
+	relayMigrationGrace   time.Duration
 
 	cleanupInterval      time.Duration
 	keepUnusedServerTime time.Duration
@@ -161,6 +176,7 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 		transportFallback:   tf,
 		dataPlaneFailures:   newRelayDataPlaneFailures(),
 		relayServerCooldown: relayServerCooldown,
+		relayMigrationGrace: relayMigrationGrace,
 		serverPicker: &ServerPicker{
 			TokenStore:        tokenStore,
 			PeerID:            peerID,
@@ -169,7 +185,7 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 			TransportFallback: tf,
 		},
 		relayClients:            make(map[string]*RelayTrack),
-		onDisconnectedListeners: make(map[string]*list.List),
+		onDisconnectedListeners: make(map[*Client]*list.List),
 		cleanupInterval:         relayCleanupInterval,
 		keepUnusedServerTime:    keepUnusedServerTime,
 	}
@@ -184,6 +200,7 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 		serverURLs:    m.effectiveRelayURLsLocked(),
 		serverWeights: maps.Clone(m.relayWeights),
 	})
+	m.relayConfigGeneration.Store(1)
 	m.reconnectGuard = NewGuard(m.serverPicker, m.maxBackoffInterval, m.netState)
 	return m
 }
@@ -212,7 +229,7 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 		return
 	}
 
-	m.relayClientMu.Lock()
+	m.relayClientMu.RLock()
 	home := m.relayClient
 	isHome := false
 	homeURL := ""
@@ -221,28 +238,42 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 		instanceURL, err := home.ServerInstanceURL()
 		isHome = relayAddress == homeURL || err == nil && relayAddress == instanceURL
 	}
-	if isHome {
-		home.SetOnDisconnectListener(nil)
-		m.relayClient = nil
-	}
-	m.relayClientMu.Unlock()
+	m.relayClientMu.RUnlock()
 
 	if isHome {
-		log.Warnf("Relay data plane is unresponsive on %s; rebuilding the home Relay client", homeURL)
+		generation := m.relayConfigGeneration.Load()
+		log.Warnf("Relay data plane is unresponsive on %s; preparing a replacement home Relay client", homeURL)
 		m.markDataPlaneTransportFailure(home)
 		m.markDataPlaneServerFailure(homeURL)
-		m.notifyOnDisconnectListeners(homeURL)
-		if err := home.Close(); err != nil {
-			log.Warnf("failed to close unresponsive home Relay client %s: %v", homeURL, err)
+		candidateURLs := m.recoveryCandidateURLs(homeURL)
+		var candidate *Client
+		var err error
+		if len(candidateURLs) > 0 {
+			candidate, err = m.serverPicker.PickServerFrom(m.ctx, candidateURLs)
+		} else {
+			// A Relay accepts one session per peer ID, so replacing the only
+			// available URL cannot overlap old and new sessions.
+			home.SetOnDisconnectListener(nil)
+			m.notifyOnDisconnectListeners(home)
+			_ = home.Close()
+			candidate, err = m.serverPicker.PickServer(m.ctx)
 		}
-		client, err := m.serverPicker.PickServer(m.ctx)
 		if err != nil {
-			log.Errorf("failed to recover Relay data plane: %v", err)
-			go m.reconnectGuard.StartReconnectTrys(m.ctx, nil)
+			if len(candidateURLs) == 0 {
+				log.Errorf("failed to reconnect the only Relay %s: %v", homeURL, err)
+				go m.reconnectGuard.StartReconnectTrys(m.ctx, home)
+			} else {
+				log.Errorf("failed to prepare replacement Relay client; keeping %s active: %v", homeURL, err)
+			}
 			return
 		}
-		m.storeClient(client)
+		if !m.swapHomeRelay(home, candidate, generation) {
+			_ = candidate.Close()
+			return
+		}
+		log.Infof("replacement home Relay client %s is ready; migrating peer connections from %s", candidate.connectionURL, homeURL)
 		m.onServerConnected()
+		m.retireHomeRelay(home)
 		return
 	}
 
@@ -281,6 +312,18 @@ func (m *Manager) markDataPlaneServerFailure(relayURL string) {
 		return
 	}
 	m.serverPicker.markServerFailure(relayURL, time.Now(), fmt.Errorf("relay data plane handshake timeouts"))
+}
+
+func (m *Manager) recoveryCandidateURLs(currentURL string) []string {
+	m.relayConfigMu.RLock()
+	defer m.relayConfigMu.RUnlock()
+	result := make([]string, 0, len(m.configuredRelayURLs))
+	for _, relayURL := range m.configuredRelayURLs {
+		if relayURL != currentURL {
+			result = append(result, relayURL)
+		}
+	}
+	return result
 }
 
 // Serve starts the manager, attempting to establish a connection with the relay server.
@@ -377,13 +420,24 @@ func (m *Manager) AddCloseListener(serverAddress string, onClosedListener OnServ
 		return err
 	}
 
-	var listenerAddr string
+	var listenerClient *Client
 	if foreign {
-		listenerAddr = serverAddress
+		m.relayClientsMutex.RLock()
+		track := m.relayClients[serverAddress]
+		m.relayClientsMutex.RUnlock()
+		if track == nil {
+			return ErrRelayClientNotConnected
+		}
+		track.RLock()
+		listenerClient = track.relayClient
+		track.RUnlock()
 	} else {
-		listenerAddr = m.relayClient.connectionURL
+		listenerClient = m.relayClient
 	}
-	m.addListener(listenerAddr, onClosedListener)
+	if listenerClient == nil {
+		return ErrRelayClientNotConnected
+	}
+	m.addListener(listenerClient, onClosedListener)
 	return nil
 }
 
@@ -473,6 +527,9 @@ func (m *Manager) UpdateServerURLs(serverURLs []string) {
 func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, relayWeights map[string]int) {
 	log.Infof("update relay server URLs: %v", serverURLs)
 	m.relayConfigMu.Lock()
+	previousURLs := m.effectiveRelayURLsLocked()
+	previousWeights := maps.Clone(m.relayWeights)
+	previousForcedURL := m.forcedRelayURL
 	m.relayWeights = relayWeightsFromURLs(serverURLs)
 	for relayURL, weight := range relayWeights {
 		if relayURL != "" && weight > 0 {
@@ -488,13 +545,18 @@ func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, relayWeights 
 	weights := maps.Clone(m.relayWeights)
 	forcedURL := m.forcedRelayURL
 	m.relayConfigMu.Unlock()
+	configChanged := !slices.Equal(previousURLs, effectiveURLs) || !maps.Equal(previousWeights, weights) || previousForcedURL != forcedURL
 
 	m.serverPicker.storeConfig(pickerConfig{
 		serverURLs:    effectiveURLs,
 		serverWeights: weights,
 		forcedURL:     forcedURL,
 	})
-	go m.switchHomeRelayIfNeeded(effectiveURLs)
+	generation := m.relayConfigGeneration.Load()
+	if configChanged {
+		generation = m.relayConfigGeneration.Add(1)
+	}
+	go m.switchHomeRelayIfNeeded(effectiveURLs, generation)
 }
 
 func (m *Manager) RelayServers() []RelayServerInfo {
@@ -527,7 +589,10 @@ func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
 			defer wg.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, relayProbeTimeout)
 			defer cancel()
-			probeClient := NewClient(relays[idx].URL, m.tokenStore, m.peerID, m.mtu)
+			// Relay servers allow one session per peer ID. A probe must use an
+			// independent identity or it can evict a live home/foreign session.
+			probeID := m.peerID + "-relay-probe-" + uuid.NewString()
+			probeClient := NewClient(relays[idx].URL, m.tokenStore, probeID, m.mtu)
 			probeClient.SetTransportFallback(m.transportFallback)
 			if err := probeClient.Connect(probeCtx); err != nil {
 				relays[idx].Error = err.Error()
@@ -560,7 +625,8 @@ func (m *Manager) SetForcedRelay(identifier string) (string, error) {
 			serverWeights: maps.Clone(m.relayWeights),
 			forcedURL:     "",
 		})
-		go m.switchHomeRelayIfNeeded(effectiveURLs)
+		generation := m.relayConfigGeneration.Add(1)
+		go m.switchHomeRelayIfNeeded(effectiveURLs, generation)
 		return "", nil
 	}
 
@@ -577,7 +643,8 @@ func (m *Manager) SetForcedRelay(identifier string) (string, error) {
 		serverWeights: maps.Clone(m.relayWeights),
 		forcedURL:     relayURL,
 	})
-	go m.switchHomeRelayIfNeeded(effectiveURLs)
+	generation := m.relayConfigGeneration.Add(1)
+	go m.switchHomeRelayIfNeeded(effectiveURLs, generation)
 	return relayURL, nil
 }
 
@@ -652,9 +719,12 @@ func matchRelayURL(identifier string, relayURLs []string) (string, error) {
 	return "", fmt.Errorf("relay %q matches multiple relays: %s", identifier, strings.Join(matches, ", "))
 }
 
-func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string) {
+func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string, generation uint64) {
 	m.switchMu.Lock()
 	defer m.switchMu.Unlock()
+	if generation != m.relayConfigGeneration.Load() {
+		return
+	}
 
 	if len(serverURLs) == 0 {
 		m.relayClientMu.Lock()
@@ -669,35 +739,218 @@ func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string) {
 		m.relayClientMu.Unlock()
 
 		log.Infof("closing home Relay server %s because no Relay servers are configured", oldURL)
+		m.notifyOnDisconnectListeners(oldClient)
 		if err := oldClient.Close(); err != nil {
 			log.Warnf("failed to close previous home Relay server %s: %v", oldURL, err)
 		}
 		return
 	}
 
-	m.relayClientMu.Lock()
+	m.relayClientMu.RLock()
 	if !m.running.Load() || m.relayClient == nil || m.currentRelayStillHighestPriorityLocked(serverURLs) {
-		m.relayClientMu.Unlock()
+		m.relayClientMu.RUnlock()
 		return
 	}
 	oldClient := m.relayClient
 	oldURL := oldClient.connectionURL
-	oldClient.SetOnDisconnectListener(nil)
-	m.relayClient = nil
-	m.relayClientMu.Unlock()
+	m.relayClientMu.RUnlock()
 
-	log.Infof("relay priority changed from %s to %s, switching home Relay server", oldURL, serverURLs[0])
-	if err := oldClient.Close(); err != nil {
-		log.Warnf("failed to close previous home Relay server %s: %v", oldURL, err)
-	}
-	newClient, err := m.serverPicker.PickServer(m.ctx)
-	if err != nil {
-		log.Errorf("failed to switch home Relay server: %v", err)
-		go m.reconnectGuard.StartReconnectTrys(m.ctx, nil)
+	log.Infof("relay priority changed from %s to %s; preparing the new home Relay before switching", oldURL, serverURLs[0])
+	candidateURLs := m.priorityMigrationCandidateURLs(oldClient, serverURLs)
+	if len(candidateURLs) == 0 {
 		return
 	}
-	m.storeClient(newClient)
+	candidate, foreignTrackPresent := m.foreignRelayCandidate(candidateURLs)
+	foreignCandidate := candidate != nil
+	if candidate == nil {
+		if foreignTrackPresent {
+			log.Infof("higher-priority Relay connection is still being prepared; keeping %s active", oldURL)
+			return
+		}
+		var err error
+		candidate, err = m.serverPicker.PickServerFrom(m.ctx, candidateURLs)
+		if err != nil {
+			log.Errorf("failed to prepare higher-priority Relay; keeping %s active: %v", oldURL, err)
+			return
+		}
+	}
+	if !m.isValidPriorityMigration(oldClient, candidate, serverURLs) {
+		log.Infof("no better Relay candidate became ready; keeping %s active", oldURL)
+		if !foreignCandidate {
+			_ = candidate.Close()
+		}
+		return
+	}
+	if !m.swapHomeRelay(oldClient, candidate, generation) {
+		if !foreignCandidate {
+			_ = candidate.Close()
+		}
+		return
+	}
+	log.Infof("new home Relay %s is ready; migrating peer connections from %s", candidate.connectionURL, oldURL)
 	m.onServerConnected()
+	m.retireHomeRelay(oldClient)
+}
+
+// foreignRelayCandidate returns an existing connection to a candidate Relay so
+// home migration does not create a second session with the same peer ID. The
+// boolean reports that a matching track exists but its dial has not completed.
+func (m *Manager) foreignRelayCandidate(candidateURLs []string) (*Client, bool) {
+	for _, relayURL := range candidateURLs {
+		m.relayClientsMutex.RLock()
+		track := m.relayClients[relayURL]
+		m.relayClientsMutex.RUnlock()
+		if track == nil {
+			continue
+		}
+
+		select {
+		case <-track.ready:
+			track.RLock()
+			candidate, err := track.relayClient, track.err
+			track.RUnlock()
+			if err == nil && candidate != nil && candidate.Ready() {
+				return candidate, true
+			}
+		case <-m.ctx.Done():
+			return nil, true
+		default:
+			return nil, true
+		}
+	}
+	return nil, false
+}
+
+func (m *Manager) priorityMigrationCandidateURLs(oldClient *Client, serverURLs []string) []string {
+	if oldClient == nil {
+		return nil
+	}
+	oldURL := oldClient.connectionURL
+	m.relayConfigMu.RLock()
+	forcedURL := m.forcedRelayURL
+	oldWeight := m.relayWeights[oldURL]
+	m.relayConfigMu.RUnlock()
+	if forcedURL != "" {
+		if forcedURL == oldURL {
+			return nil
+		}
+		return []string{forcedURL}
+	}
+	if !slices.Contains(serverURLs, oldURL) {
+		return slices.Clone(serverURLs)
+	}
+	if oldWeight <= 0 {
+		oldWeight = defaultRelayWeight
+	}
+	result := make([]string, 0, len(serverURLs))
+	for _, relayURL := range serverURLs {
+		weight := m.serverPicker.relayURLWeight(relayURL)
+		if relayURL != oldURL && weight > oldWeight {
+			result = append(result, relayURL)
+		}
+	}
+	return result
+}
+
+func (m *Manager) isValidPriorityMigration(oldClient, candidate *Client, serverURLs []string) bool {
+	if oldClient == nil || candidate == nil {
+		return false
+	}
+	oldURL, candidateURL := oldClient.connectionURL, candidate.connectionURL
+	m.relayConfigMu.RLock()
+	forcedURL := m.forcedRelayURL
+	oldWeight, candidateWeight := m.relayWeights[oldURL], m.relayWeights[candidateURL]
+	m.relayConfigMu.RUnlock()
+	if forcedURL != "" {
+		return candidateURL == forcedURL
+	}
+	if !slices.Contains(serverURLs, oldURL) {
+		return slices.Contains(serverURLs, candidateURL)
+	}
+	if oldWeight <= 0 {
+		oldWeight = defaultRelayWeight
+	}
+	if candidateWeight <= 0 {
+		candidateWeight = defaultRelayWeight
+	}
+	return candidateURL != oldURL && candidateWeight > oldWeight
+}
+
+func (m *Manager) swapHomeRelay(oldClient, candidate *Client, generation uint64) bool {
+	if candidate == nil || !candidate.Ready() || generation != m.relayConfigGeneration.Load() {
+		return false
+	}
+
+	m.relayClientMu.Lock()
+	defer m.relayClientMu.Unlock()
+	if !m.running.Load() || m.ctx.Err() != nil || m.relayClient != oldClient || generation != m.relayConfigGeneration.Load() {
+		return false
+	}
+	m.relayClientsMutex.Lock()
+	if track := m.relayClients[candidate.connectionURL]; track != nil {
+		track.RLock()
+		trackedClient := track.relayClient
+		track.RUnlock()
+		if trackedClient == candidate {
+			delete(m.relayClients, candidate.connectionURL)
+		}
+	}
+	oldTrack := NewRelayTrack()
+	oldTrack.relayClient = oldClient
+	close(oldTrack.ready)
+	m.relayClients[oldClient.connectionURL] = oldTrack
+	m.relayClientsMutex.Unlock()
+	oldClient.SetOnDisconnectListener(func(address string) { m.onServerDisconnected(oldClient, address) })
+	m.relayClient = candidate
+	candidate.SetOnDisconnectListener(func(address string) { m.onServerDisconnected(candidate, address) })
+	return true
+}
+
+func (m *Manager) retireHomeRelay(oldClient *Client) {
+	if oldClient == nil {
+		return
+	}
+	go func() {
+		minimumWait := time.NewTimer(min(relayMigrationMinWait, m.relayMigrationGrace))
+		defer minimumWait.Stop()
+		select {
+		case <-minimumWait.C:
+		case <-m.ctx.Done():
+			m.closeRetiredHomeRelay(oldClient)
+			return
+		}
+
+		deadline := time.NewTimer(max(time.Millisecond, m.relayMigrationGrace-relayMigrationMinWait))
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer deadline.Stop()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !oldClient.HasConns() {
+					m.closeRetiredHomeRelay(oldClient)
+					return
+				}
+			case <-deadline.C:
+				if oldClient.HasConns() {
+					log.Infof("Relay migration grace period expired for %s; keeping it as a foreign Relay while peer connections remain", oldClient.connectionURL)
+					continue
+				}
+				m.closeRetiredHomeRelay(oldClient)
+				return
+			case <-m.ctx.Done():
+				m.closeRetiredHomeRelay(oldClient)
+				return
+			}
+		}
+	}()
+}
+
+func (m *Manager) closeRetiredHomeRelay(relayClient *Client) {
+	m.evictForeignRelayClient(relayClient.connectionURL, relayClient)
+	relayClient.SetOnDisconnectListener(nil)
+	m.dropDisconnectListeners(relayClient)
+	_ = relayClient.Close()
 }
 
 // Caller holds relayClientMu for the referenced client.
@@ -764,7 +1017,7 @@ func (m *Manager) openConnVia(ctx context.Context, serverAddress, peerKey string
 		return nil, err
 	}
 	// if connection closed then delete the relay client from the list
-	relayClient.SetOnDisconnectListener(m.onServerDisconnected)
+	relayClient.SetOnDisconnectListener(func(address string) { m.onServerDisconnected(relayClient, address) })
 	rt.Lock()
 	rt.relayClient = relayClient
 	rt.Unlock()
@@ -809,27 +1062,34 @@ func (m *Manager) onServerConnected() {
 // starts the reconnect guard. For foreign servers it evicts the now-dead client
 // from the cache so the next OpenConn builds a fresh one instead of reusing a
 // closed client.
-func (m *Manager) onServerDisconnected(serverAddress string) {
+func (m *Manager) onServerDisconnected(disconnectedClient *Client, serverAddress string) {
 	m.relayClientMu.Lock()
-	isHome := m.relayClient != nil && serverAddress == m.relayClient.connectionURL
+	isHome := m.relayClient == disconnectedClient
 	if isHome {
 		go func(client *Client) {
 			m.reconnectGuard.StartReconnectTrys(m.ctx, client)
-		}(m.relayClient)
+		}(disconnectedClient)
 	}
 	m.relayClientMu.Unlock()
 
 	if !isHome {
-		m.evictForeignRelay(serverAddress)
+		m.evictForeignRelayClient(serverAddress, disconnectedClient)
 	}
 
-	m.notifyOnDisconnectListeners(serverAddress)
+	m.notifyOnDisconnectListeners(disconnectedClient)
 }
 
-func (m *Manager) evictForeignRelay(serverAddress string) {
+func (m *Manager) evictForeignRelayClient(serverAddress string, disconnectedClient *Client) {
 	m.relayClientsMutex.Lock()
 	defer m.relayClientsMutex.Unlock()
-	if _, ok := m.relayClients[serverAddress]; ok {
+	track := m.relayClients[serverAddress]
+	if track == nil {
+		return
+	}
+	track.RLock()
+	trackedClient := track.relayClient
+	track.RUnlock()
+	if trackedClient == disconnectedClient {
 		delete(m.relayClients, serverAddress)
 		log.Debugf("evicted disconnected foreign relay client: %s", serverAddress)
 	}
@@ -858,7 +1118,7 @@ func (m *Manager) storeClient(client *Client) {
 	defer m.relayClientMu.Unlock()
 
 	m.relayClient = client
-	m.relayClient.SetOnDisconnectListener(m.onServerDisconnected)
+	m.relayClient.SetOnDisconnectListener(func(address string) { m.onServerDisconnected(client, address) })
 }
 
 func (m *Manager) isForeignServer(address string) (bool, error) {
@@ -921,10 +1181,10 @@ func (m *Manager) cleanUpUnusedRelays() {
 	}
 }
 
-func (m *Manager) addListener(serverAddress string, onClosedListener OnServerCloseListener) {
+func (m *Manager) addListener(relayClient *Client, onClosedListener OnServerCloseListener) {
 	m.listenerLock.Lock()
 	defer m.listenerLock.Unlock()
-	l, ok := m.onDisconnectedListeners[serverAddress]
+	l, ok := m.onDisconnectedListeners[relayClient]
 	if !ok {
 		l = list.New()
 	}
@@ -934,21 +1194,27 @@ func (m *Manager) addListener(serverAddress string, onClosedListener OnServerClo
 		}
 	}
 	l.PushBack(onClosedListener)
-	m.onDisconnectedListeners[serverAddress] = l
+	m.onDisconnectedListeners[relayClient] = l
 }
 
-func (m *Manager) notifyOnDisconnectListeners(serverAddress string) {
+func (m *Manager) notifyOnDisconnectListeners(relayClient *Client) {
 	m.listenerLock.Lock()
 	defer m.listenerLock.Unlock()
 
-	l, ok := m.onDisconnectedListeners[serverAddress]
+	l, ok := m.onDisconnectedListeners[relayClient]
 	if !ok {
 		return
 	}
 	for e := l.Front(); e != nil; e = e.Next() {
 		go e.Value.(OnServerCloseListener)()
 	}
-	delete(m.onDisconnectedListeners, serverAddress)
+	delete(m.onDisconnectedListeners, relayClient)
+}
+
+func (m *Manager) dropDisconnectListeners(relayClient *Client) {
+	m.listenerLock.Lock()
+	delete(m.onDisconnectedListeners, relayClient)
+	m.listenerLock.Unlock()
 }
 
 func relayConnState(c *Client) RelayConnState {

@@ -24,7 +24,10 @@ import (
 	authv2 "github.com/netbirdio/netbird/shared/relay/auth/hmac/v2"
 )
 
-const defaultDuration = 12 * time.Hour
+const (
+	defaultDuration         = 12 * time.Hour
+	defaultRelayListRefresh = time.Minute
+)
 
 // SecretsManager used to manage TURN and relay secrets
 type SecretsManager interface {
@@ -38,17 +41,18 @@ type SecretsManager interface {
 
 // TimeBasedAuthSecretsManager generates credentials with TTL and using pre-shared secret known to TURN server
 type TimeBasedAuthSecretsManager struct {
-	mux             sync.Mutex
-	turnCfg         *nbconfig.TURNConfig
-	relayCfg        *nbconfig.Relay
-	turnHmacToken   *auth.TimedHMAC
-	relayHmacToken  *authv2.Generator
-	updateManager   network_map.PeersUpdateManager
-	settingsManager settings.Manager
-	groupsManager   groups.Manager
-	turnCancelMap   map[string]chan struct{}
-	relayCancelMap  map[string]chan struct{}
-	wgKey           wgtypes.Key
+	mux              sync.Mutex
+	turnCfg          *nbconfig.TURNConfig
+	relayCfg         *nbconfig.Relay
+	turnHmacToken    *auth.TimedHMAC
+	relayHmacToken   *authv2.Generator
+	updateManager    network_map.PeersUpdateManager
+	settingsManager  settings.Manager
+	groupsManager    groups.Manager
+	turnCancelMap    map[string]chan struct{}
+	relayCancelMap   map[string]chan struct{}
+	relayListRefresh time.Duration
+	wgKey            wgtypes.Key
 }
 
 type Token auth.Token
@@ -60,14 +64,15 @@ func NewTimeBasedAuthSecretsManager(updateManager network_map.PeersUpdateManager
 	}
 
 	mgr := &TimeBasedAuthSecretsManager{
-		updateManager:   updateManager,
-		turnCfg:         turnCfg,
-		relayCfg:        relayCfg,
-		turnCancelMap:   make(map[string]chan struct{}),
-		relayCancelMap:  make(map[string]chan struct{}),
-		settingsManager: settingsManager,
-		groupsManager:   groupsManager,
-		wgKey:           key,
+		updateManager:    updateManager,
+		turnCfg:          turnCfg,
+		relayCfg:         relayCfg,
+		turnCancelMap:    make(map[string]chan struct{}),
+		relayCancelMap:   make(map[string]chan struct{}),
+		settingsManager:  settingsManager,
+		groupsManager:    groupsManager,
+		relayListRefresh: defaultRelayListRefresh,
+		wgKey:            key,
 	}
 
 	if turnCfg != nil {
@@ -239,15 +244,19 @@ func (m *TimeBasedAuthSecretsManager) refreshTURNTokens(ctx context.Context, acc
 }
 
 func (m *TimeBasedAuthSecretsManager) refreshRelayTokens(ctx context.Context, accountID, peerID string, cancel chan struct{}) {
-	ticker := time.NewTicker(m.relayCfg.CredentialsTTL.Duration / 4 * 3)
-	defer ticker.Stop()
+	credentialTicker := time.NewTicker(m.relayCfg.CredentialsTTL.Duration / 4 * 3)
+	listTicker := time.NewTicker(m.relayListRefresh)
+	defer credentialTicker.Stop()
+	defer listTicker.Stop()
 
 	for {
 		select {
 		case <-cancel:
 			log.WithContext(ctx).Tracef("stopping relay refresh for %s", peerID)
 			return
-		case <-ticker.C:
+		case <-credentialTicker.C:
+			m.pushNewRelayTokens(ctx, accountID, peerID)
+		case <-listTicker.C:
 			m.pushNewRelayTokens(ctx, accountID, peerID)
 		}
 	}

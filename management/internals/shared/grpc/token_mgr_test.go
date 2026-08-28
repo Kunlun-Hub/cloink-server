@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map"
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map/update_channel"
@@ -225,6 +225,36 @@ func TestTimeBasedAuthSecretsManager_CancelRefresh(t *testing.T) {
 	}
 	if _, ok := tested.relayCancelMap[peer]; ok {
 		t.Errorf("expecting peer to be not present in relay cancel map, got present")
+	}
+}
+
+func TestTimeBasedAuthSecretsManager_PeriodicallyRefreshesRelayList(t *testing.T) {
+	ttl := util.Duration{Duration: time.Hour}
+	peersManager := update_channel.NewPeersUpdateManager(nil)
+	peer := "periodic-peer"
+	updateChannel := peersManager.CreateChannel(context.Background(), peer)
+	ctrl := gomock.NewController(t)
+	settingsMockManager := settings.NewMockManager(ctrl)
+	settingsMockManager.EXPECT().GetExtraSettings(gomock.Any(), "account").Return(&types.ExtraSettings{}, nil).AnyTimes()
+	tested, err := NewTimeBasedAuthSecretsManager(peersManager, nil, &config.Relay{
+		Addresses: []string{"rel://relay.example:80"}, CredentialsTTL: ttl, Secret: "secret",
+	}, settingsMockManager, groups.NewManagerMock())
+	require.NoError(t, err)
+	tested.relayListRefresh = 20 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	tested.SetupRefresh(ctx, "account", peer)
+	t.Cleanup(func() { tested.CancelRefresh(peer) })
+
+	for range 2 {
+		select {
+		case update := <-updateChannel:
+			relay := update.Update.GetNetbirdConfig().GetRelay()
+			require.NotNil(t, relay)
+			require.Equal(t, []string{"rel://relay.example:80"}, relay.GetUrls())
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for periodic Relay list refresh")
+		}
 	}
 }
 
