@@ -35,6 +35,7 @@ func TestConfigManagerApplyFiltersGroups(t *testing.T) {
 	response := &proto.SyncResponse{}
 	manager.Apply(response, "account-1", "peer-1", []string{"group-2"}, settings)
 	require.False(t, response.GetNetbirdConfig().GetFlow().GetEnabled())
+	require.Nil(t, response.GetNetbirdConfig().GetRelay(), "flow-only updates must leave Relay omitted so clients preserve their current list")
 
 	manager.Apply(response, "account-1", "peer-1", []string{"group-1"}, settings)
 	flow := response.GetNetbirdConfig().GetFlow()

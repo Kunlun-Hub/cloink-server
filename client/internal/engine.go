@@ -1157,33 +1157,39 @@ func (e *Engine) persistSyncResponse(update *mgmProto.SyncResponse) {
 
 func (e *Engine) handleRelayUpdate(update *mgmProto.RelayConfig) error {
 	override, hasOverride := peer.OverrideRelayURLs()
-	if update != nil {
-		// when we receive token we expect valid address list too
-		c := &auth.Token{
-			Payload:   update.GetTokenPayload(),
-			Signature: update.GetTokenSignature(),
+	if update == nil {
+		// NetbirdConfig is also used for partial control updates such as flow
+		// settings. An omitted Relay section means "unchanged", not disabled.
+		// Management sends a non-nil, empty RelayConfig when it explicitly wants
+		// to clear the received Relay list.
+		if !hasOverride {
+			return nil
 		}
-		if err := e.relayManager.UpdateToken(c); err != nil {
-			return fmt.Errorf("update relay token: %w", err)
-		}
-
-		urls, weights := relayURLsAndWeights(update)
-		if hasOverride {
-			log.Infof("overriding relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
-			urls = override
-			weights = nil
-		}
-		e.relayManager.UpdateServerURLsWithWeights(urls, weights)
-
-		// Just in case the agent started with an MGM server where the relay was disabled but was later enabled.
-		// We can ignore all errors because the guard will manage the reconnection retries.
-		_ = e.relayManager.Serve()
-	} else if hasOverride {
 		log.Infof("preserving relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
 		e.relayManager.UpdateServerURLsWithWeights(override, nil)
-	} else {
-		e.relayManager.UpdateServerURLs(nil)
+		return nil
 	}
+
+	// when we receive token we expect valid address list too
+	c := &auth.Token{
+		Payload:   update.GetTokenPayload(),
+		Signature: update.GetTokenSignature(),
+	}
+	if err := e.relayManager.UpdateToken(c); err != nil {
+		return fmt.Errorf("update relay token: %w", err)
+	}
+
+	urls, weights := relayURLsAndWeights(update)
+	if hasOverride {
+		log.Infof("overriding relay URLs from %s: %v", peer.EnvKeyNBHomeRelayServers, override)
+		urls = override
+		weights = nil
+	}
+	e.relayManager.UpdateServerURLsWithWeights(urls, weights)
+
+	// Just in case the agent started with an MGM server where the relay was disabled but was later enabled.
+	// We can ignore all errors because the guard will manage the reconnection retries.
+	_ = e.relayManager.Serve()
 
 	return nil
 }

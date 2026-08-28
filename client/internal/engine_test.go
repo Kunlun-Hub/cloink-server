@@ -78,6 +78,27 @@ func TestRelayURLsAndWeights(t *testing.T) {
 	})
 }
 
+func TestHandleRelayUpdatePreservesRelaysWhenSectionIsOmitted(t *testing.T) {
+	manager := relayClient.NewManager(context.Background(), []string{"rels://high", "rels://low"}, "peer", iface.DefaultMTU)
+	engine := &Engine{relayManager: manager}
+
+	require.NoError(t, engine.handleRelayUpdate(nil))
+
+	relays := manager.RelayServers()
+	require.Len(t, relays, 2)
+	require.Equal(t, "rels://high", relays[0].URL)
+	require.Equal(t, "rels://low", relays[1].URL)
+}
+
+func TestHandleRelayUpdateClearsRelaysWhenExplicitlyEmpty(t *testing.T) {
+	manager := relayClient.NewManager(context.Background(), []string{"rels://high", "rels://low"}, "peer", iface.DefaultMTU)
+	engine := &Engine{relayManager: manager}
+
+	require.NoError(t, engine.handleRelayUpdate(&mgmtProto.RelayConfig{}))
+
+	require.Empty(t, manager.RelayServers())
+}
+
 type MockWGIface struct {
 	CreateFunc                 func() error
 	CreateOnAndroidFunc        func(routeRange []string, ip string, domains []string) error
