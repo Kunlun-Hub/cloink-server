@@ -38,6 +38,7 @@ func TestUploadStreamsArtifactAndReturnsChecksum(t *testing.T) {
 	mockPermissions.EXPECT().
 		ValidateUserPermissions(gomock.Any(), "account-a", "admin-a", modules.VersionReleases, operations.Create).
 		Return(true, ctx, nil)
+	mockStore.EXPECT().ListOrphanedVersionReleaseArtifacts(ctx, gomock.Any()).Return(nil, nil)
 	mockStore.EXPECT().SaveVersionReleaseArtifact(ctx, gomock.Any()).DoAndReturn(
 		func(_ context.Context, artifact *types.VersionReleaseArtifact) error {
 			require.Equal(t, "cloink-linux-amd64.deb", artifact.FileName)
@@ -71,6 +72,65 @@ func TestUploadStreamsArtifactAndReturnsChecksum(t *testing.T) {
 	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
 	require.NotEmpty(t, response.ID)
 	require.Equal(t, artifactURLPrefix+response.ID, response.DownloadURL)
+}
+
+func TestDeleteReleaseRemovesUnreferencedArtifactFile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockStore := store.NewMockStore(ctrl)
+	mockPermissions := permissions.NewMockManager(ctrl)
+	ctx := context.Background()
+	artifactID := uuid.NewString()
+	releaseID := uuid.NewString()
+	artifact := &types.VersionReleaseArtifact{ID: artifactID, AccountID: "account-a", FileName: "installer.bin"}
+	mockPermissions.EXPECT().
+		ValidateUserPermissions(gomock.Any(), "account-a", "admin-a", modules.VersionReleases, operations.Delete).
+		Return(true, ctx, nil)
+	mockStore.EXPECT().GetVersionRelease(ctx, "account-a", releaseID).Return(&types.VersionRelease{
+		ID: releaseID, AccountID: "account-a", ArtifactID: artifactID,
+	}, nil)
+	mockStore.EXPECT().DeleteVersionRelease(ctx, "account-a", releaseID).Return(nil)
+	mockStore.EXPECT().GetVersionReleaseArtifact(ctx, "account-a", artifactID).Return(artifact, nil)
+	mockStore.EXPECT().DeleteVersionReleaseArtifactIfUnreferenced(ctx, "account-a", artifactID).Return(true, nil)
+
+	storage := newArtifactStorage(t.TempDir())
+	_, _, err := storage.save(artifactID, bytes.NewBufferString("installer"))
+	require.NoError(t, err)
+	h := &handler{store: mockStore, permissionsManager: mockPermissions, storage: storage}
+	req := mux.SetURLVars(withUserAuth(httptest.NewRequest(http.MethodDelete, "/version-releases/"+releaseID, nil)), map[string]string{"id": releaseID})
+	recorder := httptest.NewRecorder()
+	h.delete(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	_, err = storage.open(artifactID)
+	require.Error(t, err)
+}
+
+func TestRejectedReleaseRemovesUploadedArtifact(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockStore := store.NewMockStore(ctrl)
+	mockPermissions := permissions.NewMockManager(ctrl)
+	ctx := context.Background()
+	artifactID := uuid.NewString()
+	checksum := "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+	artifact := &types.VersionReleaseArtifact{ID: artifactID, AccountID: "account-a", FileName: "installer.bin", SHA256: checksum}
+	mockPermissions.EXPECT().
+		ValidateUserPermissions(gomock.Any(), "account-a", "admin-a", modules.VersionReleases, operations.Create).
+		Return(true, ctx, nil)
+	mockStore.EXPECT().GetVersionReleaseArtifact(ctx, "account-a", artifactID).Return(artifact, nil).Times(2)
+	mockStore.EXPECT().DeleteVersionReleaseArtifactIfUnreferenced(ctx, "account-a", artifactID).Return(true, nil)
+
+	storage := newArtifactStorage(t.TempDir())
+	_, _, err := storage.save(artifactID, bytes.NewBufferString("installer"))
+	require.NoError(t, err)
+	h := &handler{store: mockStore, permissionsManager: mockPermissions, storage: storage}
+	body := bytes.NewBufferString(`{"version":"0.77.1","platform":"linux","architecture":"amd64","downloadUrl":"` + artifactURLPrefix + artifactID + `","isLatest":true}`)
+	req := withUserAuth(httptest.NewRequest(http.MethodPost, "/version-releases", body))
+	recorder := httptest.NewRecorder()
+	h.create(recorder, req)
+
+	require.Equal(t, http.StatusPreconditionFailed, recorder.Code, recorder.Body.String())
+	_, err = storage.open(artifactID)
+	require.Error(t, err)
 }
 
 func TestCreateSignedLatestRelease(t *testing.T) {

@@ -38,6 +38,7 @@ const (
 	artifactURLPrefix    = "/api/version-releases/files/"
 	maxMetadataBodyBytes = 1024 * 1024
 	maxSignatureBytes    = 16 * 1024
+	orphanArtifactGrace  = 24 * time.Hour
 
 	// EnvVersionReleaseSigningKeyFile points to the PEM Ed25519 private key
 	// used to sign client update metadata automatically.
@@ -202,10 +203,14 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err := h.prepareRelease(ctx, release); err != nil {
+		h.cleanupRequestArtifact(ctx, userAuth.AccountId, request.DownloadURL)
 		util.WriteError(ctx, err, w)
 		return
 	}
 	if err := h.store.SaveVersionRelease(ctx, release); err != nil {
+		if cleanupErr := h.cleanupArtifact(ctx, userAuth.AccountId, release.ArtifactID); cleanupErr != nil {
+			log.WithContext(ctx).WithError(cleanupErr).Warnf("failed to clean unsaved version release artifact %s", release.ArtifactID)
+		}
 		util.WriteError(ctx, err, w)
 		return
 	}
@@ -222,6 +227,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(ctx, err, w)
 		return
 	}
+	previousArtifactID := existing.ArtifactID
 	request, ok := decodeReleaseRequest(w, r)
 	if !ok {
 		return
@@ -243,6 +249,11 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(ctx, err, w)
 		return
 	}
+	if previousArtifactID != existing.ArtifactID {
+		if err := h.cleanupArtifact(ctx, userAuth.AccountId, previousArtifactID); err != nil {
+			log.WithContext(ctx).WithError(err).Warnf("failed to clean replaced version release artifact %s", previousArtifactID)
+		}
+	}
 	util.WriteJSONObject(ctx, w, toReleaseResponse(existing))
 }
 
@@ -261,12 +272,8 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if release.ArtifactID != "" {
-		if err := h.store.DeleteVersionReleaseArtifact(ctx, userAuth.AccountId, release.ArtifactID); err != nil {
+		if err := h.cleanupArtifact(ctx, userAuth.AccountId, release.ArtifactID); err != nil {
 			util.WriteError(ctx, err, w)
-			return
-		}
-		if err := h.storage.delete(release.ArtifactID); err != nil {
-			util.WriteError(ctx, status.Errorf(status.Internal, "%v", err), w)
 			return
 		}
 	}
@@ -278,6 +285,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	h.cleanupOldOrphanedArtifacts(ctx)
 	r.Body = http.MaxBytesReader(w, r.Body, h.storage.maxBytes+1024*1024)
 	if err := r.ParseMultipartForm(32 * 1024 * 1024); err != nil {
 		util.WriteError(ctx, status.Errorf(status.InvalidArgument, "invalid upload: %v", err), w)
@@ -314,6 +322,13 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(ctx, err, w)
 		return
 	}
+	time.AfterFunc(orphanArtifactGrace, func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if err := h.cleanupArtifact(cleanupCtx, artifact.AccountID, artifact.ID); err != nil {
+			log.WithContext(cleanupCtx).WithError(err).Warnf("failed to clean expired version release artifact %s", artifact.ID)
+		}
+	})
 	util.WriteJSONObject(ctx, w, uploadResponse{
 		ID:          artifactID,
 		Filename:    filename,
@@ -321,6 +336,59 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
 		SHA256:      checksum,
 		DownloadURL: artifactURLPrefix + artifactID,
 	})
+}
+
+func (h *handler) cleanupRequestArtifact(ctx context.Context, accountID, downloadURL string) {
+	if !strings.HasPrefix(downloadURL, artifactURLPrefix) {
+		return
+	}
+	artifactID := strings.TrimPrefix(downloadURL, artifactURLPrefix)
+	if _, err := uuid.Parse(artifactID); err != nil {
+		return
+	}
+	if err := h.cleanupArtifact(ctx, accountID, artifactID); err != nil {
+		log.WithContext(ctx).WithError(err).Warnf("failed to clean rejected version release artifact %s", artifactID)
+	}
+}
+
+func (h *handler) cleanupArtifact(ctx context.Context, accountID, artifactID string) error {
+	if artifactID == "" {
+		return nil
+	}
+	artifact, err := h.store.GetVersionReleaseArtifact(ctx, accountID, artifactID)
+	if err != nil {
+		if statusErr, ok := status.FromError(err); ok && statusErr != nil && statusErr.Type() == status.NotFound {
+			return nil
+		}
+		return err
+	}
+	deleted, err := h.store.DeleteVersionReleaseArtifactIfUnreferenced(ctx, accountID, artifactID)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return nil
+	}
+	if err := h.storage.delete(artifactID); err != nil {
+		if restoreErr := h.store.SaveVersionReleaseArtifact(ctx, artifact); restoreErr != nil {
+			return status.Errorf(status.Internal, "%v; restore artifact metadata: %v", err, restoreErr)
+		}
+		return status.Errorf(status.Internal, "%v", err)
+	}
+	return nil
+}
+
+func (h *handler) cleanupOldOrphanedArtifacts(ctx context.Context) {
+	artifacts, err := h.store.ListOrphanedVersionReleaseArtifacts(ctx, time.Now().UTC().Add(-orphanArtifactGrace))
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Warn("failed to list orphaned version release artifacts")
+		return
+	}
+	for _, artifact := range artifacts {
+		if err := h.cleanupArtifact(ctx, artifact.AccountID, artifact.ID); err != nil {
+			log.WithContext(ctx).WithError(err).Warnf("failed to clean orphaned version release artifact %s", artifact.ID)
+		}
+	}
 }
 
 func (h *handler) download(w http.ResponseWriter, r *http.Request) {

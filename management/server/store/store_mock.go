@@ -170,7 +170,7 @@ func (m *MockStore) CleanupNetworkTrafficEvents(ctx context.Context, olderThan t
 }
 
 // CleanupNetworkTrafficEvents indicates an expected call of CleanupNetworkTrafficEvents.
-func (mr *MockStoreMockRecorder) CleanupNetworkTrafficEvents(ctx, olderThan, maxPerAccount interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) CleanupNetworkTrafficEvents(ctx, olderThan, maxPerAccount any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupNetworkTrafficEvents", reflect.TypeOf((*MockStore)(nil).CleanupNetworkTrafficEvents), ctx, olderThan, maxPerAccount)
 }
@@ -398,7 +398,7 @@ func (m *MockStore) CreateNetworkTrafficEvent(ctx context.Context, event *networ
 }
 
 // CreateNetworkTrafficEvent indicates an expected call of CreateNetworkTrafficEvent.
-func (mr *MockStoreMockRecorder) CreateNetworkTrafficEvent(ctx, event interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) CreateNetworkTrafficEvent(ctx, event any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNetworkTrafficEvent", reflect.TypeOf((*MockStore)(nil).CreateNetworkTrafficEvent), ctx, event)
 }
@@ -890,7 +890,7 @@ func (m *MockStore) DeleteVersionRelease(ctx context.Context, accountID, release
 }
 
 // DeleteVersionRelease indicates an expected call of DeleteVersionRelease.
-func (mr *MockStoreMockRecorder) DeleteVersionRelease(ctx, accountID, releaseID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) DeleteVersionRelease(ctx, accountID, releaseID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVersionRelease", reflect.TypeOf((*MockStore)(nil).DeleteVersionRelease), ctx, accountID, releaseID)
 }
@@ -904,9 +904,24 @@ func (m *MockStore) DeleteVersionReleaseArtifact(ctx context.Context, accountID,
 }
 
 // DeleteVersionReleaseArtifact indicates an expected call of DeleteVersionReleaseArtifact.
-func (mr *MockStoreMockRecorder) DeleteVersionReleaseArtifact(ctx, accountID, artifactID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) DeleteVersionReleaseArtifact(ctx, accountID, artifactID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).DeleteVersionReleaseArtifact), ctx, accountID, artifactID)
+}
+
+// DeleteVersionReleaseArtifactIfUnreferenced mocks base method.
+func (m *MockStore) DeleteVersionReleaseArtifactIfUnreferenced(ctx context.Context, accountID, artifactID string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVersionReleaseArtifactIfUnreferenced", ctx, accountID, artifactID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteVersionReleaseArtifactIfUnreferenced indicates an expected call of DeleteVersionReleaseArtifactIfUnreferenced.
+func (mr *MockStoreMockRecorder) DeleteVersionReleaseArtifactIfUnreferenced(ctx, accountID, artifactID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVersionReleaseArtifactIfUnreferenced", reflect.TypeOf((*MockStore)(nil).DeleteVersionReleaseArtifactIfUnreferenced), ctx, accountID, artifactID)
 }
 
 // DeleteZone mocks base method.
@@ -1368,7 +1383,7 @@ func (m *MockStore) GetAccountNetworkTrafficEvents(ctx context.Context, lockStre
 }
 
 // GetAccountNetworkTrafficEvents indicates an expected call of GetAccountNetworkTrafficEvents.
-func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficEvents(ctx, lockStrength, accountID, filter interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficEvents(ctx, lockStrength, accountID, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountNetworkTrafficEvents", reflect.TypeOf((*MockStore)(nil).GetAccountNetworkTrafficEvents), ctx, lockStrength, accountID, filter)
 }
@@ -1384,7 +1399,7 @@ func (m *MockStore) GetAccountNetworkTrafficGroupEvents(ctx context.Context, loc
 }
 
 // GetAccountNetworkTrafficGroupEvents indicates an expected call of GetAccountNetworkTrafficGroupEvents.
-func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficGroupEvents(ctx, lockStrength, accountID, filter, windowStart, userID, reporterID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficGroupEvents(ctx, lockStrength, accountID, filter, windowStart, userID, reporterID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountNetworkTrafficGroupEvents", reflect.TypeOf((*MockStore)(nil).GetAccountNetworkTrafficGroupEvents), ctx, lockStrength, accountID, filter, windowStart, userID, reporterID)
 }
@@ -1400,7 +1415,7 @@ func (m *MockStore) GetAccountNetworkTrafficGroups(ctx context.Context, lockStre
 }
 
 // GetAccountNetworkTrafficGroups indicates an expected call of GetAccountNetworkTrafficGroups.
-func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficGroups(ctx, lockStrength, accountID, filter interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetAccountNetworkTrafficGroups(ctx, lockStrength, accountID, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountNetworkTrafficGroups", reflect.TypeOf((*MockStore)(nil).GetAccountNetworkTrafficGroups), ctx, lockStrength, accountID, filter)
 }
@@ -2088,7 +2103,7 @@ func (m *MockStore) GetEmailSettings(ctx context.Context, lockStrength LockingSt
 }
 
 // GetEmailSettings indicates an expected call of GetEmailSettings.
-func (mr *MockStoreMockRecorder) GetEmailSettings(ctx, lockStrength, accountID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetEmailSettings(ctx, lockStrength, accountID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailSettings", reflect.TypeOf((*MockStore)(nil).GetEmailSettings), ctx, lockStrength, accountID)
 }
@@ -2342,7 +2357,7 @@ func (m *MockStore) GetNetworkTrafficPolicy(ctx context.Context, lockStrength Lo
 }
 
 // GetNetworkTrafficPolicy indicates an expected call of GetNetworkTrafficPolicy.
-func (mr *MockStoreMockRecorder) GetNetworkTrafficPolicy(ctx, lockStrength, accountID, ruleOrPolicyID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetNetworkTrafficPolicy(ctx, lockStrength, accountID, ruleOrPolicyID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkTrafficPolicy", reflect.TypeOf((*MockStore)(nil).GetNetworkTrafficPolicy), ctx, lockStrength, accountID, ruleOrPolicyID)
 }
@@ -3091,7 +3106,7 @@ func (m *MockStore) GetVersionRelease(ctx context.Context, accountID, releaseID 
 }
 
 // GetVersionRelease indicates an expected call of GetVersionRelease.
-func (mr *MockStoreMockRecorder) GetVersionRelease(ctx, accountID, releaseID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetVersionRelease(ctx, accountID, releaseID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVersionRelease", reflect.TypeOf((*MockStore)(nil).GetVersionRelease), ctx, accountID, releaseID)
 }
@@ -3106,7 +3121,7 @@ func (m *MockStore) GetVersionReleaseArtifact(ctx context.Context, accountID, ar
 }
 
 // GetVersionReleaseArtifact indicates an expected call of GetVersionReleaseArtifact.
-func (mr *MockStoreMockRecorder) GetVersionReleaseArtifact(ctx, accountID, artifactID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetVersionReleaseArtifact(ctx, accountID, artifactID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).GetVersionReleaseArtifact), ctx, accountID, artifactID)
 }
@@ -3333,6 +3348,21 @@ func (mr *MockStoreMockRecorder) ListFreeDomains(ctx, accountID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFreeDomains", reflect.TypeOf((*MockStore)(nil).ListFreeDomains), ctx, accountID)
 }
 
+// ListOrphanedVersionReleaseArtifacts mocks base method.
+func (m *MockStore) ListOrphanedVersionReleaseArtifacts(ctx context.Context, olderThan time.Time) ([]*types3.VersionReleaseArtifact, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListOrphanedVersionReleaseArtifacts", ctx, olderThan)
+	ret0, _ := ret[0].([]*types3.VersionReleaseArtifact)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListOrphanedVersionReleaseArtifacts indicates an expected call of ListOrphanedVersionReleaseArtifacts.
+func (mr *MockStoreMockRecorder) ListOrphanedVersionReleaseArtifacts(ctx, olderThan any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListOrphanedVersionReleaseArtifacts", reflect.TypeOf((*MockStore)(nil).ListOrphanedVersionReleaseArtifacts), ctx, olderThan)
+}
+
 // ListVersionReleases mocks base method.
 func (m *MockStore) ListVersionReleases(ctx context.Context, accountID string) ([]*types3.VersionRelease, error) {
 	m.ctrl.T.Helper()
@@ -3343,7 +3373,7 @@ func (m *MockStore) ListVersionReleases(ctx context.Context, accountID string) (
 }
 
 // ListVersionReleases indicates an expected call of ListVersionReleases.
-func (mr *MockStoreMockRecorder) ListVersionReleases(ctx, accountID interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) ListVersionReleases(ctx, accountID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVersionReleases", reflect.TypeOf((*MockStore)(nil).ListVersionReleases), ctx, accountID)
 }
@@ -3668,7 +3698,7 @@ func (m *MockStore) SaveEmailSettings(ctx context.Context, settings *types3.Emai
 }
 
 // SaveEmailSettings indicates an expected call of SaveEmailSettings.
-func (mr *MockStoreMockRecorder) SaveEmailSettings(ctx, settings interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) SaveEmailSettings(ctx, settings any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveEmailSettings", reflect.TypeOf((*MockStore)(nil).SaveEmailSettings), ctx, settings)
 }
@@ -3920,7 +3950,7 @@ func (m *MockStore) SaveVersionRelease(ctx context.Context, release *types3.Vers
 }
 
 // SaveVersionRelease indicates an expected call of SaveVersionRelease.
-func (mr *MockStoreMockRecorder) SaveVersionRelease(ctx, release interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) SaveVersionRelease(ctx, release any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveVersionRelease", reflect.TypeOf((*MockStore)(nil).SaveVersionRelease), ctx, release)
 }
@@ -3934,7 +3964,7 @@ func (m *MockStore) SaveVersionReleaseArtifact(ctx context.Context, artifact *ty
 }
 
 // SaveVersionReleaseArtifact indicates an expected call of SaveVersionReleaseArtifact.
-func (mr *MockStoreMockRecorder) SaveVersionReleaseArtifact(ctx, artifact interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) SaveVersionReleaseArtifact(ctx, artifact any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveVersionReleaseArtifact", reflect.TypeOf((*MockStore)(nil).SaveVersionReleaseArtifact), ctx, artifact)
 }
@@ -4102,7 +4132,7 @@ func (m *MockStore) UpdateUserInviteTokenIfMatches(ctx context.Context, invite *
 }
 
 // UpdateUserInviteTokenIfMatches indicates an expected call of UpdateUserInviteTokenIfMatches.
-func (mr *MockStoreMockRecorder) UpdateUserInviteTokenIfMatches(ctx, invite, expectedHashedToken interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) UpdateUserInviteTokenIfMatches(ctx, invite, expectedHashedToken any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUserInviteTokenIfMatches", reflect.TypeOf((*MockStore)(nil).UpdateUserInviteTokenIfMatches), ctx, invite, expectedHashedToken)
 }

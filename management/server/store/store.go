@@ -95,7 +95,9 @@ type Store interface {
 	DeleteVersionRelease(ctx context.Context, accountID, releaseID string) error
 	SaveVersionReleaseArtifact(ctx context.Context, artifact *types.VersionReleaseArtifact) error
 	GetVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) (*types.VersionReleaseArtifact, error)
+	ListOrphanedVersionReleaseArtifacts(ctx context.Context, olderThan time.Time) ([]*types.VersionReleaseArtifact, error)
 	DeleteVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) error
+	DeleteVersionReleaseArtifactIfUnreferenced(ctx context.Context, accountID, artifactID string) (bool, error)
 
 	GetUserByPATID(ctx context.Context, lockStrength LockingStrength, patID string) (*types.User, error)
 	GetUserByUserID(ctx context.Context, lockStrength LockingStrength, userID string) (*types.User, error)

@@ -1372,6 +1372,17 @@ func (s *SqlStore) GetVersionReleaseArtifact(ctx context.Context, accountID, art
 	return &artifact, nil
 }
 
+func (s *SqlStore) ListOrphanedVersionReleaseArtifacts(ctx context.Context, olderThan time.Time) ([]*types.VersionReleaseArtifact, error) {
+	var artifacts []*types.VersionReleaseArtifact
+	result := s.db.WithContext(ctx).
+		Where("created_at < ?", olderThan).
+		Where("NOT EXISTS (?)", s.db.Model(&types.VersionRelease{}).
+			Select("1").
+			Where("version_releases.artifact_id = version_release_artifacts.id")).
+		Find(&artifacts)
+	return artifacts, result.Error
+}
+
 func (s *SqlStore) DeleteVersionReleaseArtifact(ctx context.Context, accountID, artifactID string) error {
 	result := s.db.WithContext(ctx).Where("account_id = ? AND id = ?", accountID, artifactID).
 		Delete(&types.VersionReleaseArtifact{})
@@ -1382,6 +1393,19 @@ func (s *SqlStore) DeleteVersionReleaseArtifact(ctx context.Context, accountID, 
 		return status.Errorf(status.NotFound, "version release artifact not found")
 	}
 	return nil
+}
+
+func (s *SqlStore) DeleteVersionReleaseArtifactIfUnreferenced(ctx context.Context, accountID, artifactID string) (bool, error) {
+	result := s.db.WithContext(ctx).
+		Where("account_id = ? AND id = ?", accountID, artifactID).
+		Where("NOT EXISTS (?)", s.db.Model(&types.VersionRelease{}).
+			Select("1").
+			Where("version_releases.artifact_id = ?", artifactID)).
+		Delete(&types.VersionReleaseArtifact{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 func (s *SqlStore) GetAccount(ctx context.Context, accountID string) (*types.Account, error) {
