@@ -55,6 +55,21 @@ type ServerPicker struct {
 }
 
 func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
+	return sp.pickServer(parentCtx, sp.loadConfig())
+}
+
+// PickServerFrom limits a selection attempt to the supplied Relay URLs while
+// retaining their configured weights, transport fallback and cooldown state.
+func (sp *ServerPicker) PickServerFrom(parentCtx context.Context, serverURLs []string) (*Client, error) {
+	config := sp.loadConfig()
+	config.serverURLs = slices.Clone(serverURLs)
+	if config.forcedURL != "" && !slices.Contains(config.serverURLs, config.forcedURL) {
+		config.forcedURL = ""
+	}
+	return sp.pickServer(parentCtx, config)
+}
+
+func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfig) (*Client, error) {
 	connectionTimeout := sp.ConnectionTimeout
 	if connectionTimeout <= 0 {
 		connectionTimeout = defaultConnectionTimeout
@@ -63,7 +78,6 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, connectionTimeout)
 	defer cancel()
 
-	config := sp.loadConfig()
 	serverURLs := sp.availableServerURLs(config, config.serverURLs, time.Now())
 	totalServers := len(serverURLs)
 	if totalServers == 0 {

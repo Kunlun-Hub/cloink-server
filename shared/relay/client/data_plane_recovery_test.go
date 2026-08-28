@@ -22,12 +22,12 @@ func TestRelayDataPlaneFailuresDistinctPeersTriggerRecovery(t *testing.T) {
 	require.True(t, failures.reportFailure("relay-a", "peer-b"))
 }
 
-func TestRelayDataPlaneFailuresRepeatedPeerTriggersRecovery(t *testing.T) {
+func TestRelayDataPlaneFailuresRepeatedPeerDoesNotTriggerRelayWideRecovery(t *testing.T) {
 	failures := newRelayDataPlaneFailures()
 
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
-	require.True(t, failures.reportFailure("relay-a", "peer-a"))
+	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 }
 
 func TestRelayDataPlaneFailuresSuccessClearsPeer(t *testing.T) {
@@ -37,7 +37,8 @@ func TestRelayDataPlaneFailuresSuccessClearsPeer(t *testing.T) {
 	failures.reportSuccess("relay-a", "peer-a")
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
-	require.True(t, failures.reportFailure("relay-a", "peer-a"))
+	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+	require.True(t, failures.reportFailure("relay-a", "peer-b"))
 }
 
 func TestRelayDataPlaneFailuresCooldownPreventsStorm(t *testing.T) {

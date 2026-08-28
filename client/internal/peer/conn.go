@@ -145,7 +145,11 @@ type Conn struct {
 
 	wgProxyICE   wgproxy.Proxy
 	wgProxyRelay wgproxy.Proxy
-	handshaker   *Handshaker
+	// retiredRelayProxies keep the previous Relay paths alive during a
+	// make-before-break migration. They are closed after the replacement path
+	// produces a WireGuard handshake or when the grace period expires.
+	retiredRelayProxies []wgproxy.Proxy
+	handshaker          *Handshaker
 
 	guard *guard.Guard
 	wg    sync.WaitGroup
@@ -336,6 +340,7 @@ func (conn *Conn) Close(signalToRemote bool) {
 		}
 		conn.wgProxyRelay = nil
 	}
+	conn.closeRetiredRelayProxiesLocked()
 
 	if conn.wgProxyICE != nil {
 		err := conn.wgProxyICE.CloseConn()
@@ -593,13 +598,14 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 
 	if conn.isICEActive() {
 		conn.Log.Debugf("do not switch to relay because current priority is: %s", conn.currentConnPriority.String())
-		conn.setRelayedProxy(wgProxy)
+		conn.setRelayedProxy(wgProxy, false)
 		conn.statusRelay.SetConnected()
 		conn.updateRelayStatus(rci.relayedConn.RemoteAddr().String(), rci.rosenpassPubKey, time.Now())
 		return
 	}
 
 	controller := isController(conn.config)
+	oldProxy, migratingActiveRelay := conn.beginRelayProxyMigrationLocked()
 
 	if controller {
 		wgProxy.Work()
@@ -607,6 +613,7 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	updateTime := time.Now()
 	conn.enableWgWatcherIfNeeded(updateTime)
 	if err := conn.endpointUpdater.ConfigureWGEndpoint(wgProxy.EndpointAddr(), conn.presharedKey(rci.rosenpassPubKey)); err != nil {
+		conn.rollbackRelayProxyMigrationLocked(oldProxy, migratingActiveRelay)
 		if err := wgProxy.CloseConn(); err != nil {
 			conn.Log.Warnf("Failed to close relay connection: %v", err)
 		}
@@ -618,13 +625,14 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	}
 
 	wgConfigWorkaround()
+	conn.commitRelayProxyMigrationLocked(oldProxy, wgProxy, migratingActiveRelay)
 
 	conn.injectPendingFirstPacket(wgProxy, nil)
 
 	conn.rosenpassRemoteKey = rci.rosenpassPubKey
 	conn.currentConnPriority = conntype.Relay
 	conn.statusRelay.SetConnected()
-	conn.setRelayedProxy(wgProxy)
+	conn.setRelayedProxy(wgProxy, migratingActiveRelay)
 	conn.updateRelayStatus(rci.relayedConn.RemoteAddr().String(), rci.rosenpassPubKey, updateTime)
 	conn.Log.Infof("start to communicate with peer via relay")
 	conn.doOnConnected(rci.rosenpassPubKey, rci.rosenpassAddr, updateTime)
@@ -657,6 +665,7 @@ func (conn *Conn) handleRelayDisconnectedLocked() {
 		_ = conn.wgProxyRelay.CloseConn()
 		conn.wgProxyRelay = nil
 	}
+	conn.closeRetiredRelayProxiesLocked()
 
 	changed := conn.statusRelay.Get() != worker.StatusDisconnected
 	if changed {
@@ -948,17 +957,85 @@ func (conn *Conn) logTraceConnState() {
 	}
 }
 
-func (conn *Conn) setRelayedProxy(proxy wgproxy.Proxy) {
+func (conn *Conn) setRelayedProxy(proxy wgproxy.Proxy, preserveOld bool) {
 	if conn.wgProxyRelay != nil {
-		if err := conn.wgProxyRelay.CloseConn(); err != nil {
-			conn.Log.Warnf("failed to close deprecated wg proxy conn: %v", err)
+		retired := conn.wgProxyRelay
+		if preserveOld {
+			retired.SetDisconnectListener(nil)
+			conn.retiredRelayProxies = append(conn.retiredRelayProxies, retired)
+			grace := relayPeerMigrationGrace
+			go conn.expireRetiredRelayProxy(retired, grace)
+		} else if err := retired.CloseConn(); err != nil {
+			conn.Log.Debugf("close replaced standby Relay proxy: %v", err)
 		}
 	}
 	conn.wgProxyRelay = proxy
 }
 
+func (conn *Conn) beginRelayProxyMigrationLocked() (wgproxy.Proxy, bool) {
+	oldProxy := conn.wgProxyRelay
+	migrating := oldProxy != nil && conn.currentConnPriority == conntype.Relay
+	if migrating {
+		oldProxy.Pause()
+		if conn.wgWatcher != nil {
+			conn.wgWatcher.Reset()
+		}
+	}
+	return oldProxy, migrating
+}
+
+func (conn *Conn) rollbackRelayProxyMigrationLocked(oldProxy wgproxy.Proxy, migrating bool) {
+	if migrating {
+		oldProxy.Work()
+	}
+}
+
+func (conn *Conn) commitRelayProxyMigrationLocked(oldProxy, newProxy wgproxy.Proxy, migrating bool) {
+	if !migrating {
+		return
+	}
+	// WireGuard now sends through the new proxy. Keep packets already in
+	// flight on the old Relay acceptable by rewriting their source to the new
+	// endpoint until a fresh handshake confirms the replacement path.
+	oldProxy.RedirectAs(newProxy.EndpointAddr())
+}
+
+func (conn *Conn) expireRetiredRelayProxy(proxy wgproxy.Proxy, grace time.Duration) {
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-conn.ctx.Done():
+	}
+
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	for i, retired := range conn.retiredRelayProxies {
+		if retired != proxy {
+			continue
+		}
+		conn.retiredRelayProxies = slices.Delete(conn.retiredRelayProxies, i, i+1)
+		if err := retired.CloseConn(); err != nil {
+			conn.Log.Debugf("close expired Relay migration proxy: %v", err)
+		}
+		return
+	}
+}
+
+func (conn *Conn) closeRetiredRelayProxiesLocked() {
+	for _, proxy := range conn.retiredRelayProxies {
+		if err := proxy.CloseConn(); err != nil {
+			conn.Log.Debugf("close retired Relay proxy: %v", err)
+		}
+	}
+	conn.retiredRelayProxies = nil
+}
+
 // onWGHandshakeSuccess is called when the first WireGuard handshake is detected
 func (conn *Conn) onWGHandshakeSuccess(when time.Time) {
+	conn.mu.Lock()
+	conn.closeRetiredRelayProxiesLocked()
+	conn.mu.Unlock()
 	conn.metricsStages.RecordWGHandshakeSuccess(when)
 	conn.recordConnectionMetrics()
 }
@@ -969,6 +1046,7 @@ func (conn *Conn) onWGHandshakeSuccess(when time.Time) {
 func (conn *Conn) onWGCheckSuccess() {
 	conn.mu.Lock()
 	conn.wgTimeouts = 0
+	conn.closeRetiredRelayProxiesLocked()
 	// A successful handshake over any transport proves this peer is no longer
 	// evidence of a Relay-wide blackhole. Clear its pending Relay failure even
 	// when ICE upgraded the active path while a standby Relay remains open.

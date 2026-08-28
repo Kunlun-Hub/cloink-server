@@ -9,12 +9,10 @@ const (
 	dataPlaneFailureWindow       = 2 * time.Minute
 	dataPlaneRecoveryCooldown    = 2 * time.Minute
 	dataPlaneDistinctPeerTrigger = 2
-	dataPlaneSamePeerTrigger     = 3
 )
 
 type relayPeerFailure struct {
-	count int
-	last  time.Time
+	last time.Time
 }
 
 type relayFailureState struct {
@@ -58,18 +56,12 @@ func (f *relayDataPlaneFailures) reportFailure(relayAddress, peerKey string) boo
 		}
 	}
 
-	failure := state.peers[peerKey]
-	if !failure.last.IsZero() && now.Sub(failure.last) > dataPlaneFailureWindow {
-		failure.count = 0
-	}
-	failure.count++
-	failure.last = now
-	state.peers[peerKey] = failure
+	state.peers[peerKey] = relayPeerFailure{last: now}
 
 	if !state.lastRecovery.IsZero() && now.Sub(state.lastRecovery) < dataPlaneRecoveryCooldown {
 		return false
 	}
-	if len(state.peers) < dataPlaneDistinctPeerTrigger && failure.count < dataPlaneSamePeerTrigger {
+	if len(state.peers) < dataPlaneDistinctPeerTrigger {
 		return false
 	}
 
