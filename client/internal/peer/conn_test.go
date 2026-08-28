@@ -389,6 +389,49 @@ func TestConn_onWGDisconnected_NoEscalationWithoutRosenpass(t *testing.T) {
 	assert.Empty(t, disconnected, "escalation must be limited to rosenpass connections")
 }
 
+type relayDataPlaneMonitorMock struct {
+	failures  [][2]string
+	successes [][2]string
+}
+
+func (m *relayDataPlaneMonitorMock) ReportDataPlaneFailure(relayAddress, peerKey string) {
+	m.failures = append(m.failures, [2]string{relayAddress, peerKey})
+}
+
+func (m *relayDataPlaneMonitorMock) ReportDataPlaneSuccess(relayAddress, peerKey string) {
+	m.successes = append(m.successes, [2]string{relayAddress, peerKey})
+}
+
+func TestConnReportsDataPlaneFailureOnlyForActiveRelay(t *testing.T) {
+	monitor := &relayDataPlaneMonitorMock{}
+	conn := &Conn{
+		config:              ConnConfig{Key: "peer-a"},
+		relayDataPlane:      monitor,
+		activeRelayAddress:  "rels://relay-a:443",
+		currentConnPriority: conntype.ICEP2P,
+	}
+
+	conn.reportRelayDataPlaneFailureLocked()
+	assert.Empty(t, monitor.failures, "P2P timeout must not reset Relay infrastructure")
+
+	conn.currentConnPriority = conntype.Relay
+	conn.reportRelayDataPlaneFailureLocked()
+	assert.Equal(t, [][2]string{{"rels://relay-a:443", "peer-a"}}, monitor.failures)
+}
+
+func TestConnRelayHandshakeSuccessClearsDataPlaneFailure(t *testing.T) {
+	monitor := &relayDataPlaneMonitorMock{}
+	conn := &Conn{
+		config:              ConnConfig{Key: "peer-a"},
+		relayDataPlane:      monitor,
+		activeRelayAddress:  "rels://relay-a:443",
+		currentConnPriority: conntype.Relay,
+	}
+
+	conn.onWGCheckSuccess()
+	assert.Equal(t, [][2]string{{"rels://relay-a:443", "peer-a"}}, monitor.successes)
+}
+
 func TestMetricsConnType(t *testing.T) {
 	tests := []struct {
 		name     string

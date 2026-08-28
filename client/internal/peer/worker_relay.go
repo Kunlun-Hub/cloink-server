@@ -15,6 +15,7 @@ import (
 
 type RelayConnInfo struct {
 	relayedConn     net.Conn
+	relayAddress    string
 	rosenpassPubKey []byte
 	rosenpassAddr   string
 }
@@ -90,6 +91,7 @@ func (w *WorkerRelay) OnNewOffer(remoteOfferAnswer *OfferAnswer) {
 	w.log.Debugf("peer conn opened via Relay: %s", srv)
 	go w.conn.onRelayConnectionIsReady(RelayConnInfo{
 		relayedConn:     relayedConn,
+		relayAddress:    srv,
 		rosenpassPubKey: remoteOfferAnswer.RosenpassPubKey,
 		rosenpassAddr:   remoteOfferAnswer.RosenpassAddr,
 	})

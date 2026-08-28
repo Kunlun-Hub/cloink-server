@@ -1948,6 +1948,7 @@ func (e *Engine) createPeerConn(pubKey string, allowedIPs []netip.Prefix, agentV
 		Signaler:           e.signaler,
 		IFaceDiscover:      e.mobileDep.IFaceDiscover,
 		RelayManager:       e.relayManager,
+		RelayDataPlane:     e.relayManager,
 		SrWatcher:          e.srWatcher,
 		PortForwardManager: e.portForwardManager,
 		MetricsRecorder:    e.clientMetrics,
