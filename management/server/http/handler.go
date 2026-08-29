@@ -42,6 +42,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/geolocation"
 	nbgroups "github.com/netbirdio/netbird/management/server/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/accounts"
+	debugbundles "github.com/netbirdio/netbird/management/server/http/handlers/debug_bundles"
 	"github.com/netbirdio/netbird/management/server/http/handlers/dns"
 	emailhandler "github.com/netbirdio/netbird/management/server/http/handlers/email"
 	"github.com/netbirdio/netbird/management/server/http/handlers/events"
@@ -95,6 +96,12 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if err := bypass.AddBypassPath("/api/version-releases/files/*"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
+	if err := bypass.AddBypassPath("/api/debug-bundles/upload-url"); err != nil {
+		return nil, fmt.Errorf("failed to add debug bundle upload bypass path: %w", err)
+	}
+	if err := bypass.AddBypassPath("/api/debug-bundles/upload/*"); err != nil {
+		return nil, fmt.Errorf("failed to add debug bundle upload bypass path: %w", err)
+	}
 
 	if err := bypass.AddBypassPath("/api/relays/register"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
@@ -139,6 +146,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	users.AddInvitesEndpoints(accountManager, router)
 	users.AddPublicInvitesEndpoints(accountManager, router)
 	versionreleases.AddEndpoints(accountManager, permissionsManager, router)
+	debugbundles.AddEndpoints(permissionsManager, router)
 	setup_keys.AddEndpoints(accountManager, router)
 	policies.AddEndpoints(accountManager, LocationManager, router)
 	policies.AddPostureCheckEndpoints(accountManager, LocationManager, router)

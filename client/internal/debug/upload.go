@@ -16,6 +16,23 @@ import (
 
 const maxBundleUploadSize = 50 * 1024 * 1024
 
+// ManagementBundleURL returns the self-hosted debug bundle upload service for
+// the management server a client is currently connected to.
+func ManagementBundleURL(managementURL string) (string, error) {
+	parsed, err := neturl.Parse(managementURL)
+	if err != nil {
+		return "", fmt.Errorf("parse management URL: %w", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("management URL must be an absolute https URL")
+	}
+	parsed.Path = "/api/debug-bundles/upload-url"
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
 // requireHTTPS refuses any URL the daemon would fetch or upload to that is not
 // https. The daemon runs as root and the bundle carries its logs and state, so a
 // plaintext hop is a place to intercept the bundle or the presigned redirect.
