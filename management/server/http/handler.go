@@ -99,7 +99,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if err := bypass.AddBypassPath("/api/debug-bundles/upload-url"); err != nil {
 		return nil, fmt.Errorf("failed to add debug bundle upload bypass path: %w", err)
 	}
-	if err := bypass.AddBypassPath("/api/debug-bundles/upload/*"); err != nil {
+	if err := bypass.AddBypassPath("/api/debug-bundles/upload/*/*"); err != nil {
 		return nil, fmt.Errorf("failed to add debug bundle upload bypass path: %w", err)
 	}
 
