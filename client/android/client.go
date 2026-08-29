@@ -32,7 +32,6 @@ import (
 	"github.com/netbirdio/netbird/formatter"
 	"github.com/netbirdio/netbird/route"
 	"github.com/netbirdio/netbird/shared/management/domain"
-	types "github.com/netbirdio/netbird/upload-server/types"
 )
 
 // AnonymizeLevelDefault and AnonymizeLevelStrict are the accepted
@@ -399,7 +398,11 @@ func (c *Client) DebugBundle(platformFiles PlatformFiles, anonymize bool, anonym
 	uploadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	key, err := debug.UploadDebugBundle(uploadCtx, types.DefaultBundleURL, cfg.ManagementURL.String(), path, false)
+	uploadURL, err := debug.ManagementBundleURL(cfg.ManagementURL.String())
+	if err != nil {
+		return "", fmt.Errorf("resolve debug bundle upload service: %w", err)
+	}
+	key, err := debug.UploadDebugBundle(uploadCtx, uploadURL, cfg.ManagementURL.String(), path, false)
 	if err != nil {
 		return "", fmt.Errorf("upload debug bundle: %w", err)
 	}

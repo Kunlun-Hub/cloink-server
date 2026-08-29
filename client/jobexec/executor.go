@@ -10,7 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/client/internal/debug"
-	"github.com/netbirdio/netbird/upload-server/types"
 )
 
 const (
@@ -54,7 +53,11 @@ func (e *Executor) BundleJob(ctx context.Context, debugBundleDependencies debug.
 		}
 	}()
 
-	key, err := debug.UploadDebugBundle(ctx, types.DefaultBundleURL, mgmURL, path, false)
+	uploadURL, err := debug.ManagementBundleURL(mgmURL)
+	if err != nil {
+		return "", fmt.Errorf("resolve debug bundle upload service: %w", err)
+	}
+	key, err := debug.UploadDebugBundle(ctx, uploadURL, mgmURL, path, false)
 	if err != nil {
 		log.Errorf("failed to upload debug bundle: %v", err)
 		return "", fmt.Errorf("upload debug bundle: %w", err)
