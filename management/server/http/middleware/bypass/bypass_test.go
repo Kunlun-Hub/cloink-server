@@ -87,6 +87,13 @@ func TestAuthBypass(t *testing.T) {
 			expectHTTPCode: http.StatusOK,
 		},
 		{
+			name:           "Two wildcard path segments match bypass",
+			pathToAdd:      "/upload/*/*",
+			testPath:       "/upload/namespace/bundle",
+			expectBypass:   true,
+			expectHTTPCode: http.StatusOK,
+		},
+		{
 			name:           "Similar path does not match bypass",
 			pathToAdd:      "/webhook",
 			testPath:       "/webhooking",
