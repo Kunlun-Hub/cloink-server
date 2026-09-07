@@ -67,12 +67,12 @@ func TestErrSetupKeyOnSSOExpiredPeer(t *testing.T) {
 		t.Fatalf("errSetupKeyOnSSOExpiredPeer must be a PermissionDenied gRPC error")
 	}
 
-	// Message must actually mention SSO and `netbird up` so it is
+	// Message must actually mention SSO and `cloink up` so it is
 	// actionable for the end user. Loose substring checks keep the
 	// test resilient to copy edits.
 	s, _ := status.FromError(errSetupKeyOnSSOExpiredPeer)
 	msg := strings.ToLower(s.Message())
-	for _, want := range []string{"sso", "netbird up"} {
+	for _, want := range []string{"sso", "cloink up"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("sentinel message should contain %q, got %q", want, s.Message())
 		}

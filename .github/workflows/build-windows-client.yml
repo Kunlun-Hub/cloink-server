@@ -81,7 +81,7 @@ jobs:
 
       - name: Generate syso resources (icon + version info)
         run: |
-          goversioninfo -icon client/ui/build/windows/icon.ico -manifest client/manifest.xml \
+          goversioninfo -64 -icon client/ui/build/windows/icon.ico -manifest client/manifest.xml \
             -product-name Cloink -copyright "Cloink" \
             -ver-major ${{ steps.ver.outputs.major }} -ver-minor ${{ steps.ver.outputs.minor }} \
             -ver-patch ${{ steps.ver.outputs.patch }} -ver-build 0 \

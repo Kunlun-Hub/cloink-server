@@ -41,7 +41,7 @@ func TestShouldEnableAutostartDefault(t *testing.T) {
 		{
 			name:       "existing installation (upgrade) skips",
 			mutate:     func(s *autostartDefaultState) { s.priorInstall = true },
-			wantReason: "existing NetBird installation",
+			wantReason: "existing Cloink installation",
 		},
 		{
 			name: "unsupported wins over every other guard",

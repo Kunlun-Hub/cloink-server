@@ -26,7 +26,7 @@ import (
 	"github.com/netbirdio/netbird/client/internal/portforward"
 	"github.com/netbirdio/netbird/client/internal/rosenpass"
 	"github.com/netbirdio/netbird/client/internal/stdnet"
-	"github.com/netbirdio/netbird/client/netstate"
+	"github.com/netbirdio/netbird/client/netevents"
 	"github.com/netbirdio/netbird/route"
 	relayClient "github.com/netbirdio/netbird/shared/relay/client"
 )
@@ -101,9 +101,9 @@ type ConnConfig struct {
 	// ICEConfig ICE protocol configuration
 	ICEConfig icemaker.Config
 
-	// NetworkState gates the reconnection guard on OS-reported network
+	// NetMgr gates the reconnection guard on OS-reported network
 	// availability; nil disables gating.
-	NetworkState *netstate.State
+	NetMgr *netevents.Manager
 }
 
 type Conn struct {
@@ -272,7 +272,7 @@ func (conn *Conn) open(engineCtx context.Context, firstPacket []byte) error {
 		conn.handshaker.AddICEListener(conn.workerICE.OnNewOffer)
 	}
 
-	conn.guard = guard.NewGuard(conn.Log, conn.isConnectedOnAllWay, conn.config.Timeout, conn.srWatcher, conn.config.NetworkState)
+	conn.guard = guard.NewGuard(conn.Log, conn.isConnectedOnAllWay, conn.config.Timeout, conn.srWatcher, conn.config.NetMgr)
 
 	conn.wg.Add(1)
 	go func() {

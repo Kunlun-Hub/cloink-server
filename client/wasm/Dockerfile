@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -20,4 +20,3 @@ COPY client/wasm/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /out/ /usr/share/nginx/html/
 
 EXPOSE 80
-

@@ -341,7 +341,7 @@ func Test_AccountSettings_SaveAndRetrieve(t *testing.T) {
 		settings := types.Settings{}
 		numOfExportedFields, err := populateFields.PopulateAll(reflect.ValueOf(&settings).Elem())
 		assert.NoError(t, err)
-		assert.Equal(t, 34, numOfExportedFields)
+		assert.Equal(t, 39, numOfExportedFields, "all persisted account settings must be exercised")
 		account.Settings = &settings
 
 		err = store.SaveAccount(context.Background(), account)
@@ -616,7 +616,7 @@ func TestSqlStore_SavePeer(t *testing.T) {
 
 		numOfFields, err := populateFields.PopulateAll(reflectedMetadata)
 		assert.NoError(t, err)
-		assert.Equal(t, 32, numOfFields)
+		assert.Equal(t, 33, numOfFields)
 
 		// save status of non-existing peer
 		peer := &nbpeer.Peer{

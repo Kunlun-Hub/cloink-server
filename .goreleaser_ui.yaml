@@ -92,6 +92,11 @@ nfpms:
         dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
         dst: /usr/share/pixmaps/cloink-ui.png
+      # Names the polkit action for the elevation prompt the app raises when an
+      # unprivileged user changes a privileged setting; without it the dialog
+      # shows a raw command line.
+      - src: client/ui/build/linux/polkit/io.cloink.settings.policy
+        dst: /usr/share/polkit-1/actions/io.cloink.settings.policy
     dependencies:
       - cloink (>= 0.77.0)
       - libgtk-4-1 (>= 4.14)
@@ -116,6 +121,11 @@ nfpms:
         dst: /usr/share/applications/io.cloink.client.desktop
       - src: client/ui/build/appicon.png
         dst: /usr/share/pixmaps/cloink-ui.png
+      # Names the polkit action for the elevation prompt the app raises when an
+      # unprivileged user changes a privileged setting; without it the dialog
+      # shows a raw command line.
+      - src: client/ui/build/linux/polkit/io.cloink.settings.policy
+        dst: /usr/share/polkit-1/actions/io.cloink.settings.policy
     dependencies:
       - cloink >= 0.77.0
       - (gtk4 >= 4.14 or libgtk-4-1 >= 4.14)
