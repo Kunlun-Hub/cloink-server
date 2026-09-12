@@ -1,8 +1,6 @@
 module github.com/netbirdio/netbird
 
-go 1.25.5
-
-toolchain go1.25.12
+go 1.26.0
 
 require (
 	cunicu.li/go-rosenpass v0.5.42
@@ -19,8 +17,8 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/vishvananda/netlink v1.3.1
-	golang.org/x/crypto v0.55.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/sys v0.48.0
 	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
 	golang.zx2c4.com/wireguard/windows v0.5.3
@@ -127,12 +125,12 @@ require (
 	goauthentik.io/api/v3 v3.2023051.3
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/mobile v0.0.0-20260816165457-f98cc9b3c733
-	golang.org/x/mod v0.39.0
-	golang.org/x/net v0.58.0
-	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.22.0
-	golang.org/x/term v0.45.0
-	golang.org/x/time v0.15.0
+	golang.org/x/mod v0.41.0
+	golang.org/x/net v0.59.0
+	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/term v0.46.0
+	golang.org/x/time v0.16.0
 	google.golang.org/api v0.276.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9
 	gopkg.in/yaml.v3 v3.0.1
@@ -313,7 +311,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260319201613-d00831a3d3e7 // indirect
