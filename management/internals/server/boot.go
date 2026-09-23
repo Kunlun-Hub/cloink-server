@@ -189,6 +189,14 @@ func (s *BaseServer) IDPHandler() http.Handler {
 	router.Handle("/oauth2/auth", loginPreferenceHandler)
 	router.Handle("/oauth2/auth/{connector}", loginPreferenceHandler)
 	router.Handle("/oauth2/callback/{connector}", idphandler.NewWeChatWorkCallbackHandler(embeddedIdP))
+
+	passwordResetHandler, err := idphandler.NewPasswordResetHandler(s.AccountManager(), embeddedIdP)
+	if err != nil {
+		log.Fatalf("failed to create password reset handler: %v", err)
+	}
+	router.Handle(idphandler.ForgotPasswordPath, http.HandlerFunc(passwordResetHandler.ForgotPassword))
+	router.Handle(idphandler.ResetPasswordPath, http.HandlerFunc(passwordResetHandler.ResetPassword))
+
 	router.PathPrefix("/oauth2").Handler(cors.AllowAll().Handler(embeddedIdP.Handler()))
 	return router
 }

@@ -217,6 +217,21 @@ func (mr *MockStoreMockRecorder) CompletePeerJob(ctx, job any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompletePeerJob", reflect.TypeOf((*MockStore)(nil).CompletePeerJob), ctx, job)
 }
 
+// ConsumePasswordResetToken mocks base method.
+func (m *MockStore) ConsumePasswordResetToken(ctx context.Context, id string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConsumePasswordResetToken", ctx, id)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConsumePasswordResetToken indicates an expected call of ConsumePasswordResetToken.
+func (mr *MockStoreMockRecorder) ConsumePasswordResetToken(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConsumePasswordResetToken", reflect.TypeOf((*MockStore)(nil).ConsumePasswordResetToken), ctx, id)
+}
+
 // CountAccountsByPrivateDomain mocks base method.
 func (m *MockStore) CountAccountsByPrivateDomain(ctx context.Context, arg1 string) (int64, error) {
 	m.ctrl.T.Helper()
@@ -245,6 +260,21 @@ func (m *MockStore) CountEphemeralServicesByPeer(ctx context.Context, lockStreng
 func (mr *MockStoreMockRecorder) CountEphemeralServicesByPeer(ctx, lockStrength, accountID, peerID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountEphemeralServicesByPeer", reflect.TypeOf((*MockStore)(nil).CountEphemeralServicesByPeer), ctx, lockStrength, accountID, peerID)
+}
+
+// CountPasswordResetTokensSince mocks base method.
+func (m *MockStore) CountPasswordResetTokensSince(ctx context.Context, emailHash string, since time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountPasswordResetTokensSince", ctx, emailHash, since)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountPasswordResetTokensSince indicates an expected call of CountPasswordResetTokensSince.
+func (mr *MockStoreMockRecorder) CountPasswordResetTokensSince(ctx, emailHash, since any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPasswordResetTokensSince", reflect.TypeOf((*MockStore)(nil).CountPasswordResetTokensSince), ctx, emailHash, since)
 }
 
 // CountProxiesByAccountID mocks base method.
@@ -585,6 +615,20 @@ func (mr *MockStoreMockRecorder) DeleteDNSRecord(ctx, accountID, zoneID, recordI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDNSRecord", reflect.TypeOf((*MockStore)(nil).DeleteDNSRecord), ctx, accountID, zoneID, recordID)
 }
 
+// DeleteExpiredPasswordResetTokens mocks base method.
+func (m *MockStore) DeleteExpiredPasswordResetTokens(ctx context.Context, now time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteExpiredPasswordResetTokens", ctx, now)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteExpiredPasswordResetTokens indicates an expected call of DeleteExpiredPasswordResetTokens.
+func (mr *MockStoreMockRecorder) DeleteExpiredPasswordResetTokens(ctx, now any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredPasswordResetTokens", reflect.TypeOf((*MockStore)(nil).DeleteExpiredPasswordResetTokens), ctx, now)
+}
+
 // DeleteGroup mocks base method.
 func (m *MockStore) DeleteGroup(ctx context.Context, accountID, groupID string) error {
 	m.ctrl.T.Helper()
@@ -725,6 +769,20 @@ func (m *MockStore) DeletePAT(ctx context.Context, userID, patID string) error {
 func (mr *MockStoreMockRecorder) DeletePAT(ctx, userID, patID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePAT", reflect.TypeOf((*MockStore)(nil).DeletePAT), ctx, userID, patID)
+}
+
+// DeletePasswordResetTokensByEmailHash mocks base method.
+func (m *MockStore) DeletePasswordResetTokensByEmailHash(ctx context.Context, emailHash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePasswordResetTokensByEmailHash", ctx, emailHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePasswordResetTokensByEmailHash indicates an expected call of DeletePasswordResetTokensByEmailHash.
+func (mr *MockStoreMockRecorder) DeletePasswordResetTokensByEmailHash(ctx, emailHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePasswordResetTokensByEmailHash", reflect.TypeOf((*MockStore)(nil).DeletePasswordResetTokensByEmailHash), ctx, emailHash)
 }
 
 // DeletePeer mocks base method.
@@ -2392,6 +2450,21 @@ func (mr *MockStoreMockRecorder) GetPATByID(ctx, lockStrength, userID, patID any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPATByID", reflect.TypeOf((*MockStore)(nil).GetPATByID), ctx, lockStrength, userID, patID)
 }
 
+// GetPasswordResetByHashedToken mocks base method.
+func (m *MockStore) GetPasswordResetByHashedToken(ctx context.Context, lockStrength LockingStrength, hashedToken string) (*types3.PasswordResetRecord, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPasswordResetByHashedToken", ctx, lockStrength, hashedToken)
+	ret0, _ := ret[0].(*types3.PasswordResetRecord)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPasswordResetByHashedToken indicates an expected call of GetPasswordResetByHashedToken.
+func (mr *MockStoreMockRecorder) GetPasswordResetByHashedToken(ctx, lockStrength, hashedToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPasswordResetByHashedToken", reflect.TypeOf((*MockStore)(nil).GetPasswordResetByHashedToken), ctx, lockStrength, hashedToken)
+}
+
 // GetPeerByID mocks base method.
 func (m *MockStore) GetPeerByID(ctx context.Context, lockStrength LockingStrength, accountID, peerID string) (*peer.Peer, error) {
 	m.ctrl.T.Helper()
@@ -3771,6 +3844,20 @@ func (m *MockStore) SavePAT(ctx context.Context, pat *types3.PersonalAccessToken
 func (mr *MockStoreMockRecorder) SavePAT(ctx, pat any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePAT", reflect.TypeOf((*MockStore)(nil).SavePAT), ctx, pat)
+}
+
+// SavePasswordResetToken mocks base method.
+func (m *MockStore) SavePasswordResetToken(ctx context.Context, record *types3.PasswordResetRecord) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SavePasswordResetToken", ctx, record)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SavePasswordResetToken indicates an expected call of SavePasswordResetToken.
+func (mr *MockStoreMockRecorder) SavePasswordResetToken(ctx, record any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePasswordResetToken", reflect.TypeOf((*MockStore)(nil).SavePasswordResetToken), ctx, record)
 }
 
 // SavePeer mocks base method.

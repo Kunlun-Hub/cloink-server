@@ -37,12 +37,18 @@ type PublicRelease struct {
 const EnvReleaseAPIURL = "CLOINK_RELEASE_API_URL"
 
 const (
-	DefaultReleaseAPIURL = "https://one.4w.ink/api/version-releases/public"
-	releaseSignatureV1   = "cloink-release-v1"
-	updatePublicKeyPEM   = `-----BEGIN PUBLIC KEY-----
+	releaseSignatureV1 = "cloink-release-v1"
+	updatePublicKeyPEM = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEARwD+OWz6NI8nYVgPMyGtgsLtkqxUcb+JEu+0RK+MGj8=
 -----END PUBLIC KEY-----`
 )
+
+// DefaultReleaseAPIURL is the built-in release metadata endpoint. It is a
+// variable rather than a constant so that environment-specific client builds
+// can point their update checks at their own deployment with
+// -ldflags "-X github.com/netbirdio/netbird/version.DefaultReleaseAPIURL=...".
+// The value below stays the general default for every other environment.
+var DefaultReleaseAPIURL = "https://one.4w.ink/api/version-releases/public"
 
 func publicReleaseAPIURL() (string, error) {
 	value := strings.TrimSpace(os.Getenv(EnvReleaseAPIURL))

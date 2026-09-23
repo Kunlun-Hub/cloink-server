@@ -45,6 +45,16 @@ type Manager interface {
 	DeleteUser(ctx context.Context, accountID, initiatorUserID string, targetUserID string) error
 	DeleteRegularUsers(ctx context.Context, accountID, initiatorUserID string, targetUserIDs []string, userInfos map[string]*types.UserInfo) error
 	UpdateUserPassword(ctx context.Context, accountID, currentUserID, targetUserID string, oldPassword, newPassword string) error
+	// RequestPasswordReset issues a self-service reset link for the given email.
+	// It never reveals whether the email belongs to an account.
+	RequestPasswordReset(ctx context.Context, email string) error
+	// CreatePasswordResetLink issues a reset link on behalf of an administrator and
+	// returns the URL so it can be handed to the user when email delivery fails.
+	CreatePasswordResetLink(ctx context.Context, accountID, initiatorUserID, targetUserID string) (*types.PasswordResetLink, error)
+	// ResetPasswordWithToken consumes a reset token and sets a new password.
+	ResetPasswordWithToken(ctx context.Context, token, newPassword string) error
+	// ValidatePasswordResetToken checks that a reset link is still usable.
+	ValidatePasswordResetToken(ctx context.Context, token string) error
 	InviteUser(ctx context.Context, accountID string, initiatorUserID string, targetUserID string) error
 	ApproveUser(ctx context.Context, accountID, initiatorUserID, targetUserID string) (*types.UserInfo, error)
 	RejectUser(ctx context.Context, accountID, initiatorUserID, targetUserID string) error

@@ -6,8 +6,7 @@ import { Update as UpdateSvc } from "@bindings/services";
 import { Button } from "@/components/buttons/Button";
 import { useClientVersion } from "@/contexts/ClientVersionContext";
 import { cn } from "@/lib/cn";
-
-const CLOINK_RELEASES = "https://cloink.4w.ink/api/version-releases/public?channel=stable&latest=true";
+import { STABLE_RELEASES_URL } from "@/lib/deployment";
 
 function openUrl(url: string) {
     Browser.OpenURL(url).catch(() => {
@@ -18,7 +17,7 @@ function openUrl(url: string) {
 function openInstallerDownload() {
     UpdateSvc.DownloadURL()
         .then(openUrl)
-        .catch(() => openUrl(CLOINK_RELEASES));
+        .catch(() => openUrl(STABLE_RELEASES_URL));
 }
 
 export function UpdateVersionCard() {
@@ -33,7 +32,7 @@ export function UpdateVersionCard() {
             <Card className={"max-w-lg"}>
                 <div>
                     <Title>{t(titleKey, { version: updateVersion })}</Title>
-                    <Link url={CLOINK_RELEASES}>
+                    <Link url={STABLE_RELEASES_URL}>
                         {t("update.card.whatsNew")}
                     </Link>
                 </div>
@@ -57,7 +56,7 @@ export function UpdateVersionCard() {
                 <Title>{t("update.card.onLatestVersion")}</Title>
                 <p className={"text-sm text-nb-gray-300"}>{t("update.card.autoCheckInterval")}</p>
             </div>
-            <Button variant={"primary"} size={"xs"} onClick={() => openUrl(CLOINK_RELEASES)}>
+            <Button variant={"primary"} size={"xs"} onClick={() => openUrl(STABLE_RELEASES_URL)}>
                 <NotepadText size={14} />
                 {t("update.card.changelog")}
             </Button>

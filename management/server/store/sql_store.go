@@ -146,6 +146,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&agentNetworkTypes.AgentNetworkUsage{}, &agentNetworkTypes.AgentNetworkUsageGroup{},
 		&networktraffic.Event{},
 		&types.EmailSettings{},
+		&types.PasswordResetRecord{},
 		&types.VersionRelease{}, &types.VersionReleaseArtifact{},
 	)
 	if err != nil {

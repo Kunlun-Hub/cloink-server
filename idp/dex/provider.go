@@ -741,6 +741,44 @@ func (p *Provider) UpdateUserPassword(ctx context.Context, userID string, oldPas
 	return nil
 }
 
+// SetUserPassword replaces a user's password without verifying the current
+// one. It backs recovery flows (email reset link, administrator action) where
+// the caller has proven identity by other means.
+func (p *Provider) SetUserPassword(ctx context.Context, userID string, newPassword string) error {
+	user, err := p.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash new password: %w", err)
+	}
+
+	if err := p.storage.UpdatePassword(ctx, user.Email, func(old storage.Password) (storage.Password, error) {
+		old.Hash = newHash
+		return old, nil
+	}); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteUserAuthSessions invalidates the user's existing local sign-in
+// sessions so a password change also signs them out everywhere.
+func (p *Provider) DeleteUserAuthSessions(ctx context.Context, userID string) error {
+	rawUserID, _, err := DecodeDexUserID(userID)
+	if err != nil || rawUserID == "" {
+		rawUserID = userID
+	}
+
+	if err := p.storage.DeleteAuthSession(ctx, rawUserID, LocalConnectorID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("failed to delete auth session: %w", err)
+	}
+	return nil
+}
+
 // GetIssuer returns the OIDC issuer URL.
 func (p *Provider) GetIssuer() string {
 	if p.config == nil {

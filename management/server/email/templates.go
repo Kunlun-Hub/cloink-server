@@ -35,6 +35,15 @@ func DefaultTemplates() map[string]types.EmailTemplate {
 <p><a href="{{.approval.url}}">前往审批</a></p>`,
 			BodyText: "有新用户等待审批。\n\n用户：{{.user.name}}（{{.user.email}}）\n审批入口：{{.approval.url}}",
 		},
+		string(types.EmailTemplatePasswordReset): {
+			Enabled: true,
+			Subject: "重置你的 Cloink 密码",
+			BodyHTML: `<p>我们收到了重置你的 Cloink 账号密码的请求。</p>
+<p>账号：{{.user.email}}</p>
+<p><a href="{{.reset.url}}">设置新密码</a></p>
+<p>链接将在 {{.reset.expires_at}} 过期。如果这不是你本人的操作，请忽略这封邮件，你的密码不会发生变化。</p>`,
+			BodyText: "我们收到了重置你的 Cloink 账号密码的请求。\n\n账号：{{.user.email}}\n设置新密码：{{.reset.url}}\n\n链接将在 {{.reset.expires_at}} 过期。如果这不是你本人的操作，请忽略这封邮件，你的密码不会发生变化。",
+		},
 		string(types.EmailTemplateDevicePendingApproval): {
 			Enabled: true,
 			Subject: "有新设备等待审批",

@@ -33,12 +33,19 @@ const (
 	// managementLegacyPortString is the port that was used before by the Management gRPC server.
 	// It is used for backward compatibility now.
 	managementLegacyPortString = "33073"
-	// DefaultManagementURL points to Cloink's hosted management endpoint.
-	DefaultManagementURL = "https://cloink.4w.ink:443"
 	// oldDefaultManagementURL points to the NetBird's old cloud management endpoint
 	oldDefaultManagementURL = "https://api.wiretrustee.com:443"
-	// DefaultAdminURL points to Cloink's hosted management console.
-	DefaultAdminURL = "https://cloink.4w.ink:443"
+)
+
+// DefaultManagementURL points to Cloink's hosted management endpoint and
+// DefaultAdminURL to its hosted management console. Both are variables rather
+// than constants so that environment-specific client builds can bake in their
+// own deployment with
+// -ldflags "-X github.com/netbirdio/netbird/client/internal/profilemanager.DefaultManagementURL=...".
+// The values below stay the general default for every other environment.
+var (
+	DefaultManagementURL = "https://cloink.4w.ink:443"
+	DefaultAdminURL      = "https://cloink.4w.ink:443"
 )
 
 // mgmProber is the subset of management client needed for URL migration probes.

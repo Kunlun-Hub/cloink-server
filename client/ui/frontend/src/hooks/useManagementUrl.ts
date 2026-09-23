@@ -2,8 +2,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "@/contexts/SettingsContext.tsx";
 import { useConfirm } from "@/contexts/DialogContext.tsx";
+import { MANAGEMENT_URL } from "@/lib/deployment";
 
-export const CLOUD_MANAGEMENT_URL = "https://cloink.4w.ink:443";
+// The deployment this client ships with. Environment-specific builds point it
+// at their own management server, so "Cloud" mode never sends users to a
+// different operator's deployment.
+export const CLOUD_MANAGEMENT_URL = MANAGEMENT_URL;
 const CLOUD_MANAGEMENT_URLS = new Set([
     CLOUD_MANAGEMENT_URL,
     "https://api.wiretrustee.com:443", // legacy cloud endpoint

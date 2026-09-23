@@ -34,6 +34,7 @@ func AddEndpoints(accountManager account.Manager, router *mux.Router) {
 	router.HandleFunc("/users/{userId}/approve", userHandler.approveUser).Methods("POST", "OPTIONS")
 	router.HandleFunc("/users/{userId}/reject", userHandler.rejectUser).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/users/{userId}/password", userHandler.changePassword).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/users/{userId}/password-reset", userHandler.createPasswordResetLink).Methods("POST", "OPTIONS")
 	addUsersTokensEndpoint(accountManager, router)
 }
 
@@ -416,6 +417,36 @@ func (h *handler) rejectUser(w http.ResponseWriter, r *http.Request) {
 type passwordChangeRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
+}
+
+// createPasswordResetLink is a POST request that issues a password reset link
+// for a user and returns it, so an administrator can pass it on when the user
+// cannot receive email.
+func (h *handler) createPasswordResetLink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.WriteErrorResponse("wrong HTTP method", http.StatusMethodNotAllowed, w)
+		return
+	}
+
+	targetUserID := mux.Vars(r)["userId"]
+	if len(targetUserID) == 0 {
+		util.WriteErrorResponse("invalid user ID", http.StatusBadRequest, w)
+		return
+	}
+
+	userAuth, err := nbcontext.GetUserAuthFromContext(r.Context())
+	if err != nil {
+		util.WriteError(r.Context(), err, w)
+		return
+	}
+
+	link, err := h.accountManager.CreatePasswordResetLink(r.Context(), userAuth.AccountId, userAuth.UserId, targetUserID)
+	if err != nil {
+		util.WriteError(r.Context(), err, w)
+		return
+	}
+
+	util.WriteJSONObject(r.Context(), w, link)
 }
 
 // changePassword is a PUT request to change user's password.

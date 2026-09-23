@@ -219,6 +219,21 @@ func (mr *MockManagerMockRecorder) CreatePAT(ctx, accountID, initiatorUserID, ta
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePAT", reflect.TypeOf((*MockManager)(nil).CreatePAT), ctx, accountID, initiatorUserID, targetUserID, tokenName, expiresIn)
 }
 
+// CreatePasswordResetLink mocks base method.
+func (m *MockManager) CreatePasswordResetLink(ctx context.Context, accountID, initiatorUserID, targetUserID string) (*types.PasswordResetLink, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePasswordResetLink", ctx, accountID, initiatorUserID, targetUserID)
+	ret0, _ := ret[0].(*types.PasswordResetLink)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreatePasswordResetLink indicates an expected call of CreatePasswordResetLink.
+func (mr *MockManagerMockRecorder) CreatePasswordResetLink(ctx, accountID, initiatorUserID, targetUserID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePasswordResetLink", reflect.TypeOf((*MockManager)(nil).CreatePasswordResetLink), ctx, accountID, initiatorUserID, targetUserID)
+}
+
 // CreatePeerJob mocks base method.
 func (m *MockManager) CreatePeerJob(ctx context.Context, accountID, peerID, userID string, job *types.Job) error {
 	m.ctrl.T.Helper()
@@ -1412,6 +1427,20 @@ func (mr *MockManagerMockRecorder) RejectUser(ctx, accountID, initiatorUserID, t
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectUser", reflect.TypeOf((*MockManager)(nil).RejectUser), ctx, accountID, initiatorUserID, targetUserID)
 }
 
+// RequestPasswordReset mocks base method.
+func (m *MockManager) RequestPasswordReset(ctx context.Context, email string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestPasswordReset", ctx, email)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RequestPasswordReset indicates an expected call of RequestPasswordReset.
+func (mr *MockManagerMockRecorder) RequestPasswordReset(ctx, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestPasswordReset", reflect.TypeOf((*MockManager)(nil).RequestPasswordReset), ctx, email)
+}
+
 // ResendUserInvite mocks base method.
 func (m *MockManager) ResendUserInvite(ctx context.Context, accountID, initiatorUserID, inviteID string, expiresIn int) (*types.UserInvite, error) {
 	m.ctrl.T.Helper()
@@ -1422,9 +1451,23 @@ func (m *MockManager) ResendUserInvite(ctx context.Context, accountID, initiator
 }
 
 // ResendUserInvite indicates an expected call of ResendUserInvite.
-func (mr *MockManagerMockRecorder) ResendUserInvite(ctx, accountID, initiatorUserID, inviteID, expiresIn interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) ResendUserInvite(ctx, accountID, initiatorUserID, inviteID, expiresIn any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResendUserInvite", reflect.TypeOf((*MockManager)(nil).ResendUserInvite), ctx, accountID, initiatorUserID, inviteID, expiresIn)
+}
+
+// ResetPasswordWithToken mocks base method.
+func (m *MockManager) ResetPasswordWithToken(ctx context.Context, token, newPassword string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetPasswordWithToken", ctx, token, newPassword)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetPasswordWithToken indicates an expected call of ResetPasswordWithToken.
+func (mr *MockManagerMockRecorder) ResetPasswordWithToken(ctx, token, newPassword any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetPasswordWithToken", reflect.TypeOf((*MockManager)(nil).ResetPasswordWithToken), ctx, token, newPassword)
 }
 
 // SaveDNSSettings mocks base method.
@@ -1815,4 +1858,18 @@ func (m *MockManager) UpdateUserPassword(ctx context.Context, accountID, current
 func (mr *MockManagerMockRecorder) UpdateUserPassword(ctx, accountID, currentUserID, targetUserID, oldPassword, newPassword any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUserPassword", reflect.TypeOf((*MockManager)(nil).UpdateUserPassword), ctx, accountID, currentUserID, targetUserID, oldPassword, newPassword)
+}
+
+// ValidatePasswordResetToken mocks base method.
+func (m *MockManager) ValidatePasswordResetToken(ctx context.Context, token string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ValidatePasswordResetToken", ctx, token)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ValidatePasswordResetToken indicates an expected call of ValidatePasswordResetToken.
+func (mr *MockManagerMockRecorder) ValidatePasswordResetToken(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidatePasswordResetToken", reflect.TypeOf((*MockManager)(nil).ValidatePasswordResetToken), ctx, token)
 }

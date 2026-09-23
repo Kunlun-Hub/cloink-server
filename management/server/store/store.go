@@ -119,6 +119,13 @@ type Store interface {
 	GetAccountUserInvites(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.UserInviteRecord, error)
 	DeleteUserInvite(ctx context.Context, inviteID string) error
 
+	SavePasswordResetToken(ctx context.Context, record *types.PasswordResetRecord) error
+	GetPasswordResetByHashedToken(ctx context.Context, lockStrength LockingStrength, hashedToken string) (*types.PasswordResetRecord, error)
+	ConsumePasswordResetToken(ctx context.Context, id string) (bool, error)
+	DeletePasswordResetTokensByEmailHash(ctx context.Context, emailHash string) error
+	CountPasswordResetTokensSince(ctx context.Context, emailHash string, since time.Time) (int64, error)
+	DeleteExpiredPasswordResetTokens(ctx context.Context, now time.Time) error
+
 	GetPATByID(ctx context.Context, lockStrength LockingStrength, userID, patID string) (*types.PersonalAccessToken, error)
 	GetUserPATs(ctx context.Context, lockStrength LockingStrength, userID string) ([]*types.PersonalAccessToken, error)
 	GetPATByHashedToken(ctx context.Context, lockStrength LockingStrength, hashedToken string) (*types.PersonalAccessToken, error)

@@ -21,11 +21,14 @@ const (
 	uiBinary      = "/Applications/Cloink.app"
 
 	defaultTempDir = "/var/lib/cloink/tmp-install"
-
-	pkgDownloadURL = "https://cloink.4w.ink/install"
 )
 
 var (
+	// pkgDownloadURL points at the console page that serves the macOS package.
+	// It is a variable so environment-specific builds can override it with
+	// -ldflags "-X ...=...".
+	pkgDownloadURL = "https://cloink.4w.ink/install"
+
 	binaryExtensions = []string{"pkg"}
 )
 

@@ -971,3 +971,116 @@ func TestChangePasswordEndpoint_WrongMethod(t *testing.T) {
 
 	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 }
+
+func TestCreatePasswordResetLinkEndpoint(t *testing.T) {
+	expiresAt := time.Now().Add(30 * time.Minute).UTC()
+
+	tt := []struct {
+		name                string
+		expectedStatus      int
+		targetUserID        string
+		mockLink            *types.PasswordResetLink
+		mockError           error
+		expectMockNotCalled bool
+	}{
+		{
+			name:           "returns the reset link",
+			expectedStatus: http.StatusOK,
+			targetUserID:   existingUserID,
+			mockLink: &types.PasswordResetLink{
+				URL:       "https://cloink.example.com/oauth2/reset-password?token=nbr_abc",
+				Email:     "user@example.com",
+				ExpiresAt: expiresAt,
+				EmailSent: true,
+			},
+		},
+		{
+			name:           "reports a failed delivery but still returns the link",
+			expectedStatus: http.StatusOK,
+			targetUserID:   existingUserID,
+			mockLink: &types.PasswordResetLink{
+				URL:       "https://cloink.example.com/oauth2/reset-password?token=nbr_abc",
+				Email:     "user@example.com",
+				ExpiresAt: expiresAt,
+				EmailSent: false,
+				EmailErr:  "smtp is unavailable",
+			},
+		},
+		{
+			name:           "user without a local password",
+			expectedStatus: http.StatusPreconditionFailed,
+			targetUserID:   existingUserID,
+			mockError:      status.Errorf(status.PreconditionFailed, "password reset is only available for accounts with an email and password"),
+		},
+		{
+			name:           "unknown user",
+			expectedStatus: http.StatusNotFound,
+			targetUserID:   "unknown-user",
+			mockError:      status.Errorf(status.NotFound, "user not found"),
+		},
+		{
+			name:                "missing user id",
+			expectedStatus:      http.StatusBadRequest,
+			targetUserID:        "",
+			expectMockNotCalled: true,
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mockCalled := false
+			am := &mock_server.MockAccountManager{
+				CreatePasswordResetLinkFunc: func(_ context.Context, _, _, _ string) (*types.PasswordResetLink, error) {
+					mockCalled = true
+					return tc.mockLink, tc.mockError
+				},
+			}
+			handler := newHandler(am)
+
+			reqPath := "/users/" + tc.targetUserID + "/password-reset"
+			req, err := http.NewRequest(http.MethodPost, reqPath, nil)
+			require.NoError(t, err)
+			req = mux.SetURLVars(req, map[string]string{"userId": tc.targetUserID})
+			req = nbcontext.SetUserAuthInRequest(req, auth.UserAuth{
+				AccountId: existingAccountID,
+				UserId:    existingUserID,
+			})
+
+			rr := httptest.NewRecorder()
+			handler.createPasswordResetLink(rr, req)
+
+			assert.Equal(t, tc.expectedStatus, rr.Code)
+
+			if tc.expectMockNotCalled {
+				assert.False(t, mockCalled, "mock should not have been called")
+				return
+			}
+			assert.True(t, mockCalled, "the manager must issue the link")
+
+			if tc.mockError == nil {
+				var response types.PasswordResetLink
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
+				assert.Equal(t, tc.mockLink.URL, response.URL)
+				assert.Equal(t, tc.mockLink.EmailSent, response.EmailSent)
+				assert.Equal(t, tc.mockLink.EmailErr, response.EmailErr)
+			}
+		})
+	}
+}
+
+func TestCreatePasswordResetLinkEndpoint_WrongMethod(t *testing.T) {
+	am := &mock_server.MockAccountManager{}
+	handler := newHandler(am)
+
+	req, err := http.NewRequest(http.MethodGet, "/users/test-user/password-reset", nil)
+	require.NoError(t, err)
+	req = nbcontext.SetUserAuthInRequest(req, auth.UserAuth{
+		AccountId: existingAccountID,
+		UserId:    existingUserID,
+	})
+
+	rr := httptest.NewRecorder()
+	handler.createPasswordResetLink(rr, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+}

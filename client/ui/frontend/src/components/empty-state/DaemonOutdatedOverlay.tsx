@@ -5,9 +5,7 @@ import { Browser } from "@wailsio/runtime";
 import { Version } from "@bindings/services";
 import { Button } from "@/components/buttons/Button";
 import { useStatus } from "@/contexts/StatusContext.tsx";
-
-const RELEASES_URL = "https://cloink.4w.ink/api/version-releases/public?channel=stable&latest=true";
-const RC_RELEASES_URL = "https://cloink.4w.ink/api/version-releases/public?channel=rc&latest=true";
+import { RC_RELEASES_URL, STABLE_RELEASES_URL } from "@/lib/deployment";
 
 function openUrl(url: string) {
     Browser.OpenURL(url).catch(() => globalThis.open(url, "_blank"));
@@ -21,7 +19,7 @@ export const DaemonOutdatedOverlay = () => {
     const clientVersion = status?.daemonVersion ?? "—";
 
     const isRc = /-rc/i.test(guiVersion) || /-rc/i.test(clientVersion);
-    const downloadUrl = isRc ? RC_RELEASES_URL : RELEASES_URL;
+    const downloadUrl = isRc ? RC_RELEASES_URL : STABLE_RELEASES_URL;
 
     useEffect(() => {
         if (!isDaemonOutdated) return;

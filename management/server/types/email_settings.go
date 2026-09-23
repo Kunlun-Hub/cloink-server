@@ -16,6 +16,7 @@ const (
 	EmailTemplateInviteAccepted        EmailTemplateKind = "invite_accepted"
 	EmailTemplateUserPendingApproval   EmailTemplateKind = "user_pending_approval"
 	EmailTemplateDevicePendingApproval EmailTemplateKind = "device_pending_approval"
+	EmailTemplatePasswordReset         EmailTemplateKind = "password_reset"
 )
 
 const (

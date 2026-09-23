@@ -49,6 +49,30 @@ func (am *DefaultAccountManager) sendInviteCreated(ctx context.Context, accountI
 	return am.emailService.Notify(ctx, accountID, types.EmailTemplateInviteUser, data)
 }
 
+// sendPasswordResetEmail delivers the password recovery link to the user who
+// requested it. The link is only ever sent to the account's own address.
+func (am *DefaultAccountManager) sendPasswordResetEmail(ctx context.Context, accountID string, user *types.User, link *types.PasswordResetLink, plainToken string) error {
+	if am.emailService == nil || user == nil || link == nil {
+		return fmt.Errorf("email service is not configured")
+	}
+
+	data := emailmanager.TemplateData{
+		"recipients": []string{user.Email},
+		"account":    am.emailAccountData(ctx, accountID),
+		"dashboard":  am.emailDashboardData(),
+		"user":       emailUserData(user.Name, user.Email, string(user.Role)),
+		"reset": map[string]any{
+			"url":        am.passwordResetURL(plainToken),
+			"expires_at": formatEmailDisplayTime(link.ExpiresAt),
+		},
+	}
+
+	if notifier, ok := am.emailService.(emailmanager.StrictNotifier); ok {
+		return notifier.NotifyStrict(ctx, accountID, types.EmailTemplatePasswordReset, data)
+	}
+	return am.emailService.Notify(ctx, accountID, types.EmailTemplatePasswordReset, data)
+}
+
 func (am *DefaultAccountManager) notifyUserCreated(ctx context.Context, accountID string, user *types.User) {
 	if am.emailService == nil || user == nil || strings.TrimSpace(user.Email) == "" {
 		return

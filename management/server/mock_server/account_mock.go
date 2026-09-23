@@ -80,6 +80,10 @@ type MockAccountManager struct {
 	DeleteUserFunc                        func(ctx context.Context, accountID string, initiatorUserID string, targetUserID string) error
 	DeleteRegularUsersFunc                func(ctx context.Context, accountID, initiatorUserID string, targetUserIDs []string, userInfos map[string]*types.UserInfo) error
 	UpdateUserPasswordFunc                func(ctx context.Context, accountID, currentUserID, targetUserID string, oldPassword, newPassword string) error
+	RequestPasswordResetFunc              func(ctx context.Context, email string) error
+	CreatePasswordResetLinkFunc           func(ctx context.Context, accountID, initiatorUserID, targetUserID string) (*types.PasswordResetLink, error)
+	ResetPasswordWithTokenFunc            func(ctx context.Context, token, newPassword string) error
+	ValidatePasswordResetTokenFunc        func(ctx context.Context, token string) error
 	CreatePATFunc                         func(ctx context.Context, accountID string, initiatorUserID string, targetUserId string, tokenName string, expiresIn int) (*types.PersonalAccessTokenGenerated, error)
 	DeletePATFunc                         func(ctx context.Context, accountID string, initiatorUserID string, targetUserId string, tokenID string) error
 	GetPATFunc                            func(ctx context.Context, accountID string, initiatorUserID string, targetUserId string, tokenID string) (*types.PersonalAccessToken, error)
@@ -687,6 +691,38 @@ func (am *MockAccountManager) UpdateUserPassword(ctx context.Context, accountID,
 		return am.UpdateUserPasswordFunc(ctx, accountID, currentUserID, targetUserID, oldPassword, newPassword)
 	}
 	return status.Errorf(codes.Unimplemented, "method UpdateUserPassword is not implemented")
+}
+
+// RequestPasswordReset mocks RequestPasswordReset of the AccountManager interface
+func (am *MockAccountManager) RequestPasswordReset(ctx context.Context, email string) error {
+	if am.RequestPasswordResetFunc != nil {
+		return am.RequestPasswordResetFunc(ctx, email)
+	}
+	return status.Errorf(codes.Unimplemented, "method RequestPasswordReset is not implemented")
+}
+
+// CreatePasswordResetLink mocks CreatePasswordResetLink of the AccountManager interface
+func (am *MockAccountManager) CreatePasswordResetLink(ctx context.Context, accountID, initiatorUserID, targetUserID string) (*types.PasswordResetLink, error) {
+	if am.CreatePasswordResetLinkFunc != nil {
+		return am.CreatePasswordResetLinkFunc(ctx, accountID, initiatorUserID, targetUserID)
+	}
+	return nil, status.Errorf(codes.Unimplemented, "method CreatePasswordResetLink is not implemented")
+}
+
+// ResetPasswordWithToken mocks ResetPasswordWithToken of the AccountManager interface
+func (am *MockAccountManager) ResetPasswordWithToken(ctx context.Context, token, newPassword string) error {
+	if am.ResetPasswordWithTokenFunc != nil {
+		return am.ResetPasswordWithTokenFunc(ctx, token, newPassword)
+	}
+	return status.Errorf(codes.Unimplemented, "method ResetPasswordWithToken is not implemented")
+}
+
+// ValidatePasswordResetToken mocks ValidatePasswordResetToken of the AccountManager interface
+func (am *MockAccountManager) ValidatePasswordResetToken(ctx context.Context, token string) error {
+	if am.ValidatePasswordResetTokenFunc != nil {
+		return am.ValidatePasswordResetTokenFunc(ctx, token)
+	}
+	return status.Errorf(codes.Unimplemented, "method ValidatePasswordResetToken is not implemented")
 }
 
 func (am *MockAccountManager) InviteUser(ctx context.Context, accountID string, initiatorUserID string, targetUserID string) error {

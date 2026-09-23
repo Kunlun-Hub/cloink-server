@@ -718,6 +718,28 @@ func (m *EmbeddedIdPManager) DeleteConnector(ctx context.Context, id string) err
 	return m.provider.DeleteConnector(ctx, id)
 }
 
+// GetLocalUser returns the embedded IdP password entry for an email address.
+func (m *EmbeddedIdPManager) GetLocalUser(ctx context.Context, email string) (storage.Password, error) {
+	return m.provider.GetUser(ctx, email)
+}
+
+// SetUserPassword replaces a local user's password without requiring the old
+// one. Used by the password recovery flows.
+func (m *EmbeddedIdPManager) SetUserPassword(ctx context.Context, userID, newPassword string) error {
+	if err := m.provider.SetUserPassword(ctx, userID, newPassword); err != nil {
+		if m.appMetrics != nil {
+			m.appMetrics.IDPMetrics().CountRequestError()
+		}
+		return err
+	}
+	return nil
+}
+
+// DeleteLocalAuthSessions invalidates a local user's existing sign-in sessions.
+func (m *EmbeddedIdPManager) DeleteLocalAuthSessions(ctx context.Context, userID string) error {
+	return m.provider.DeleteUserAuthSessions(ctx, userID)
+}
+
 // GetIssuer returns the OIDC issuer URL.
 func (m *EmbeddedIdPManager) GetIssuer() string {
 	return m.provider.GetIssuer()

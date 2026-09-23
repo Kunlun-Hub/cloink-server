@@ -28,12 +28,15 @@ const (
 	msiRebootInitiated = 1641
 
 	processExitWait = 10 * time.Second
-
-	msiDownloadURL = "https://cloink.4w.ink/install"
-	exeDownloadURL = "https://cloink.4w.ink/install"
 )
 
 var (
+	// msiDownloadURL and exeDownloadURL point at the console page that serves
+	// the matching installer. They are variables so environment-specific builds
+	// can override them with -ldflags "-X ...=...".
+	msiDownloadURL = "https://cloink.4w.ink/install"
+	exeDownloadURL = "https://cloink.4w.ink/install"
+
 	defaultTempDir = filepath.Join(os.Getenv("ProgramData"), "Cloink", "tmp-install")
 
 	// for the cleanup
