@@ -139,7 +139,7 @@ export function SettingsAbout() {
                         tabIndex={0}
                         onClick={() => openUrl(url)}
                         className={
-                            "inline-flex items-center gap-1.5 rounded-sm decoration-[0.5px] underline-offset-4 outline-none transition hover:text-nb-gray-100 hover:underline focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940"
+                            "inline-flex items-center gap-1.5 rounded-sm decoration-[0.5px] underline-offset-4 outline-none transition hover:text-nb-gray-100 hover:underline focus-visible:ring-2 focus-visible:ring-nb-gray-50/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940"
                         }
                     >
                         <Icon aria-hidden={"true"} className={iconClassName ?? "h-3.5 w-3.5"} />
@@ -157,7 +157,7 @@ export function SettingsAbout() {
                         tabIndex={0}
                         onClick={() => openUrl(link.url)}
                         className={
-                            "rounded-sm decoration-[0.5px] underline-offset-4 outline-none transition hover:text-nb-gray-100 hover:underline focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940"
+                            "rounded-sm decoration-[0.5px] underline-offset-4 outline-none transition hover:text-nb-gray-100 hover:underline focus-visible:ring-2 focus-visible:ring-nb-gray-50/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940"
                         }
                     >
                         {link.label}

@@ -62,6 +62,7 @@ const en = {
   "proxyError.authError": "An error occurred during authentication",
   "proxyError.accountPendingApproval": "Your account is pending approval by an administrator",
   "proxyError.accountBlocked": "Your account is blocked",
+  "proxyError.userNotInGroup": "You are not authorized to access this service",
   "proxyError.serviceConfigError": "Service configuration error",
   "proxyError.invalidSessionToken": "invalid session token",
   "proxyError.authServiceUnavailable": "authentication service unavailable",

@@ -64,6 +64,7 @@ const zhCN: Translations = {
   "proxyError.authError": "认证过程中发生错误",
   "proxyError.accountPendingApproval": "您的账户正在等待管理员批准",
   "proxyError.accountBlocked": "您的账户已被封禁",
+  "proxyError.userNotInGroup": "您无权访问此服务",
   "proxyError.serviceConfigError": "服务配置错误",
   "proxyError.invalidSessionToken": "无效的会话令牌",
   "proxyError.authServiceUnavailable": "认证服务不可用",

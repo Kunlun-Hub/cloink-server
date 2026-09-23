@@ -115,7 +115,12 @@ func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfi
 		case cr := <-connResultChan:
 			receivedResults++
 			if cr.Err == nil {
-				log.Infof("chosen home Relay server: %s", cr.Url)
+				instanceURL, serverIP, err := cr.RelayClient.serverInstanceAddress()
+				if err != nil {
+					log.Infof("chosen home Relay server: %s, instance address unavailable: %v", cr.Url, err)
+				} else {
+					log.Infof("chosen home Relay server: %s, instance URL: %s, server IP: %s", cr.Url, instanceURL, serverIP)
+				}
 				sp.clearServerFailure(cr.Url)
 				cancelConnectionsExcept(cr.Url)
 				go sp.drainConnResults(connResultChan, receivedResults, startedServers)

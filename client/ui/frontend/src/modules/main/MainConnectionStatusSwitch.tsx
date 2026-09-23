@@ -321,7 +321,7 @@ const LocalIpLine = ({ ip, ipv6, show }: { ip: string; ipv6: string; show: boole
                         className={cn(
                             "group relative inline-flex cursor-default items-center rounded-sm outline-none",
                             isFocusVisible &&
-                                "focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940",
+                                "focus-visible:ring-2 focus-visible:ring-nb-gray-50/60 focus-visible:ring-offset-2 focus-visible:ring-offset-nb-gray-940",
                             "transition-colors",
                         )}
                     >
@@ -395,7 +395,7 @@ const IpRow = ({ value }: { value: string }) => {
                 "text-nb-gray-200 hover:bg-nb-gray-900 hover:text-nb-gray-50",
                 "cursor-default outline-none transition-colors",
                 isFocusVisible &&
-                    "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60",
+                    "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nb-gray-50/60",
             )}
         >
             <span className={"min-w-0 truncate font-mono text-[0.75rem]"}>{value}</span>
