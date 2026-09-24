@@ -8,6 +8,11 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed (for example v0.79.0); defaults to git describe"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -49,8 +54,14 @@ jobs:
 
       - name: Resolve build metadata
         id: build
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(git describe --tags --always)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
