@@ -248,7 +248,7 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	}
 
 	fields := event.GetFlowFields()
-	if !isDNSFlowFields(fields) && shouldFilterFlowAddresses(fields) {
+	if shouldSkipNoisyFlow(fields) {
 		return nil
 	}
 	sourcePort, destinationPort, icmpType, icmpCode := flowConnectionValues(fields)
@@ -342,6 +342,27 @@ func shouldFilterFlowAddresses(fields *proto.FlowFields) bool {
 	destination, destinationOK := netip.AddrFromSlice(fields.GetDestIp())
 	return !sourceOK || !destinationOK ||
 		netiputil.IsSystemLocalAddress(source) || netiputil.IsSystemLocalAddress(destination)
+}
+
+// shouldSkipNoisyFlow reports flows that carry no routing information and only
+// bury the events an operator looks for: traffic to (or from) addresses that
+// are only meaningful on the local host or link — which is how mDNS, LLMNR and
+// NetBIOS discovery leaves a machine — and a peer talking to its own address,
+// i.e. its embedded DNS resolver or a loopback alias.
+//
+// This runs BEFORE the DNS branch of shouldPersistFlow: the netbird forwarder
+// client port is 5353, the same port mDNS uses, so multicast discovery used to
+// be classified as a DNS flow and skipped the address filter entirely.
+func shouldSkipNoisyFlow(fields *proto.FlowFields) bool {
+	if shouldFilterFlowAddresses(fields) {
+		return true
+	}
+	source, sourceOK := netip.AddrFromSlice(fields.GetSourceIp())
+	destination, destinationOK := netip.AddrFromSlice(fields.GetDestIp())
+	if !sourceOK || !destinationOK {
+		return false
+	}
+	return source.Unmap() == destination.Unmap()
 }
 
 func shouldPersistFlow(fields *proto.FlowFields, source, destination *resolvedFlowEndpoint, settings *mgmtypes.ExtraSettings) bool {

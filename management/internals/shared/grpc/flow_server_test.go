@@ -179,6 +179,38 @@ func TestShouldFilterFlowAddresses(t *testing.T) {
 	}
 }
 
+func TestShouldSkipNoisyFlow(t *testing.T) {
+	tests := []struct {
+		name        string
+		source      string
+		destination string
+		want        bool
+	}{
+		// A peer querying its own embedded resolver: the log filled up with
+		// these because DNS flows bypassed the address filter.
+		{name: "peer to its own resolver", source: "100.122.13.186", destination: "100.122.13.186", want: true},
+		// mDNS leaves the host as multicast, but the netbird forwarder client
+		// port (5353) made it look like a DNS flow.
+		{name: "mdns IPv4 multicast", source: "100.122.66.187", destination: "224.0.0.251", want: true},
+		{name: "mdns IPv6 multicast", source: "fdf1:465:57d0::1", destination: "ff02::fb", want: true},
+		{name: "limited broadcast", source: "100.122.66.187", destination: "255.255.255.255", want: true},
+		{name: "link local source", source: "169.254.1.1", destination: "100.122.66.187", want: true},
+		// Real traffic over the tunnel stays.
+		{name: "peer to peer", source: "100.122.13.186", destination: "100.122.66.187", want: false},
+		{name: "peer to resource subnet", source: "100.122.13.186", destination: "10.202.22.101", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fields := &flowproto.FlowFields{
+				SourceIp: net.ParseIP(test.source),
+				DestIp:   net.ParseIP(test.destination),
+			}
+			require.Equal(t, test.want, shouldSkipNoisyFlow(fields))
+		})
+	}
+}
+
 func TestShouldPersistFlow(t *testing.T) {
 	peer := &resolvedFlowEndpoint{Type: networktraffic.EndpointTypePeer}
 	resource := &resolvedFlowEndpoint{Type: networktraffic.EndpointTypeHostResource}
