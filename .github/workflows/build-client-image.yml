@@ -44,6 +44,7 @@ jobs:
             latest=false
           tags: |
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=0.79.0-upgrade,enable=${{ github.ref == 'refs/heads/upgrade/0.79.0' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
             type=ref,event=tag
             type=ref,event=pr
