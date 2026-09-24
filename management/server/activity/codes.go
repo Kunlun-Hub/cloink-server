@@ -198,7 +198,7 @@ const (
 	JobCreatedByUser Activity = 102
 
 	UserPasswordChanged Activity = 103
-	UserPasswordReset   Activity = 143
+	UserPasswordReset   Activity = 144
 
 	UserInviteLinkCreated     Activity = 104
 	UserInviteLinkAccepted    Activity = 105
