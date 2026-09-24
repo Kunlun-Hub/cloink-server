@@ -8,6 +8,11 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Client version stamped into the binary (default: git describe)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -52,8 +57,13 @@ jobs:
 
       - name: Resolve build metadata
         id: build
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version=$(git describe --tags --always)
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(git describe --tags --always)
+          fi
           echo "version=${version#v}" >> "$GITHUB_OUTPUT"
           echo "date=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
 
