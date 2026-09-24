@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/netbirdio/netbird/shared/management/http/api"
@@ -61,6 +62,20 @@ func NetworkTrafficConnectionType(ct api.GetApiEventsNetworkTrafficParamsConnect
 func NetworkTrafficDirection(d api.GetApiEventsNetworkTrafficParamsDirection) NetworkTrafficOption {
 	return func(query map[string]string) {
 		query["direction"] = string(d)
+	}
+}
+
+func NetworkTrafficDestinationType(t api.GetApiEventsNetworkTrafficParamsDestinationType) NetworkTrafficOption {
+	return func(query map[string]string) {
+		query["destination_type"] = string(t)
+	}
+}
+
+// NetworkTrafficResourceOnly limits results to flows that reach a published
+// internal resource, dropping P2P peer-to-peer traffic.
+func NetworkTrafficResourceOnly(resourceOnly bool) NetworkTrafficOption {
+	return func(query map[string]string) {
+		query["resource_only"] = strconv.FormatBool(resourceOnly)
 	}
 }
 

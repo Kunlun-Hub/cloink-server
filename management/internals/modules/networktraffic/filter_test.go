@@ -17,6 +17,9 @@ func TestFilterParseFromRequestRejectsInvalidQueries(t *testing.T) {
 		"protocol=256",
 		"protocol=x",
 		"direction=invalid",
+		"destination_type=SUBNET",
+		"destination_type=",
+		"resource_only=maybe",
 		"start_date=invalid",
 		"start_date=2026-08-22T01%3A00%3A00Z&end_date=2026-08-22T00%3A00%3A00Z",
 		"start_date=2026-08-01T00%3A00%3A00Z&end_date=2026-08-22T00%3A00%3A00Z",
@@ -44,4 +47,23 @@ func TestFilterParseFromRequestNormalizesValidQuery(t *testing.T) {
 	require.Equal(t, 0, *filter.Protocol)
 	require.Equal(t, time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC), *filter.StartDate)
 	require.Equal(t, time.Date(2026, 8, 22, 0, 5, 0, 0, time.UTC), *filter.EndDate)
+}
+
+func TestFilterParseFromRequestResourceFilters(t *testing.T) {
+	var filter Filter
+	err := filter.ParseFromRequest(httptest.NewRequest("GET", "/?destination_type=HOST_RESOURCE&resource_only=true", nil))
+	require.NoError(t, err)
+	require.NotNil(t, filter.DestinationType)
+	require.Equal(t, EndpointTypeHostResource, *filter.DestinationType)
+	require.True(t, filter.ResourceOnly)
+
+	var disabled Filter
+	err = disabled.ParseFromRequest(httptest.NewRequest("GET", "/?resource_only=false", nil))
+	require.NoError(t, err)
+	require.Nil(t, disabled.DestinationType)
+	require.False(t, disabled.ResourceOnly)
+
+	var omitted Filter
+	require.NoError(t, omitted.ParseFromRequest(httptest.NewRequest("GET", "/", nil)))
+	require.False(t, omitted.ResourceOnly)
 }

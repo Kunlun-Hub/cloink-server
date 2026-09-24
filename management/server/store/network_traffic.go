@@ -234,6 +234,16 @@ func applyNetworkTrafficFilters(query *gorm.DB, filter networktraffic.Filter) *g
 	if filter.ConnectionType != nil {
 		query = query.Where("connection_type = ?", *filter.ConnectionType)
 	}
+	if filter.DestinationType != nil {
+		query = query.Where("destination_type = ?", *filter.DestinationType)
+	}
+	if filter.ResourceOnly {
+		query = query.Where(
+			"(source_type IN ? OR destination_type IN ?)",
+			networktraffic.ResourceEndpointTypes,
+			networktraffic.ResourceEndpointTypes,
+		)
+	}
 	if filter.Direction != nil {
 		query = query.Where("direction = ?", *filter.Direction)
 	}

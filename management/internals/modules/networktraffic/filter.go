@@ -47,6 +47,8 @@ type Filter struct {
 	Protocol           *int
 	EventType          *string
 	ConnectionType     *string
+	DestinationType    *string
+	ResourceOnly       bool
 	Direction          *string
 	StartDate          *time.Time
 	EndDate            *time.Time
@@ -100,6 +102,12 @@ func (f *Filter) ParseFromRequest(r *http.Request) error {
 		return err
 	}
 	if f.ConnectionType, err = optionalEnum(query, "connection_type", ConnectionTypeP2P, ConnectionTypeRouted); err != nil {
+		return err
+	}
+	if f.DestinationType, err = optionalEnum(query, "destination_type", EndpointTypeUnknown, EndpointTypePeer, EndpointTypeHostResource); err != nil {
+		return err
+	}
+	if f.ResourceOnly, err = optionalBool(query, "resource_only"); err != nil {
 		return err
 	}
 	if f.Direction, err = optionalEnum(query, "direction", "DIRECTION_UNKNOWN", "INGRESS", "EGRESS"); err != nil {
@@ -231,6 +239,20 @@ func optionalEnum(query map[string][]string, name string, valid ...string) (*str
 		}
 	}
 	return nil, fmt.Errorf("invalid %s", name)
+}
+
+// optionalBool parses an optional boolean query parameter. A present but
+// unparsable value is an error so a typo cannot silently disable a filter.
+func optionalBool(query map[string][]string, name string) (bool, error) {
+	value, present, err := scalar(query, name)
+	if err != nil || !present {
+		return false, err
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s", name)
+	}
+	return parsed, nil
 }
 
 func optionalRFC3339(query map[string][]string, name string) (*time.Time, error) {

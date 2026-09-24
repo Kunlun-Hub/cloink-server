@@ -54,10 +54,24 @@ const (
 	EndpointTypeUnknown      = "UNKNOWN"
 	EndpointTypePeer         = "PEER"
 	EndpointTypeHostResource = "HOST_RESOURCE"
+	// Subnet and domain resources are recognised by the dashboard even though
+	// the collector currently resolves every published resource to
+	// HOST_RESOURCE, so a resource-only query keeps working if they appear.
+	EndpointTypeSubnetResource = "SUBNET_RESOURCE"
+	EndpointTypeDomainResource = "DOMAIN_RESOURCE"
 
 	ConnectionTypeP2P    = "P2P"
 	ConnectionTypeRouted = "ROUTED"
 )
+
+// ResourceEndpointTypes lists the endpoint types that represent an internal
+// resource published through the VPN. Flows with any of these on either side are
+// resource access; everything else is peer-to-peer or unresolved traffic.
+var ResourceEndpointTypes = []string{
+	EndpointTypeHostResource,
+	EndpointTypeSubnetResource,
+	EndpointTypeDomainResource,
+}
 
 // Group is a read-only projection of persisted events sharing one flow signature.
 type Group struct {

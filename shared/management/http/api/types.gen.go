@@ -1529,6 +1529,27 @@ func (e GetApiEventsNetworkTrafficParamsConnectionType) Valid() bool {
 	}
 }
 
+// Defines values for GetApiEventsNetworkTrafficParamsDestinationType.
+const (
+	GetApiEventsNetworkTrafficParamsDestinationTypeHOSTRESOURCE GetApiEventsNetworkTrafficParamsDestinationType = "HOST_RESOURCE"
+	GetApiEventsNetworkTrafficParamsDestinationTypePEER         GetApiEventsNetworkTrafficParamsDestinationType = "PEER"
+	GetApiEventsNetworkTrafficParamsDestinationTypeUNKNOWN      GetApiEventsNetworkTrafficParamsDestinationType = "UNKNOWN"
+)
+
+// Valid indicates whether the value is a known member of the GetApiEventsNetworkTrafficParamsDestinationType enum.
+func (e GetApiEventsNetworkTrafficParamsDestinationType) Valid() bool {
+	switch e {
+	case GetApiEventsNetworkTrafficParamsDestinationTypeHOSTRESOURCE:
+		return true
+	case GetApiEventsNetworkTrafficParamsDestinationTypePEER:
+		return true
+	case GetApiEventsNetworkTrafficParamsDestinationTypeUNKNOWN:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetApiEventsNetworkTrafficParamsDirection.
 const (
 	GetApiEventsNetworkTrafficParamsDirectionDIRECTIONUNKNOWN GetApiEventsNetworkTrafficParamsDirection = "DIRECTION_UNKNOWN"
@@ -6481,6 +6502,12 @@ type GetApiEventsNetworkTrafficParams struct {
 	// ConnectionType Filter by connection type
 	ConnectionType *GetApiEventsNetworkTrafficParamsConnectionType `form:"connection_type,omitempty" json:"connection_type,omitempty"`
 
+	// DestinationType Filter by the type of the destination endpoint. HOST_RESOURCE matches flows that reach a published resource.
+	DestinationType *GetApiEventsNetworkTrafficParamsDestinationType `form:"destination_type,omitempty" json:"destination_type,omitempty"`
+
+	// ResourceOnly When true, only return flows that involve a published resource on either side, i.e. traffic that reaches an internal resource over the VPN. P2P peer traffic is excluded.
+	ResourceOnly *bool `form:"resource_only,omitempty" json:"resource_only,omitempty"`
+
 	// Direction Filter by direction
 	Direction *GetApiEventsNetworkTrafficParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
 
@@ -6499,6 +6526,9 @@ type GetApiEventsNetworkTrafficParamsType string
 
 // GetApiEventsNetworkTrafficParamsConnectionType defines parameters for GetApiEventsNetworkTraffic.
 type GetApiEventsNetworkTrafficParamsConnectionType string
+
+// GetApiEventsNetworkTrafficParamsDestinationType defines parameters for GetApiEventsNetworkTraffic.
+type GetApiEventsNetworkTrafficParamsDestinationType string
 
 // GetApiEventsNetworkTrafficParamsDirection defines parameters for GetApiEventsNetworkTraffic.
 type GetApiEventsNetworkTrafficParamsDirection string

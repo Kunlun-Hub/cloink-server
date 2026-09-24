@@ -10446,6 +10446,20 @@ paths:
           schema:
             type: string
             enum: [ P2P, ROUTED ]
+        - name: destination_type
+          in: query
+          description: Filter by the type of the destination endpoint. HOST_RESOURCE matches flows that reach a published resource.
+          required: false
+          schema:
+            type: string
+            enum: [ UNKNOWN, PEER, HOST_RESOURCE ]
+        - name: resource_only
+          in: query
+          description: When true, only return flows that involve a published resource on either side, i.e. traffic that reaches an internal resource over the VPN. P2P peer traffic is excluded.
+          required: false
+          schema:
+            type: boolean
+            default: false
         - name: direction
           in: query
           description: Filter by direction

@@ -78,3 +78,59 @@ func TestSqlStoreNetworkTrafficEventsIdempotenceFiltersAndCleanup(t *testing.T) 
 	require.Equal(t, "flow-new-3", events[0].FlowID)
 	require.Equal(t, int64(30), events[0].RxBytes)
 }
+
+func TestSqlStoreNetworkTrafficResourceOnlyFilter(t *testing.T) {
+	ctx := context.Background()
+	dbStore, cleanup, err := NewTestStoreFromSQL(ctx, "", t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	event := func(id, sourceType, destinationType string, offset time.Duration) *networktraffic.Event {
+		return &networktraffic.Event{
+			ID: "event-" + id, AccountID: "account-1", FlowID: "flow-" + id,
+			Timestamp: now.Add(offset), WindowStart: now.Add(offset), WindowEnd: now.Add(offset),
+			EventType: networktraffic.EndpointTypeUnknown, Direction: "EGRESS", Protocol: 6,
+			ReporterID: "peer-1", SourceID: "peer-1", SourceType: sourceType, SourceName: "Laptop",
+			DestinationID: "endpoint-" + id, DestinationType: destinationType, DestinationName: "Target",
+		}
+	}
+
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, event("p2p", networktraffic.EndpointTypePeer, networktraffic.EndpointTypePeer, -4*time.Minute)))
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, event("resource", networktraffic.EndpointTypePeer, networktraffic.EndpointTypeHostResource, -3*time.Minute)))
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, event("reverse", networktraffic.EndpointTypeHostResource, networktraffic.EndpointTypePeer, -2*time.Minute)))
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, event("unknown", networktraffic.EndpointTypeUnknown, networktraffic.EndpointTypeUnknown, -time.Minute)))
+	require.NoError(t, dbStore.CreateNetworkTrafficEvent(ctx, event("domain", networktraffic.EndpointTypePeer, networktraffic.EndpointTypeDomainResource, -30*time.Second)))
+
+	base := networktraffic.Filter{Page: 1, PageSize: 10, SortBy: "timestamp", SortOrd: "desc"}
+	events, total, err := dbStore.GetAccountNetworkTrafficEvents(ctx, LockingStrengthNone, "account-1", base)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), total)
+	require.Len(t, events, 5)
+
+	// Resource access keeps both directions of a resource flow and drops P2P.
+	resourceOnly := base
+	resourceOnly.ResourceOnly = true
+	events, total, err = dbStore.GetAccountNetworkTrafficEvents(ctx, LockingStrengthNone, "account-1", resourceOnly)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, events, 3)
+	require.Equal(t, "event-domain", events[0].ID)
+	require.Equal(t, "event-reverse", events[1].ID)
+	require.Equal(t, "event-resource", events[2].ID)
+
+	destinationType := networktraffic.EndpointTypeHostResource
+	byDestination := base
+	byDestination.DestinationType = &destinationType
+	events, total, err = dbStore.GetAccountNetworkTrafficEvents(ctx, LockingStrengthNone, "account-1", byDestination)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, events, 1)
+	require.Equal(t, "event-resource", events[0].ID)
+
+	// Grouped queries share the same filter, so the page totals stay consistent.
+	groups, groupTotal, err := dbStore.GetAccountNetworkTrafficGroups(ctx, LockingStrengthNone, "account-1", resourceOnly)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), groupTotal)
+	require.Len(t, groups, 3)
+}
