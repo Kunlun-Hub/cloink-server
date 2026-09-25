@@ -21,6 +21,7 @@ import (
 	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/server/account"
+	resourceTypes "github.com/netbirdio/netbird/management/server/networks/resources/types"
 	"github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/store"
 	"github.com/netbirdio/netbird/management/server/types"
@@ -300,4 +301,44 @@ func netipMustParse(value string) (addr netip.Addr) {
 		panic(err)
 	}
 	return addr
+}
+
+func TestResolveEndpointMatchesPublishedResources(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	accountManager := account.NewMockManager(ctrl)
+	dbStore := store.NewMockStore(ctrl)
+	accountManager.EXPECT().GetStore().Return(dbStore).AnyTimes()
+
+	resources := []*resourceTypes.NetworkResource{
+		{ID: "res-host", Name: "nas", Type: resourceTypes.Host, Enabled: true, Prefix: netip.MustParsePrefix("10.202.16.131/32")},
+		{ID: "res-subnet", Name: "office", Type: resourceTypes.Subnet, Enabled: true, Prefix: netip.MustParsePrefix("10.202.11.0/24")},
+		{ID: "res-disabled", Name: "old", Type: resourceTypes.Host, Enabled: false, Prefix: netip.MustParsePrefix("10.202.99.1/32")},
+		{ID: "res-domain", Name: "wiki", Type: resourceTypes.Domain, Enabled: true, Domain: "wiki.internal"},
+	}
+	dbStore.EXPECT().GetPeerByIP(gomock.Any(), store.LockingStrengthNone, "account-1", gomock.Any()).Return(nil, status.Errorf(status.NotFound, "peer not found")).AnyTimes()
+	// The resource list is cached per account, so the store is hit only once
+	// even though several resolutions run below.
+	dbStore.EXPECT().GetNetworkResourcesByAccountID(gomock.Any(), store.LockingStrengthNone, "account-1").Return(resources, nil).Times(1)
+
+	flowServer := NewFlowServer(accountManager)
+
+	host, err := flowServer.resolveEndpoint(context.Background(), "account-1", net.ParseIP("10.202.16.131").To4(), 443, nil)
+	require.NoError(t, err)
+	require.Equal(t, networktraffic.EndpointTypeHostResource, host.Type)
+	require.Equal(t, "res-host", host.ID)
+	require.Equal(t, "nas", host.Name)
+
+	subnet, err := flowServer.resolveEndpoint(context.Background(), "account-1", net.ParseIP("10.202.11.20").To4(), 80, nil)
+	require.NoError(t, err)
+	require.Equal(t, networktraffic.EndpointTypeSubnetResource, subnet.Type)
+	require.Equal(t, "res-subnet", subnet.ID)
+	require.Equal(t, "office", subnet.Name)
+
+	disabled, err := flowServer.resolveEndpoint(context.Background(), "account-1", net.ParseIP("10.202.99.1").To4(), 80, nil)
+	require.NoError(t, err)
+	require.Equal(t, networktraffic.EndpointTypeUnknown, disabled.Type)
+
+	unknown, err := flowServer.resolveEndpoint(context.Background(), "account-1", net.ParseIP("192.0.2.10").To4(), 80, nil)
+	require.NoError(t, err)
+	require.Equal(t, networktraffic.EndpointTypeUnknown, unknown.Type)
 }

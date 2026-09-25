@@ -23,6 +23,7 @@ import (
 	"github.com/netbirdio/netbird/flow/proto"
 	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/server/account"
+	resourceTypes "github.com/netbirdio/netbird/management/server/networks/resources/types"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/store"
 	"github.com/netbirdio/netbird/management/server/telemetry"
@@ -63,6 +64,27 @@ type FlowServer struct {
 	cleanupMu      sync.Mutex
 	cleanupCancel  context.CancelFunc
 	cleanupDone    chan struct{}
+	resourcesMu    sync.Mutex
+	resourcesCache map[string]*cachedAccountResources
+}
+
+// flowResourceCacheTTL bounds how long a published-resource change takes to
+// reflect in flow classification; endpoint resolution runs per flow event, so
+// the parsed prefixes are cached instead of queried every time.
+const flowResourceCacheTTL = time.Minute
+
+// flowResourceEntry is an enabled, IP-based published resource used to
+// classify flow endpoints by prefix containment.
+type flowResourceEntry struct {
+	id     string
+	name   string
+	typ    string
+	prefix netip.Prefix
+}
+
+type cachedAccountResources struct {
+	expires time.Time
+	entries []flowResourceEntry
 }
 
 // NewFlowServer creates a self-hosted flow receiver.
@@ -560,7 +582,60 @@ func (s *FlowServer) resolveEndpoint(ctx context.Context, accountID string, rawI
 	if isInternalStoreError(err) {
 		return nil, fmt.Errorf("resolve flow peer: %w", err)
 	}
+	entries, err := s.accountResourceEntries(ctx, accountID)
+	if err != nil {
+		if isInternalStoreError(err) {
+			return nil, fmt.Errorf("resolve flow resources: %w", err)
+		}
+	} else {
+		for _, entry := range entries {
+			if entry.prefix.Contains(addr) {
+				return &resolvedFlowEndpoint{ID: entry.id, Type: entry.typ, Name: entry.name, Address: address}, nil
+			}
+		}
+	}
 	return &resolvedFlowEndpoint{Type: networktraffic.EndpointTypeUnknown, Name: addr.String(), Address: address}, nil
+}
+
+// accountResourceEntries returns the account's enabled IP-based published
+// resources, cached briefly because endpoint resolution runs per flow event.
+func (s *FlowServer) accountResourceEntries(ctx context.Context, accountID string) ([]flowResourceEntry, error) {
+	s.resourcesMu.Lock()
+	cached := s.resourcesCache[accountID]
+	s.resourcesMu.Unlock()
+	if cached != nil && time.Now().Before(cached.expires) {
+		return cached.entries, nil
+	}
+
+	resources, err := s.accountManager.GetStore().GetNetworkResourcesByAccountID(ctx, store.LockingStrengthNone, accountID)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]flowResourceEntry, 0, len(resources))
+	for _, resource := range resources {
+		if resource == nil || !resource.Enabled || !resource.Prefix.IsValid() {
+			continue
+		}
+		var typ string
+		switch resource.Type {
+		case resourceTypes.Host:
+			typ = networktraffic.EndpointTypeHostResource
+		case resourceTypes.Subnet:
+			typ = networktraffic.EndpointTypeSubnetResource
+		default:
+			// Domain resources carry no IP prefix and cannot match a flow address.
+			continue
+		}
+		entries = append(entries, flowResourceEntry{id: resource.ID, name: resource.Name, typ: typ, prefix: resource.Prefix})
+	}
+
+	s.resourcesMu.Lock()
+	if s.resourcesCache == nil {
+		s.resourcesCache = make(map[string]*cachedAccountResources)
+	}
+	s.resourcesCache[accountID] = &cachedAccountResources{expires: time.Now().Add(flowResourceCacheTTL), entries: entries}
+	s.resourcesMu.Unlock()
+	return entries, nil
 }
 
 func peerFlowEndpoint(peer *nbpeer.Peer, address string) *resolvedFlowEndpoint {
