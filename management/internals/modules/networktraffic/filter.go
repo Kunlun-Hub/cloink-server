@@ -15,7 +15,6 @@ const (
 	DefaultSortBy       = "timestamp"
 	DefaultSortOrder    = "desc"
 	DefaultRangeMinutes = 5
-	MaxDateRangeDays    = 15
 	MaxQueryValueLength = 1024
 )
 
@@ -155,9 +154,9 @@ func (f *Filter) normalizeDateRange(now time.Time) error {
 	if startDate.After(endDate) {
 		return fmt.Errorf("start_date must not be after end_date")
 	}
-	if startDate.Before(endDate.Add(-MaxDateRangeDays * 24 * time.Hour)) {
-		return fmt.Errorf("network traffic date range exceeds %d days", MaxDateRangeDays)
-	}
+	// No artificial range cap: the dashboard offers "last month" and "all
+	// time" presets, and the query is paginated with the aggregation done
+	// by the database over the (account_id, timestamp) index.
 	f.StartDate, f.EndDate = &startDate, &endDate
 	return nil
 }

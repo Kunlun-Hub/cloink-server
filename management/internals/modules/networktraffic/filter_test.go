@@ -22,7 +22,6 @@ func TestFilterParseFromRequestRejectsInvalidQueries(t *testing.T) {
 		"resource_only=maybe",
 		"start_date=invalid",
 		"start_date=2026-08-22T01%3A00%3A00Z&end_date=2026-08-22T00%3A00%3A00Z",
-		"start_date=2026-08-01T00%3A00%3A00Z&end_date=2026-08-22T00%3A00%3A00Z",
 		"search=",
 		"user_id=",
 		"reporter_id=" + strings.Repeat("a", MaxQueryValueLength+1),
@@ -47,6 +46,21 @@ func TestFilterParseFromRequestNormalizesValidQuery(t *testing.T) {
 	require.Equal(t, 0, *filter.Protocol)
 	require.Equal(t, time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC), *filter.StartDate)
 	require.Equal(t, time.Date(2026, 8, 22, 0, 5, 0, 0, time.UTC), *filter.EndDate)
+}
+
+func TestFilterParseFromRequestAcceptsLongRanges(t *testing.T) {
+	// The dashboard's "last month" and "all time" presets send ranges far
+	// beyond the old 15-day cap; both must parse and keep their bounds.
+	var month Filter
+	err := month.ParseFromRequest(httptest.NewRequest("GET", "/?start_date=2026-08-27T00%3A00%3A00Z&end_date=2026-09-27T00%3A00%3A00Z", nil))
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC), *month.StartDate)
+	require.Equal(t, time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC), *month.EndDate)
+
+	var allTime Filter
+	err = allTime.ParseFromRequest(httptest.NewRequest("GET", "/?start_date=1970-01-01T00%3A00%3A00Z&end_date=2026-09-27T00%3A00%3A00Z", nil))
+	require.NoError(t, err)
+	require.Equal(t, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), *allTime.StartDate)
 }
 
 func TestFilterParseFromRequestResourceFilters(t *testing.T) {
