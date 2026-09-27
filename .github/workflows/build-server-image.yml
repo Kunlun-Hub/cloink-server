@@ -46,6 +46,7 @@ jobs:
             latest=false
           tags: |
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=0.79.0-upgrade,enable=${{ github.ref == 'refs/heads/upgrade/0.79.0' }}
             type=ref,event=tag
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -58,6 +59,11 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           version="$INPUT_VERSION"
+          # main tracks upstream v0.79.0: keep the embedded version pinned to
+          # the official release number instead of a git-describe suffix.
+          if [ -z "$version" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            version="v0.79.0"
+          fi
           if [ -z "$version" ]; then
             version=$(git describe --tags --always)
           fi
