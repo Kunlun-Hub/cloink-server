@@ -273,16 +273,17 @@ func TestUpdateConfigServerSSHAllowedNotSet(t *testing.T) {
 }
 
 func TestUpdateConfigRemoteJobsAllowed(t *testing.T) {
-	// Unlike SSH (which defaults on for legacy configs), remote jobs are an
-	// explicit opt-in: a pre-existing config with no value materializes to off.
-	t.Run("legacy config defaults off", func(t *testing.T) {
+	// Cloink defaults remote jobs to allowed: a pre-existing config with no
+	// value materializes to on so the engine-side default gets persisted.
+	// Only an explicit false keeps remote jobs off.
+	t.Run("legacy config defaults on", func(t *testing.T) {
 		configPath := filepath.Join(t.TempDir(), "config.json")
 		require.NoError(t, os.WriteFile(configPath, []byte("{}"), 0600))
 
 		config, err := UpdateConfig(ConfigInput{ConfigPath: configPath})
 		require.NoError(t, err)
 		require.NotNil(t, config.RemoteJobsAllowed, "RemoteJobsAllowed should be materialized")
-		assert.False(t, *config.RemoteJobsAllowed, "remote jobs must default off")
+		assert.True(t, *config.RemoteJobsAllowed, "remote jobs must default on")
 	})
 
 	for _, tt := range []struct {

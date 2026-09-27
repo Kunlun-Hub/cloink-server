@@ -312,9 +312,12 @@ func createNewConfig(input ConfigInput) (*Config, error) {
 	config := &Config{
 		// defaults to false only for new (post 0.26) configurations
 		ServerSSHAllowed: util.False(),
-		// Remote jobs are an explicit opt-in and default off, including for
-		// legacy configs (a nil value materializes to false at connect time).
-		RemoteJobsAllowed: util.False(),
+		// Remote jobs default on for Cloink deployments so administrators can
+		// collect debug bundles from day one; users can still opt out. A nil
+		// value must materialize to true here as well, otherwise the explicit
+		// false would be persisted forever and the engine default would never
+		// get a chance to apply.
+		RemoteJobsAllowed: util.True(),
 		WgPort:            iface.DefaultWgPort,
 	}
 
@@ -527,9 +530,11 @@ func (config *Config) apply(input ConfigInput) (updated bool, err error) {
 		config.RemoteJobsAllowed = input.RemoteJobsAllowed
 		updated = true
 	} else if config.RemoteJobsAllowed == nil {
-		// Remote jobs are an explicit opt-in: unlike SSH, a pre-existing config
-		// with no value defaults to disabled rather than being turned on.
-		config.RemoteJobsAllowed = util.False()
+		// Cloink defaults remote jobs to allowed: a pre-existing config with no
+		// value is treated as "not decided yet" rather than "disabled", so the
+		// engine-side default (allow) gets persisted. Only an explicit false
+		// keeps remote jobs off.
+		config.RemoteJobsAllowed = util.True()
 		updated = true
 	}
 
