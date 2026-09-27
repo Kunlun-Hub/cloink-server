@@ -271,6 +271,7 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 
 	fields := event.GetFlowFields()
 	if shouldSkipNoisyFlow(fields) {
+		logSkippedFlow(ctx, "noisy-address", reporter, fields, nil, nil)
 		return nil
 	}
 	sourcePort, destinationPort, icmpType, icmpCode := flowConnectionValues(fields)
@@ -283,6 +284,7 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 		return err
 	}
 	if !shouldPersistFlow(fields, source, destination, settings.Extra) {
+		logSkippedFlow(ctx, "not-persistable", reporter, fields, source, destination)
 		return nil
 	}
 
@@ -357,6 +359,29 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	}
 	s.metrics.RecordStore(ctx, result, time.Since(started))
 	return err
+}
+
+// logSkippedFlow records why a received flow event did not reach the store.
+// Skip decisions are otherwise invisible, which made a whole class of "client
+// connects but nothing shows up" reports undiagnosable from the server side.
+func logSkippedFlow(ctx context.Context, reason string, reporter *nbpeer.Peer, fields *proto.FlowFields, source, destination *resolvedFlowEndpoint) {
+	if !log.StandardLogger().IsLevelEnabled(log.DebugLevel) {
+		return
+	}
+	srcIP, _ := netip.AddrFromSlice(fields.GetSourceIp())
+	dstIP, _ := netip.AddrFromSlice(fields.GetDestIp())
+	srcPort, dstPort, _, _ := flowConnectionValues(fields)
+	srcType, dstType := "-", "-"
+	if source != nil {
+		srcType = source.Type
+	}
+	if destination != nil {
+		dstType = destination.Type
+	}
+	log.WithContext(ctx).Debugf(
+		"flow event skipped (%s): reporter=%s %s %s:%d -> %s:%d proto=%d resolved=%s->%s",
+		reason, reporter.Name, fields.GetDirection(), srcIP, srcPort, dstIP, dstPort, fields.GetProtocol(), srcType, dstType,
+	)
 }
 
 func shouldFilterFlowAddresses(fields *proto.FlowFields) bool {
