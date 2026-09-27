@@ -153,25 +153,216 @@ func TestFlowServerAttributesRouterReportedFlowToOwnerUser(t *testing.T) {
 		Name:      "PLK110",
 		UserID:    "user-1",
 	}
-	server := &peer.Peer{
-		ID:        "peer-server",
-		AccountID: "account-1",
-		IP:        netipMustParse("100.64.0.6"),
-		Name:      "server",
+	resources := []*resourceTypes.NetworkResource{
+		{ID: "res-host", Name: "nas", Type: resourceTypes.Host, Enabled: true, Prefix: netip.MustParsePrefix("10.202.16.131/32")},
 	}
 	settings := &types.Settings{Extra: &types.ExtraSettings{FlowEnabled: true}}
 	dbStore.EXPECT().GetPeerByPeerPubKey(gomock.Any(), store.LockingStrengthNone, router.Key).Return(router, nil)
 	dbStore.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, "account-1").Return(settings, nil)
 	dbStore.EXPECT().GetPeerGroupIDs(gomock.Any(), store.LockingStrengthNone, "account-1", "router-1").Return(nil, nil)
 	dbStore.EXPECT().GetPeerByIP(gomock.Any(), store.LockingStrengthNone, "account-1", gomock.Any()).DoAndReturn(func(_ context.Context, _ store.LockingStrength, _ string, ip net.IP) (*peer.Peer, error) {
-		switch ip.String() {
-		case phone.IP.String():
+		if ip.String() == phone.IP.String() {
 			return phone, nil
-		case server.IP.String():
-			return server, nil
 		}
 		return nil, status.Errorf(status.NotFound, "peer not found")
 	}).AnyTimes()
+	dbStore.EXPECT().GetNetworkResourcesByAccountID(gomock.Any(), store.LockingStrengthNone, "account-1").Return(resources, nil).Times(1)
+	dbStore.EXPECT().GetPeerByID(gomock.Any(), store.LockingStrengthNone, "account-1", "peer-phone").Return(phone, nil)
+	dbStore.EXPECT().GetUserByUserID(gomock.Any(), store.LockingStrengthNone, "user-1").Return(&types.User{Name: "admin", Email: "admin@example.com"}, nil)
+	eventSaved := make(chan *networktraffic.Event, 1)
+	dbStore.EXPECT().CreateNetworkTrafficEvent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, event *networktraffic.Event) error {
+		eventSaved <- event
+		return nil
+	})
+
+	flowServer := NewFlowServer(accountManager)
+	flowServer.SetConfigManager(manager)
+	conn, cleanup := startFlowTestServer(t, flowServer)
+	defer cleanup()
+
+	payload, signature := manager.Sign("account-1", "router-1")
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+signature+"."+payload)
+	stream, err := flowproto.NewFlowServiceClient(conn).Events(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&flowproto.FlowEvent{IsInitiator: true}))
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// The router sees return traffic from a published host resource to the
+	// phone. The resource is no peer, so nothing about this report is
+	// redundant and it must persist, attributed to the phone's user.
+	eventID := uuid.New()
+	flowID := uuid.New()
+	now := time.Now().UTC()
+	require.NoError(t, stream.Send(&flowproto.FlowEvent{
+		EventId:     eventID[:],
+		Timestamp:   timestamppb.New(now),
+		PublicKey:   routerPub[:],
+		WindowStart: timestamppb.New(now.Add(-time.Second)),
+		WindowEnd:   timestamppb.New(now),
+		FlowFields: &flowproto.FlowFields{
+			FlowId:    flowID[:],
+			Type:      flowproto.Type_TYPE_UNKNOWN,
+			Direction: flowproto.Direction_INGRESS,
+			Protocol:  6,
+			SourceIp:  net.ParseIP("10.202.16.131").To4(),
+			DestIp:    net.ParseIP("100.64.0.5").To4(),
+			ConnectionInfo: &flowproto.FlowFields_PortInfo{PortInfo: &flowproto.PortInfo{
+				SourcePort: 443,
+				DestPort:   37366,
+			}},
+		},
+	}))
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	saved := <-eventSaved
+	require.Equal(t, "router-1", saved.ReporterID, "the router stays the reporter")
+	require.Equal(t, "user-1", saved.UserID, "flow must be attributed to the owning peer's user")
+	require.Equal(t, "admin", saved.UserName)
+	require.Equal(t, "admin@example.com", saved.UserEmail)
+	require.Equal(t, networktraffic.EndpointTypeHostResource, saved.SourceType)
+	require.Equal(t, "res-host", saved.SourceID)
+	require.Equal(t, networktraffic.EndpointTypePeer, saved.DestinationType)
+	require.Equal(t, "peer-phone", saved.DestinationID)
+	require.NoError(t, stream.CloseSend())
+}
+
+func TestFlowServerSkipsRedundantRouterReport(t *testing.T) {
+	t.Setenv("NB_FLOW_TOKEN_SECRET", "flow-test-secret")
+	manager, err := networktraffic.NewConfigManager(&config.Config{})
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	accountManager := account.NewMockManager(ctrl)
+	dbStore := store.NewMockStore(ctrl)
+	accountManager.EXPECT().GetStore().Return(dbStore).AnyTimes()
+
+	routerKey, err := wgtypes.GeneratePrivateKey()
+	require.NoError(t, err)
+	routerPub := routerKey.PublicKey()
+	router := &peer.Peer{
+		ID:        "router-1",
+		AccountID: "account-1",
+		Key:       routerPub.String(),
+		IP:        netipMustParse("100.64.0.254"),
+		Name:      "zb-vroute",
+	}
+	phone := &peer.Peer{
+		ID:        "peer-phone",
+		AccountID: "account-1",
+		IP:        netipMustParse("100.64.0.5"),
+		Name:      "PLK110",
+		UserID:    "user-1",
+	}
+	resources := []*resourceTypes.NetworkResource{
+		{ID: "res-host", Name: "nas", Type: resourceTypes.Host, Enabled: true, Prefix: netip.MustParsePrefix("10.202.16.131/32")},
+	}
+	settings := &types.Settings{Extra: &types.ExtraSettings{FlowEnabled: true}}
+	dbStore.EXPECT().GetPeerByPeerPubKey(gomock.Any(), store.LockingStrengthNone, router.Key).Return(router, nil)
+	dbStore.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, "account-1").Return(settings, nil)
+	dbStore.EXPECT().GetPeerGroupIDs(gomock.Any(), store.LockingStrengthNone, "account-1", "router-1").Return(nil, nil)
+	dbStore.EXPECT().GetPeerByIP(gomock.Any(), store.LockingStrengthNone, "account-1", gomock.Any()).DoAndReturn(func(_ context.Context, _ store.LockingStrength, _ string, ip net.IP) (*peer.Peer, error) {
+		if ip.String() == phone.IP.String() {
+			return phone, nil
+		}
+		return nil, status.Errorf(status.NotFound, "peer not found")
+	}).AnyTimes()
+	dbStore.EXPECT().GetNetworkResourcesByAccountID(gomock.Any(), store.LockingStrengthNone, "account-1").Return(resources, nil).Times(1)
+	// The phone has flow reporting enabled (no group restriction), so its own
+	// client uploads the authoritative copy of this flow. The router's mirror
+	// of the very same connection is redundant: CreateNetworkTrafficEvent must
+	// never run, which gomock enforces through the missing expectation.
+	dbStore.EXPECT().GetPeerGroupIDs(gomock.Any(), store.LockingStrengthNone, "account-1", "peer-phone").Return(nil, nil)
+
+	flowServer := NewFlowServer(accountManager)
+	flowServer.SetConfigManager(manager)
+	conn, cleanup := startFlowTestServer(t, flowServer)
+	defer cleanup()
+
+	payload, signature := manager.Sign("account-1", "router-1")
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+signature+"."+payload)
+	stream, err := flowproto.NewFlowServiceClient(conn).Events(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&flowproto.FlowEvent{IsInitiator: true}))
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	eventID := uuid.New()
+	flowID := uuid.New()
+	now := time.Now().UTC()
+	require.NoError(t, stream.Send(&flowproto.FlowEvent{
+		EventId:     eventID[:],
+		Timestamp:   timestamppb.New(now),
+		PublicKey:   routerPub[:],
+		WindowStart: timestamppb.New(now.Add(-time.Second)),
+		WindowEnd:   timestamppb.New(now),
+		FlowFields: &flowproto.FlowFields{
+			FlowId:    flowID[:],
+			Type:      flowproto.Type_TYPE_UNKNOWN,
+			Direction: flowproto.Direction_INGRESS,
+			Protocol:  6,
+			SourceIp:  net.ParseIP("100.64.0.5").To4(),
+			DestIp:    net.ParseIP("10.202.16.131").To4(),
+			ConnectionInfo: &flowproto.FlowFields_PortInfo{PortInfo: &flowproto.PortInfo{
+				SourcePort: 37366,
+				DestPort:   443,
+			}},
+			RxBytes: 940139,
+			TxBytes: 24840,
+		},
+	}))
+	// The event is dropped but still acknowledged: the router must not retry
+	// or treat its own redundant copy as a failure.
+	eventAck, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, eventID[:], eventAck.EventId)
+	require.NoError(t, stream.CloseSend())
+}
+
+func TestFlowServerKeepsRouterReportWhenSourcePeerFlowDisabled(t *testing.T) {
+	t.Setenv("NB_FLOW_TOKEN_SECRET", "flow-test-secret")
+	manager, err := networktraffic.NewConfigManager(&config.Config{})
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	accountManager := account.NewMockManager(ctrl)
+	dbStore := store.NewMockStore(ctrl)
+	accountManager.EXPECT().GetStore().Return(dbStore).AnyTimes()
+
+	routerKey, err := wgtypes.GeneratePrivateKey()
+	require.NoError(t, err)
+	routerPub := routerKey.PublicKey()
+	router := &peer.Peer{
+		ID:        "router-1",
+		AccountID: "account-1",
+		Key:       routerPub.String(),
+		IP:        netipMustParse("100.64.0.254"),
+		Name:      "zb-vroute",
+	}
+	phone := &peer.Peer{
+		ID:        "peer-phone",
+		AccountID: "account-1",
+		IP:        netipMustParse("100.64.0.5"),
+		Name:      "PLK110",
+		UserID:    "user-1",
+	}
+	resources := []*resourceTypes.NetworkResource{
+		{ID: "res-host", Name: "nas", Type: resourceTypes.Host, Enabled: true, Prefix: netip.MustParsePrefix("10.202.16.131/32")},
+	}
+	// Flow collection is restricted to grp-a: the router is in, the phone is
+	// not, so the phone never reports and the router's copy is the only one.
+	settings := &types.Settings{Extra: &types.ExtraSettings{FlowEnabled: true, FlowGroups: []string{"grp-a"}}}
+	dbStore.EXPECT().GetPeerByPeerPubKey(gomock.Any(), store.LockingStrengthNone, router.Key).Return(router, nil)
+	dbStore.EXPECT().GetAccountSettings(gomock.Any(), store.LockingStrengthNone, "account-1").Return(settings, nil)
+	dbStore.EXPECT().GetPeerGroupIDs(gomock.Any(), store.LockingStrengthNone, "account-1", "router-1").Return([]string{"grp-a"}, nil)
+	dbStore.EXPECT().GetPeerGroupIDs(gomock.Any(), store.LockingStrengthNone, "account-1", "peer-phone").Return(nil, nil)
+	dbStore.EXPECT().GetPeerByIP(gomock.Any(), store.LockingStrengthNone, "account-1", gomock.Any()).DoAndReturn(func(_ context.Context, _ store.LockingStrength, _ string, ip net.IP) (*peer.Peer, error) {
+		if ip.String() == phone.IP.String() {
+			return phone, nil
+		}
+		return nil, status.Errorf(status.NotFound, "peer not found")
+	}).AnyTimes()
+	dbStore.EXPECT().GetNetworkResourcesByAccountID(gomock.Any(), store.LockingStrengthNone, "account-1").Return(resources, nil).Times(1)
 	dbStore.EXPECT().GetPeerByID(gomock.Any(), store.LockingStrengthNone, "account-1", "peer-phone").Return(phone, nil)
 	dbStore.EXPECT().GetUserByUserID(gomock.Any(), store.LockingStrengthNone, "user-1").Return(&types.User{Name: "admin", Email: "admin@example.com"}, nil)
 	eventSaved := make(chan *networktraffic.Event, 1)
@@ -208,20 +399,20 @@ func TestFlowServerAttributesRouterReportedFlowToOwnerUser(t *testing.T) {
 			Direction: flowproto.Direction_INGRESS,
 			Protocol:  6,
 			SourceIp:  net.ParseIP("100.64.0.5").To4(),
-			DestIp:    net.ParseIP("100.64.0.6").To4(),
+			DestIp:    net.ParseIP("10.202.16.131").To4(),
 			ConnectionInfo: &flowproto.FlowFields_PortInfo{PortInfo: &flowproto.PortInfo{
 				SourcePort: 37366,
 				DestPort:   443,
 			}},
 		},
 	}))
-	_, err = stream.Recv()
+	eventAck, err := stream.Recv()
 	require.NoError(t, err)
+	require.Equal(t, eventID[:], eventAck.EventId)
 	saved := <-eventSaved
-	require.Equal(t, "router-1", saved.ReporterID, "the router stays the reporter")
-	require.Equal(t, "user-1", saved.UserID, "flow must be attributed to the owning peer's user")
+	require.Equal(t, "router-1", saved.ReporterID)
+	require.Equal(t, "user-1", saved.UserID, "the only copy still belongs to the phone's user")
 	require.Equal(t, "admin", saved.UserName)
-	require.Equal(t, "admin@example.com", saved.UserEmail)
 	require.NoError(t, stream.CloseSend())
 }
 

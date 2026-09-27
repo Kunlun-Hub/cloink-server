@@ -283,6 +283,14 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 	if err != nil {
 		return err
 	}
+	redundant, err := s.isRedundantRouterReport(ctx, claims.AccountID, reporter, source, settings.Extra)
+	if err != nil {
+		return err
+	}
+	if redundant {
+		logSkippedFlow(ctx, "redundant-router-report", reporter, fields, source, destination)
+		return nil
+	}
 	if !shouldPersistFlow(fields, source, destination, settings.Extra) {
 		logSkippedFlow(ctx, "not-persistable", reporter, fields, source, destination)
 		return nil
@@ -708,6 +716,24 @@ func (s *FlowServer) flowTrafficOwner(ctx context.Context, reporter *nbpeer.Peer
 		}
 	}
 	return nil, "", ""
+}
+
+// isRedundantRouterReport reports whether a flow reported by a router is
+// redundant: its source is another peer of the same account that has flow
+// reporting enabled and therefore uploads its own authoritative copy of the
+// very same flow. Keeping both would split one connection into two rows and
+// double the byte counters (router rx/tx mirrors the client's tx/rx). The
+// router's copy is only redundant when the source peer is expected to report;
+// when flow is disabled for the source peer the router view is all we have.
+func (s *FlowServer) isRedundantRouterReport(ctx context.Context, accountID string, reporter *nbpeer.Peer, source *resolvedFlowEndpoint, settings *mgmtypes.ExtraSettings) (bool, error) {
+	if source == nil || source.Type != networktraffic.EndpointTypePeer || source.ID == reporter.ID {
+		return false, nil
+	}
+	groupIDs, err := s.accountManager.GetStore().GetPeerGroupIDs(ctx, store.LockingStrengthNone, accountID, source.ID)
+	if err != nil {
+		return false, fmt.Errorf("resolve flow source groups: %w", err)
+	}
+	return networktraffic.FlowEnabledForPeer(settings, groupIDs), nil
 }
 
 func isInternalStoreError(err error) bool {
