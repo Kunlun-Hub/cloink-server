@@ -22,14 +22,14 @@ func TestPKCEAuthMsgTemplate(t *testing.T) {
 				"Error": "authentication failed: invalid state",
 			},
 			outputFile:    "pkce-auth-error.html",
-			expectedTitle: "Login Failed",
+			expectedTitle: "登录失败",
 			expectedInContent: []string{
 				"authentication failed: invalid state",
-				"Login Failed",
+				"登录失败",
 			},
 			notExpectedInContent: []string{
-				"Login Successful",
-				"Your device is now registered and logged in to NetBird",
+				"登录成功",
+				"您的设备已注册并登录 Cloink",
 			},
 		},
 		{
@@ -38,13 +38,13 @@ func TestPKCEAuthMsgTemplate(t *testing.T) {
 				// No error field means success
 			},
 			outputFile:    "pkce-auth-success.html",
-			expectedTitle: "Login Successful",
+			expectedTitle: "登录成功",
 			expectedInContent: []string{
-				"Login Successful",
-				"Your device is now registered and logged in to NetBird. You can now close this window.",
+				"登录成功",
+				"您的设备已注册并登录 Cloink，现在可以关闭此窗口。",
 			},
 			notExpectedInContent: []string{
-				"Login Failed",
+				"登录失败",
 			},
 		},
 		{
@@ -53,14 +53,14 @@ func TestPKCEAuthMsgTemplate(t *testing.T) {
 				"Error": "authentication timeout: request expired after 5 minutes",
 			},
 			outputFile:    "pkce-auth-timeout.html",
-			expectedTitle: "Login Failed",
+			expectedTitle: "登录失败",
 			expectedInContent: []string{
 				"authentication timeout: request expired after 5 minutes",
-				"Login Failed",
+				"登录失败",
 			},
 			notExpectedInContent: []string{
-				"Login Successful",
-				"Your device is now registered and logged in to NetBird",
+				"登录成功",
+				"您的设备已注册并登录 Cloink",
 			},
 		},
 	}
@@ -111,7 +111,7 @@ func TestPKCEAuthMsgTemplate(t *testing.T) {
 				"<html",
 				"<head>",
 				"<body>",
-				"NetBird",
+				"Cloink",
 			}
 
 			for _, elem := range basicElements {
@@ -225,8 +225,8 @@ func TestPKCEAuthMsgTemplateContent(t *testing.T) {
 			"<html",
 			"<head>",
 			"<body>",
-			"Login Successful",
-			"NetBird",
+			"登录成功",
+			"Cloink",
 		}
 
 		for _, elem := range requiredElements {
@@ -272,7 +272,7 @@ func TestPKCEAuthMsgTemplateContent(t *testing.T) {
 			"<html",
 			"<head>",
 			"<body>",
-			"Login Failed",
+			"登录失败",
 			errorMsg,
 		}
 
