@@ -19,7 +19,6 @@ import (
 	"github.com/netbirdio/netbird/client/proto"
 	"github.com/netbirdio/netbird/client/server"
 	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
-	"github.com/netbirdio/netbird/upload-server/types"
 	"github.com/netbirdio/netbird/version"
 )
 
@@ -179,7 +178,11 @@ func debugBundle(cmd *cobra.Command, _ []string) error {
 		CliVersion:     version.NetbirdVersion(),
 	}
 	if uploadBundleFlag {
-		request.UploadURL = uploadBundleURLFlag
+		uploadURL, err := resolveUploadBundleURL()
+		if err != nil {
+			return err
+		}
+		request.UploadURL = uploadURL
 		request.UploadInsecure = uploadBundleInsecureFlag
 	}
 	resp, err := client.DebugBundle(cmd.Context(), request)
@@ -385,7 +388,11 @@ func runForDuration(cmd *cobra.Command, args []string) error {
 		CliVersion:     version.NetbirdVersion(),
 	}
 	if uploadBundleFlag {
-		request.UploadURL = uploadBundleURLFlag
+		uploadURL, err := resolveUploadBundleURL()
+		if err != nil {
+			return err
+		}
+		request.UploadURL = uploadURL
 		request.UploadInsecure = uploadBundleInsecureFlag
 	}
 	resp, err := client.DebugBundle(cmd.Context(), request)
@@ -500,6 +507,36 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 }
 
+// resolveUploadBundleURL returns the explicit --upload-bundle-url when given,
+// otherwise the upload service of the management server the active profile
+// connects to, so a self-hosted fleet never ships bundles to the public
+// netbird upload service by default.
+func resolveUploadBundleURL() (string, error) {
+	if uploadBundleURLFlag != "" {
+		return uploadBundleURLFlag, nil
+	}
+	pm := profilemanager.NewProfileManager()
+	activeProf, err := pm.GetActiveProfile()
+	if err != nil {
+		return "", fmt.Errorf("get active profile: %w", err)
+	}
+	if activeProf == nil {
+		return "", fmt.Errorf("no active profile; run 'cloink login' first")
+	}
+	cfg, err := profilemanager.GetConfig(activeProf.Path)
+	if err != nil {
+		return "", fmt.Errorf("read active profile config: %w", err)
+	}
+	if cfg.ManagementURL == nil {
+		return "", fmt.Errorf("active profile has no management URL")
+	}
+	uploadURL, err := debug.ManagementBundleURL(cfg.ManagementURL.String())
+	if err != nil {
+		return "", fmt.Errorf("resolve management upload service: %w", err)
+	}
+	return uploadURL, nil
+}
+
 func generateDebugBundle(config *profilemanager.Config, recorder *peer.Status, connectClient *internal.ConnectClient, logFilePath string) {
 	var syncResponse *mgmProto.SyncResponse
 	var err error
@@ -537,13 +574,13 @@ func init() {
 	debugBundleCmd.Flags().Uint32VarP(&logFileCount, "log-file-count", "C", 1, "Number of rotated log files to include in debug bundle")
 	debugBundleCmd.Flags().BoolVarP(&systemInfoFlag, "system-info", "S", true, "Adds system information to the debug bundle")
 	debugBundleCmd.Flags().BoolVarP(&uploadBundleFlag, "upload-bundle", "U", false, "Uploads the debug bundle to a server")
-	debugBundleCmd.Flags().StringVar(&uploadBundleURLFlag, "upload-bundle-url", types.DefaultBundleURL, "Service URL to get an URL to upload the debug bundle")
+	debugBundleCmd.Flags().StringVar(&uploadBundleURLFlag, "upload-bundle-url", "", "Service URL to get an URL to upload the debug bundle (defaults to the connected management server)")
 	debugBundleCmd.Flags().BoolVar(&uploadBundleInsecureFlag, "upload-bundle-insecure", false, "Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root")
 
 	forCmd.Flags().Uint32VarP(&logFileCount, "log-file-count", "C", 1, "Number of rotated log files to include in debug bundle")
 	forCmd.Flags().BoolVarP(&systemInfoFlag, "system-info", "S", true, "Adds system information to the debug bundle")
 	forCmd.Flags().BoolVarP(&uploadBundleFlag, "upload-bundle", "U", false, "Uploads the debug bundle to a server")
-	forCmd.Flags().StringVar(&uploadBundleURLFlag, "upload-bundle-url", types.DefaultBundleURL, "Service URL to get an URL to upload the debug bundle")
+	forCmd.Flags().StringVar(&uploadBundleURLFlag, "upload-bundle-url", "", "Service URL to get an URL to upload the debug bundle (defaults to the connected management server)")
 	forCmd.Flags().BoolVar(&uploadBundleInsecureFlag, "upload-bundle-insecure", false, "Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root")
 	forCmd.Flags().Bool("capture", false, "Capture packets during the debug duration and include in bundle")
 }
