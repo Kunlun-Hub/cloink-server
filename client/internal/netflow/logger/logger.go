@@ -145,7 +145,10 @@ func (l *Logger) storeEvent(eventFields *types.EventFields) {
 		event.DestResourceID, isDestExitNode = l.statusRecorder.CheckRoutes(event.DestIP)
 	}
 
-	if l.shouldStore(eventFields, isSrcExitNode || isDestExitNode) {
+	// Gate on the resolved event: resource IDs computed above decide whether
+	// the flow targets a published resource. The raw tracker fields never
+	// carry resource IDs, so gating on them would drop all resource traffic.
+	if l.shouldStore(&event.EventFields, isSrcExitNode || isDestExitNode) {
 		l.Store.StoreEvent(&event)
 	}
 }
