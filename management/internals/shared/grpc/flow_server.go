@@ -288,7 +288,16 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 		return nil
 	}
 
+	userID := reporter.UserID
 	userName, userEmail := flowUser(ctx, s.accountManager.GetStore(), reporter)
+	if userName == "" && userEmail == "" {
+		// Routers registered with setup keys have no user of their own, so
+		// their reports would surface under a bare device name. Attribute the
+		// flow to the account peer (and user) that actually owns the traffic.
+		if owner, ownerName, ownerEmail := s.flowTrafficOwner(ctx, reporter, source, destination); owner != nil {
+			userID, userName, userEmail = owner.UserID, ownerName, ownerEmail
+		}
+	}
 	policyID, policyName, err := s.resolvePolicy(ctx, claims.AccountID, fields.GetRuleId())
 	if err != nil {
 		return err
@@ -320,7 +329,7 @@ func (s *FlowServer) saveEvent(ctx context.Context, claims networktraffic.TokenC
 		Protocol:               int(fields.GetProtocol()),
 		ConnectionType:         connectionType(source, destination),
 		ReporterID:             reporter.ID,
-		UserID:                 reporter.UserID,
+		UserID:                 userID,
 		UserName:               userName,
 		UserEmail:              userEmail,
 		SourceID:               source.ID,
@@ -679,6 +688,26 @@ func flowUser(ctx context.Context, dbStore store.Store, reporter *nbpeer.Peer) (
 		return "", ""
 	}
 	return user.Name, user.Email
+}
+
+// flowTrafficOwner finds the account peer that owns a flow reported by a
+// user-less router peer: the first endpoint that is a peer of the same
+// account and has a resolvable user. Source is preferred over destination.
+func (s *FlowServer) flowTrafficOwner(ctx context.Context, reporter *nbpeer.Peer, source, destination *resolvedFlowEndpoint) (*nbpeer.Peer, string, string) {
+	for _, endpoint := range []*resolvedFlowEndpoint{source, destination} {
+		if endpoint == nil || endpoint.Type != networktraffic.EndpointTypePeer || endpoint.ID == reporter.ID {
+			continue
+		}
+		owner, err := s.accountManager.GetStore().GetPeerByID(ctx, store.LockingStrengthNone, reporter.AccountID, endpoint.ID)
+		if err != nil || owner == nil || owner.UserID == "" {
+			continue
+		}
+		name, email := flowUser(ctx, s.accountManager.GetStore(), owner)
+		if name != "" || email != "" {
+			return owner, name, email
+		}
+	}
+	return nil, "", ""
 }
 
 func isInternalStoreError(err error) bool {

@@ -306,6 +306,44 @@ func TestUpdateConfigRemoteJobsAllowed(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigRemoteJobsMigration(t *testing.T) {
+	// Configs written before the remote jobs UI existed could only carry the
+	// old buggy default (explicit false) or no value at all. The one-time
+	// migration flips both to allowed, then leaves later explicit opt-outs
+	// untouched.
+	t.Run("legacy explicit false migrates to allowed", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.json")
+		require.NoError(t, os.WriteFile(configPath, []byte(`{"RemoteJobsAllowed": false}`), 0600))
+
+		config, err := UpdateConfig(ConfigInput{ConfigPath: configPath})
+		require.NoError(t, err)
+		require.NotNil(t, config.RemoteJobsAllowed)
+		assert.True(t, *config.RemoteJobsAllowed, "legacy default false must migrate to allowed")
+		assert.True(t, config.RemoteJobsDefaultMigrated, "migration must be marked")
+	})
+
+	t.Run("explicit opt-out after migration is preserved", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.json")
+		require.NoError(t, os.WriteFile(configPath, []byte(`{"RemoteJobsAllowed": false, "RemoteJobsDefaultMigrated": true}`), 0600))
+
+		config, err := UpdateConfig(ConfigInput{ConfigPath: configPath})
+		require.NoError(t, err)
+		require.NotNil(t, config.RemoteJobsAllowed)
+		assert.False(t, *config.RemoteJobsAllowed, "an explicit post-migration opt-out must stay off")
+	})
+
+	t.Run("explicit input wins over migration in the same update", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.json")
+		require.NoError(t, os.WriteFile(configPath, []byte(`{"RemoteJobsAllowed": false}`), 0600))
+
+		config, err := UpdateConfig(ConfigInput{ConfigPath: configPath, RemoteJobsAllowed: util.False()})
+		require.NoError(t, err)
+		require.NotNil(t, config.RemoteJobsAllowed)
+		assert.False(t, *config.RemoteJobsAllowed, "explicit input must win over the migration default")
+		assert.True(t, config.RemoteJobsDefaultMigrated, "migration must still be marked")
+	})
+}
+
 func TestApplyMDMPolicyRemoteJobs(t *testing.T) {
 	t.Run("enables remote jobs and sets the upload URL override", func(t *testing.T) {
 		cfg := &Config{}

@@ -132,6 +132,10 @@ type Config struct {
 	RosenpassPermissive           bool
 	ServerSSHAllowed              *bool
 	RemoteJobsAllowed             *bool
+	// RemoteJobsDefaultMigrated marks that the one-time migration flipping a
+	// legacy (buggy-default) RemoteJobsAllowed=false/nil to the Cloink default
+	// of allowed has run, so later explicit opt-outs are left alone.
+	RemoteJobsDefaultMigrated     bool
 	EnableSSHRoot                 *bool
 	EnableSSHSFTP                 *bool
 	EnableSSHLocalPortForwarding  *bool
@@ -517,6 +521,20 @@ func (config *Config) apply(input ConfigInput) (updated bool, err error) {
 			// enables SSH for configs from old versions to preserve backwards compatibility
 			log.Infof("falling back to enabled SSH server for pre-existing configuration")
 			config.ServerSSHAllowed = util.True()
+		}
+		updated = true
+	}
+
+	if !config.RemoteJobsDefaultMigrated {
+		// One-time migration: before there was any UI for remote jobs, a config
+		// could only carry the old buggy default (explicit false) or no value
+		// at all - neither represents a user decision, so flip both to the
+		// Cloink default of allowed. An explicit input value in this same
+		// update is applied below and still wins.
+		config.RemoteJobsDefaultMigrated = true
+		if config.RemoteJobsAllowed == nil || !*config.RemoteJobsAllowed {
+			log.Infof("migrating remote jobs default to allowed")
+			config.RemoteJobsAllowed = util.True()
 		}
 		updated = true
 	}
