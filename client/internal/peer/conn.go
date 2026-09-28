@@ -594,6 +594,10 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	conn.dumpState.NewLocalProxy()
 
 	conn.Log.Infof("created new wgProxy for relay connection: %s", wgProxy.EndpointAddr().String())
+	// Remember the previous address: if the migration below fails, the old
+	// relay keeps carrying traffic and data-plane health must stay attributed
+	// to it (see the ConfigureWGEndpoint error branch).
+	prevRelayAddress := conn.activeRelayAddress
 	conn.activeRelayAddress = rci.relayAddress
 
 	if conn.isICEActive() {
@@ -613,6 +617,9 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	updateTime := time.Now()
 	conn.enableWgWatcherIfNeeded(updateTime)
 	if err := conn.endpointUpdater.ConfigureWGEndpoint(wgProxy.EndpointAddr(), conn.presharedKey(rci.rosenpassPubKey)); err != nil {
+		// Migration failed: traffic stays on the old relay, so restore its
+		// address for data-plane health attribution.
+		conn.activeRelayAddress = prevRelayAddress
 		conn.rollbackRelayProxyMigrationLocked(oldProxy, migratingActiveRelay)
 		if err := wgProxy.CloseConn(); err != nil {
 			conn.Log.Warnf("Failed to close relay connection: %v", err)
