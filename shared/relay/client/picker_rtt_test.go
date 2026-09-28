@@ -70,9 +70,29 @@ func TestRelayRTTCacheRoundTrip(t *testing.T) {
 		t.Fatal("expected a miss for an unknown relay")
 	}
 	cache.set("rels://a.example", 42*time.Millisecond)
+	if _, ok := cache.get("rels://a.example"); ok {
+		t.Fatal("expected a miss before the minimum sample count is reached")
+	}
+	cache.set("rels://a.example", 42*time.Millisecond)
 	rtt, ok := cache.get("rels://a.example")
 	require.True(t, ok)
 	require.Equal(t, 42*time.Millisecond, rtt)
+}
+
+func TestRelayRTTCacheEWMASmoothing(t *testing.T) {
+	cache := newRelayRTTCache()
+	cache.set("rels://a.example", 100*time.Millisecond)
+	cache.set("rels://a.example", 200*time.Millisecond)
+	rtt, ok := cache.get("rels://a.example")
+	require.True(t, ok)
+	// alpha=0.3: 0.3*200 + 0.7*100 = 130ms
+	require.Equal(t, 130*time.Millisecond, rtt)
+
+	cache.set("rels://a.example", 200*time.Millisecond)
+	rtt, ok = cache.get("rels://a.example")
+	require.True(t, ok)
+	// 0.3*200 + 0.7*130 = 151ms
+	require.Equal(t, 151*time.Millisecond, rtt)
 }
 
 func TestRelayRTTCacheExpires(t *testing.T) {
@@ -81,6 +101,7 @@ func TestRelayRTTCacheExpires(t *testing.T) {
 	t.Cleanup(func() { relayRTTCacheTTL = previousTTL })
 
 	cache := newRelayRTTCache()
+	cache.set("rels://a.example", 10*time.Millisecond)
 	cache.set("rels://a.example", 10*time.Millisecond)
 	if _, ok := cache.get("rels://a.example"); !ok {
 		t.Fatal("expected a hit before the TTL elapses")
@@ -94,14 +115,15 @@ func TestRelayRTTCacheExpires(t *testing.T) {
 func TestStartNextPriorityGroupSortsFullGroupBeyondBatchSize(t *testing.T) {
 	// Ten same-weight relays in worst-RTT-first configured order. The first
 	// attempt must start the seven lowest-RTT relays of the whole group, and
-	// the second attempt the remaining three.
+	// the second attempt the remaining three. Spacing is wider than the
+	// hysteresis band so the intent (strict ordering) is unambiguous.
 	serverURLs := make([]string, 0, 10)
 	rtts := make(map[string]time.Duration, 10)
 	weights := make(map[string]int, 10)
 	for i := 9; i >= 0; i-- {
 		url := "rels://relay" + string(rune('0'+i)) + ".example"
 		serverURLs = append(serverURLs, url)
-		rtts[url] = time.Duration(i) * 10 * time.Millisecond
+		rtts[url] = time.Duration(i) * 30 * time.Millisecond
 		weights[url] = 100
 	}
 	picker := &ServerPicker{rttLookup: func(url string) (time.Duration, bool) {
@@ -117,7 +139,7 @@ func TestStartNextPriorityGroupSortsFullGroupBeyondBatchSize(t *testing.T) {
 	require.Equal(t, 7, next)
 	require.Len(t, first, 7)
 	for i := 0; i < 7; i++ {
-		require.Equal(t, rtts[first[i]], time.Duration(i)*10*time.Millisecond, "batch must follow ascending RTT of the full group")
+		require.Equal(t, rtts[first[i]], time.Duration(i)*30*time.Millisecond, "batch must follow ascending RTT of the full group")
 	}
 
 	var second []string
@@ -127,8 +149,44 @@ func TestStartNextPriorityGroupSortsFullGroupBeyondBatchSize(t *testing.T) {
 	require.Equal(t, 10, next)
 	require.Len(t, second, 3)
 	for i := 0; i < 3; i++ {
-		require.Equal(t, rtts[second[i]], time.Duration(7+i)*10*time.Millisecond)
+		require.Equal(t, rtts[second[i]], time.Duration(7+i)*30*time.Millisecond)
 	}
+}
+
+func TestStartNextPriorityGroupRTTHysteresis(t *testing.T) {
+	// RTTs inside the hysteresis band count as equal, so probe noise does not
+	// reorder the group; RTTs outside the band still sort ascending.
+	serverURLs := []string{
+		"rels://noisy-a.example", // 100ms, first in configured order
+		"rels://noisy-b.example", // 110ms, within band of a
+		"rels://slow.example",    // 300ms, outside band
+	}
+	rtts := map[string]time.Duration{
+		"rels://noisy-a.example": 100 * time.Millisecond,
+		"rels://noisy-b.example": 110 * time.Millisecond,
+		"rels://slow.example":    300 * time.Millisecond,
+	}
+	weights := map[string]int{
+		"rels://noisy-a.example": 100,
+		"rels://noisy-b.example": 100,
+		"rels://slow.example":    100,
+	}
+	picker := &ServerPicker{rttLookup: func(url string) (time.Duration, bool) {
+		rtt, ok := rtts[url]
+		return rtt, ok
+	}}
+	config := pickerConfig{serverURLs: serverURLs, serverWeights: weights}
+
+	var started []string
+	next := picker.startNextPriorityGroupWithConfig(config, serverURLs, 0, func(url string) {
+		started = append(started, url)
+	})
+	require.Equal(t, 3, next)
+	require.Equal(t, []string{
+		"rels://noisy-a.example",
+		"rels://noisy-b.example",
+		"rels://slow.example",
+	}, started, "in-band RTTs keep configured order, out-of-band still sorts last")
 }
 
 func TestStartNextPriorityGroupSkipsForcedRelayInGroupSort(t *testing.T) {
