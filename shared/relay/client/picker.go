@@ -22,6 +22,17 @@ const (
 	defaultConnectionTimeout = 30 * time.Second
 )
 
+// relayRTTHysteresis is the absolute RTT band inside which two relays count
+// as equally fast for ordering, so probe noise does not reorder a group.
+var relayRTTHysteresis = time.Duration(relayRTTHysteresisMs) * time.Millisecond
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
 type connResult struct {
 	RelayClient *Client
 	Url         string
@@ -244,7 +255,8 @@ func (sp *ServerPicker) startNextPriorityGroupWithConfig(config pickerConfig, se
 	group := slices.Clone(serverURLs[groupStart:groupEnd])
 	// Order the group by cached dial RTT so the lowest-latency relay wins the
 	// race. Relays without a cached RTT keep their configured relative order
-	// at the back.
+	// at the back. RTTs within the hysteresis band count as equal so probe
+	// noise does not reorder the group.
 	if sp.rttLookup != nil {
 		slices.SortStableFunc(group, func(left, right string) int {
 			leftRTT, leftOK := sp.rttLookup(left)
@@ -256,6 +268,9 @@ func (sp *ServerPicker) startNextPriorityGroupWithConfig(config pickerConfig, se
 				return 1
 			}
 			if !leftOK {
+				return 0
+			}
+			if absDuration(leftRTT-rightRTT) <= relayRTTHysteresis {
 				return 0
 			}
 			return cmp.Compare(leftRTT, rightRTT)

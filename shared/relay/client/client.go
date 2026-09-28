@@ -260,6 +260,31 @@ func (c *Client) Connect(ctx context.Context) error {
 	return c.connectWithContexts(ctx, ctx)
 }
 
+// ProbeTransport measures the transport handshake (QUIC or WebSocket) round
+// trip to the relay server without establishing a relay session. It is the
+// cheap counterpart to Connect for latency probing: no peer ID is registered
+// server-side, no handshake messages are exchanged, and no read loop starts.
+// The returned duration covers the winning dialer's handshake only.
+func (c *Client) ProbeTransport(ctx context.Context) (time.Duration, error) {
+	mode := transportModeFromEnv()
+	dialers := c.getDialers(mode)
+
+	rd := dialer.NewRaceDial(c.log, dialer.DefaultConnectionTimeout, c.connectionURL, dialers...)
+	if mode.sequential() {
+		rd.WithSequential()
+	}
+	start := time.Now()
+	conn, err := rd.Dial(ctx)
+	rtt := time.Since(start)
+	if err != nil {
+		return 0, err
+	}
+	if cerr := conn.Close(); cerr != nil {
+		c.log.Debugf("probe transport close: %v", cerr)
+	}
+	return rtt, nil
+}
+
 func (c *Client) connectWithContexts(connectCtx, lifecycleCtx context.Context) error {
 	c.log.Infof("connecting to relay server")
 	c.readLoopMutex.Lock()
