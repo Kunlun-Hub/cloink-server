@@ -1248,4 +1248,7 @@ message RelayServerConfig {
   int32 priority = 2;
   string id = 3;
   string name = 4;
+  // rtt_ms is the last measured dial round-trip time to this relay server in
+  // milliseconds. Zero means no measurement is available.
+  int64 rtt_ms = 5;
 }

@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -12,6 +13,12 @@ import (
 
 const (
 	idleTimeout = 30 * time.Second
+
+	// metricsFlushInterval is how often atomically accumulated data-path
+	// counters are flushed to OTel. Recording per packet would serialize the
+	// data path on the SDK; the flushed deltas are equivalent for monotonic
+	// counters.
+	metricsFlushInterval = time.Second
 )
 
 type Metrics struct {
@@ -22,11 +29,19 @@ type Metrics struct {
 	AuthenticationTime metric.Float64Histogram
 	PeerStoreTime      metric.Float64Histogram
 	peerReconnections  metric.Int64Counter
+	transportDropped   metric.Int64Counter
 	peers              metric.Int64UpDownCounter
 	peerActivityChan   chan string
 	peerLastActive     map[string]time.Time
 	mutexActivity      sync.Mutex
 	ctx                context.Context
+
+	// bytesSent, bytesRecv and droppedPackets accumulate data-path counts
+	// atomically; a single goroutine flushes them to OTel every
+	// metricsFlushInterval.
+	bytesSent      atomic.Int64
+	bytesRecv      atomic.Int64
+	droppedPackets atomic.Int64
 }
 
 func NewMetrics(ctx context.Context, meter metric.Meter) (*Metrics, error) {
@@ -88,6 +103,13 @@ func NewMetrics(ctx context.Context, meter metric.Meter) (*Metrics, error) {
 		return nil, err
 	}
 
+	transportDropped, err := meter.Int64Counter("relay_transport_dropped_packets_total",
+		metric.WithDescription("Total number of transport packets dropped because a peer send queue was full"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	m := &Metrics{
 		Meter:              meter,
 		TransferBytesSent:  bytesSent,
@@ -96,6 +118,7 @@ func NewMetrics(ctx context.Context, meter metric.Meter) (*Metrics, error) {
 		PeerStoreTime:      peerStoreTime,
 		peers:              peers,
 		peerReconnections:  peerReconnections,
+		transportDropped:   transportDropped,
 
 		ctx:              ctx,
 		peerActivityChan: make(chan string, 10),
@@ -116,6 +139,15 @@ func NewMetrics(ctx context.Context, meter metric.Meter) (*Metrics, error) {
 	}
 
 	go m.readPeerActivity()
+	go m.flushCounters()
+
+	// Export the batched data-path counters with an explicit zero so the
+	// series exist from boot. Otherwise Prometheus sees "no data" instead of
+	// 0 until the first packet is forwarded or dropped, which breaks
+	// dashboards, alerts, and the patch-presence self check.
+	m.TransferBytesSent.Add(m.ctx, 0)
+	m.TransferBytesRecv.Add(m.ctx, 0)
+	m.transportDropped.Add(m.ctx, 0)
 	return m, nil
 }
 
@@ -149,6 +181,54 @@ func (m *Metrics) PeerDisconnected(id, transport string) {
 
 func (m *Metrics) RecordPeerReconnection() {
 	m.peerReconnections.Add(m.ctx, 1)
+}
+
+// AddBytesSent accumulates sent bytes atomically. The total is flushed to OTel
+// every metricsFlushInterval by a single goroutine.
+func (m *Metrics) AddBytesSent(n int64) {
+	m.bytesSent.Add(n)
+}
+
+// AddBytesRecv accumulates received bytes atomically. The total is flushed to OTel
+// every metricsFlushInterval by a single goroutine.
+func (m *Metrics) AddBytesRecv(n int64) {
+	m.bytesRecv.Add(n)
+}
+
+// RecordDroppedTransportPacket accumulates a dropped transport packet
+// atomically. The total is flushed to OTel every metricsFlushInterval by a
+// single goroutine instead of recording per packet on the data path.
+func (m *Metrics) RecordDroppedTransportPacket() {
+	m.droppedPackets.Add(1)
+}
+
+// flushCounters moves the atomically accumulated data-path deltas into the
+// OTel counters once per metricsFlushInterval.
+func (m *Metrics) flushCounters() {
+	ticker := time.NewTicker(metricsFlushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			m.flushCountersOnce()
+			return
+		case <-ticker.C:
+			m.flushCountersOnce()
+		}
+	}
+}
+
+func (m *Metrics) flushCountersOnce() {
+	if n := m.bytesSent.Swap(0); n > 0 {
+		m.TransferBytesSent.Add(m.ctx, n)
+	}
+	if n := m.bytesRecv.Swap(0); n > 0 {
+		m.TransferBytesRecv.Add(m.ctx, n)
+	}
+	if n := m.droppedPackets.Swap(0); n > 0 {
+		m.transportDropped.Add(m.ctx, n)
+	}
 }
 
 // PeerActivity increases the active connections

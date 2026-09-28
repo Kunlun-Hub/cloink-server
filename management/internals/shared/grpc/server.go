@@ -839,7 +839,7 @@ func (s *Server) prepareLoginResponse(ctx context.Context, peer *nbpeer.Peer, ne
 
 	// if peer has reached this point then it has logged in
 	loginResp := &proto.LoginResponse{
-		NetbirdConfig: toNetbirdConfig(s.config, nil, relayToken, settings.Extra, types.TwinAccountSettings(settings)),
+		NetbirdConfig: toNetbirdConfig(s.config, nil, relayToken, settings.Extra, types.TwinAccountSettings(settings), peerGroups),
 		PeerConfig:    toPeerConfig(types.TwinPeer(peer), types.TwinNetwork(network), s.networkMapController.GetDNSDomain(settings), types.TwinAccountSettings(settings), s.config.HttpConfig, s.config.DeviceAuthorizationFlow, enableSSH, false),
 		Checks:        toProtocolChecks(ctx, postureChecks),
 	}

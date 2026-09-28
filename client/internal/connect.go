@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -424,7 +426,8 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 		}
 
 		relayManager := relayClient.NewManager(engineCtx, relayURLs, myPrivateKey.PublicKey().String(), engineConfig.MTU,
-			relayClient.WithNetEvents(c.netMgr))
+			relayClient.WithNetEvents(c.netMgr),
+			relayClient.WithAutoFailback(relayAutoFailbackFromEnv()))
 		relayManager.UpdateServerURLsWithWeights(relayURLs, relayWeights)
 		c.statusRecorder.SetRelayMgr(relayManager)
 		if len(relayURLs) > 0 {
@@ -528,6 +531,23 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 		return err
 	}
 	return nil
+}
+
+// relayAutoFailbackFromEnv reports whether the NB_RELAY_AUTO_FAILBACK
+// environment variable enables automatic failback to a recovered
+// higher-priority Relay server. It defaults to false; an unparsable value logs
+// a warning and keeps the default.
+func relayAutoFailbackFromEnv() bool {
+	raw := os.Getenv(relayClient.EnvAutoFailback)
+	if raw == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warnf("invalid %s value %q: %v; Relay auto-failback stays disabled", relayClient.EnvAutoFailback, raw, err)
+		return false
+	}
+	return enabled
 }
 
 func parseRelayInfo(loginResp *mgmProto.LoginResponse) ([]string, map[string]int, *hmac.Token) {

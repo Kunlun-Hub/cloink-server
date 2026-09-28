@@ -1090,6 +1090,8 @@ message RelayServer {
   bool current = 5;
   bool available = 6;
   string error = 7;
+  // Last probed dial round-trip time in milliseconds. Zero means no measurement.
+  int64 rtt_ms = 8;
 }
 
 message ListRelaysResponse {

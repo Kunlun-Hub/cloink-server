@@ -233,7 +233,11 @@ type RegisteredRelay struct {
 	ManagementURL    string
 	Version          string
 	ConnectedClients *int
-	LastSeen         time.Time
+	// Groups limits relay distribution to peers in at least one of these
+	// groups, stored as group IDs. Empty means the relay is distributed to
+	// every peer.
+	Groups   []string
+	LastSeen time.Time
 }
 
 func cloneRegisteredRelays(source map[string]RegisteredRelay) map[string]RegisteredRelay {
@@ -242,6 +246,7 @@ func cloneRegisteredRelays(source map[string]RegisteredRelay) map[string]Registe
 	}
 	result := make(map[string]RegisteredRelay, len(source))
 	for key, value := range source {
+		value.Groups = slices.Clone(value.Groups)
 		result[key] = value
 	}
 	return result

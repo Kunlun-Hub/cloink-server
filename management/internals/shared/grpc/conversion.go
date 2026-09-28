@@ -29,6 +29,12 @@ import (
 const (
 	// deprecatedRemotePeersVersion is the version of Netbird that introduced the NetworkMap.RemotePeers field, deprecated in favor of RemotePeers.
 	deprecatedRemotePeersVersion = "0.29.3"
+
+	// relayLoadPenaltyPeersPerPoint is how many connected peers subtract one
+	// effective-priority point from a relay's configured priority.
+	relayLoadPenaltyPeersPerPoint = 20
+	// relayLoadPenaltyMax caps the subtracted priority points.
+	relayLoadPenaltyMax = 20
 )
 
 // precomputedDeprecatedRemotePeersConstraint is the parsed ">= 0.29.3" constraint,
@@ -47,7 +53,7 @@ func init() {
 // nil when no server config is set (the fan-out network-map path) because clients treat any
 // non-nil config as authoritative: a config without a relay section is interpreted as relay
 // disabled and wipes the clients' relay URLs.
-func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken *Token, extraSettings *types.ExtraSettings, settings *nmdata.AccountSettingsInfo) *proto.NetbirdConfig {
+func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken *Token, extraSettings *types.ExtraSettings, settings *nmdata.AccountSettingsInfo, peerGroupIDs []string) *proto.NetbirdConfig {
 	if config == nil {
 		return nil
 	}
@@ -89,6 +95,11 @@ func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken
 		if settings != nil || extraSettings != nil {
 			relayServers = relayhandler.RelayServersForAccount(config.Relay, &types.Settings{Extra: extraSettings})
 		}
+		// Apply group distribution before scoring: relays without groups stay
+		// global, the rest require a group-ID match with the peer. A peer that
+		// matches nothing gets no relay section, which clients interpret as
+		// relay disabled for that peer.
+		relayServers = relayhandler.FilterRelayDescriptorsForGroups(relayServers, peerGroupIDs)
 		if len(relayServers) > 0 {
 			relayCfg = relayConfigFromDescriptors(relayServers)
 			if relayToken != nil {
@@ -133,10 +144,31 @@ func relayConfigFromDescriptors(relays []relayhandler.RelayServerDescriptor) *pr
 		}
 		config.Urls = append(config.Urls, relay.Address)
 		config.Servers = append(config.Servers, &proto.RelayServerConfig{
-			Url: relay.Address, Priority: int32(relay.Priority), Id: relay.ID, Name: relay.Name,
+			Url: relay.Address, Priority: int32(effectiveRelayPriority(relay)), Id: relay.ID, Name: relay.Name,
 		})
 	}
 	return config
+}
+
+// effectiveRelayPriority discounts a relay's configured priority by its
+// current load: effective = base - min(connectedPeers/20, 20). Unknown load
+// (zero peers) applies no penalty. The result is clamped to at least 1: the
+// client only honors priority > 0 and falls back to the default weight 30
+// otherwise, so a non-positive value would promote a heavily loaded
+// low-priority relay above genuinely higher-priority ones.
+func effectiveRelayPriority(relay relayhandler.RelayServerDescriptor) int {
+	effective := relay.Priority - relayLoadPenalty(relay.ConnectedPeers)
+	return max(effective, 1)
+}
+
+// relayLoadPenalty converts a connected-peer count into subtracted priority
+// points, one point per relayLoadPenaltyPeersPerPoint peers, capped at
+// relayLoadPenaltyMax.
+func relayLoadPenalty(connectedPeers int) int {
+	if connectedPeers <= 0 {
+		return 0
+	}
+	return min(connectedPeers/relayLoadPenaltyPeersPerPoint, relayLoadPenaltyMax)
 }
 
 func toPeerConfig(peer *nmdata.Peer, network *nmdata.Network, dnsName string, settings *nmdata.AccountSettingsInfo, httpConfig *nbconfig.HttpServerConfig, deviceFlowConfig *nbconfig.DeviceAuthorizationFlow, enableSSH bool, forceRoutingPeerDNS bool) *proto.PeerConfig {
@@ -193,7 +225,7 @@ func ToSyncResponse(ctx context.Context, config *nbconfig.Config, httpConfig *nb
 		Checks: toProtocolChecks(ctx, checks),
 	}
 
-	nbConfig := toNetbirdConfig(config, turnCredentials, relayCredentials, extraSettings, settings)
+	nbConfig := toNetbirdConfig(config, turnCredentials, relayCredentials, extraSettings, settings, peerGroups)
 	extendedConfig := integrationsConfig.ExtendNetBirdConfig(peer.ID, peerGroups, nbConfig, extraSettings)
 	response.NetbirdConfig = extendedConfig
 

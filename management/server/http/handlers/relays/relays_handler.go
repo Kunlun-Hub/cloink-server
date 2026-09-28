@@ -56,6 +56,8 @@ const (
 	maxRelayAddressLength       = 2048
 	maxRelayManagementURLLength = 2048
 	maxRelayVersionLength       = 128
+	maxRelayGroups              = 32
+	maxRelayGroupNameLength     = 64
 )
 
 type Handler struct {
@@ -72,20 +74,23 @@ type relayConfigPusher interface {
 }
 
 type RelayStatus struct {
-	Address           string    `json:"address"`
-	ID                string    `json:"id,omitempty"`
-	Name              string    `json:"name,omitempty"`
-	ObservedID        string    `json:"observed_id,omitempty"`
-	Registered        bool      `json:"registered,omitempty"`
-	Priority          int       `json:"priority"`
-	Status            string    `json:"status"`
-	ConnectedClients  *int      `json:"connected_clients,omitempty"`
-	RegisteredClients int       `json:"registered_clients"`
-	PublicIP          string    `json:"public_ip,omitempty"`
-	CountryCode       string    `json:"country_code,omitempty"`
-	CityName          string    `json:"city_name,omitempty"`
-	LastChecked       time.Time `json:"last_checked"`
-	Error             string    `json:"error,omitempty"`
+	Address           string `json:"address"`
+	ID                string `json:"id,omitempty"`
+	Name              string `json:"name,omitempty"`
+	ObservedID        string `json:"observed_id,omitempty"`
+	Registered        bool   `json:"registered,omitempty"`
+	Priority          int    `json:"priority"`
+	Status            string `json:"status"`
+	ConnectedClients  *int   `json:"connected_clients,omitempty"`
+	RegisteredClients int    `json:"registered_clients"`
+	PublicIP          string `json:"public_ip,omitempty"`
+	CountryCode       string `json:"country_code,omitempty"`
+	CityName          string `json:"city_name,omitempty"`
+	// Groups lists the relay's distribution scope as group names.
+	// Empty means the relay is distributed to every peer.
+	Groups      []string  `json:"groups,omitempty"`
+	LastChecked time.Time `json:"last_checked"`
+	Error       string    `json:"error,omitempty"`
 }
 
 type relaySetupTokenResponse struct {
@@ -103,6 +108,10 @@ type registerRelayRequest struct {
 	ManagementURL    string `json:"management_url,omitempty"`
 	Version          string `json:"version,omitempty"`
 	ConnectedClients *int   `json:"connected_clients,omitempty"`
+	// Groups limits relay distribution to peers in at least one of these
+	// groups, given as group names. Empty means the relay is distributed to
+	// every peer.
+	Groups []string `json:"groups,omitempty"`
 }
 
 type registerRelayResponse struct {
@@ -111,6 +120,10 @@ type registerRelayResponse struct {
 
 type updateRelayRequest struct {
 	Priority int `json:"priority"`
+	// Groups replaces the relay's distribution groups when present, given as
+	// group names and resolved to group IDs. Nil leaves the current groups
+	// unchanged; an empty list restores global distribution.
+	Groups *[]string `json:"groups,omitempty"`
 }
 
 type applyRelayConfigResponse struct {
@@ -131,7 +144,11 @@ type registeredRelay struct {
 	ManagementURL    string
 	Version          string
 	ConnectedClients *int
-	LastSeen         time.Time
+	// Groups limits relay distribution to peers in at least one of these
+	// groups, stored as group IDs. Empty means the relay is distributed to
+	// every peer.
+	Groups   []string
+	LastSeen time.Time
 }
 
 type RelayServerDescriptor struct {
@@ -139,6 +156,13 @@ type RelayServerDescriptor struct {
 	Name     string
 	Address  string
 	Priority int
+	// ConnectedPeers is the last known number of connected clients, or zero
+	// when unknown. It feeds the load-aware effective priority.
+	ConnectedPeers int
+	// Groups limits relay distribution to peers in at least one of these
+	// groups, stored as group IDs. Empty means the relay is distributed to
+	// every peer.
+	Groups []string
 }
 
 type relayRegistry struct {
@@ -169,7 +193,7 @@ func RelayServersForAccount(config *nbconfig.Relay, settings *types.Settings) []
 func relayServers(config *nbconfig.Relay, registeredRelays []registeredRelay) []RelayServerDescriptor {
 	var allRelays []RelayServerDescriptor
 	seenAll := make(map[string]int)
-	addRelay := func(id, name, address string, priority int) {
+	addRelay := func(id, name, address string, priority, connectedPeers int, groups []string) {
 		if address == "" {
 			return
 		}
@@ -180,6 +204,8 @@ func relayServers(config *nbconfig.Relay, registeredRelays []registeredRelay) []
 				existing.ID = relayKey(id, address)
 				existing.Name = name
 				existing.Priority = priority
+				existing.ConnectedPeers = connectedPeers
+				existing.Groups = slices.Clone(groups)
 				return
 			}
 			if priority == existing.Priority {
@@ -189,14 +215,24 @@ func relayServers(config *nbconfig.Relay, registeredRelays []registeredRelay) []
 				if id != "" && strings.HasPrefix(existing.ID, "relay_") {
 					existing.ID = relayKey(id, address)
 				}
+				// A self-registered duplicate carries fresher load and group
+				// data than the static config entry; adopt it when present.
+				if connectedPeers > 0 {
+					existing.ConnectedPeers = connectedPeers
+				}
+				if len(groups) > 0 {
+					existing.Groups = slices.Clone(groups)
+				}
 			}
 			return
 		}
 		relay := RelayServerDescriptor{
-			ID:       relayKey(id, address),
-			Name:     name,
-			Address:  address,
-			Priority: priority,
+			ID:             relayKey(id, address),
+			Name:           name,
+			Address:        address,
+			Priority:       priority,
+			ConnectedPeers: connectedPeers,
+			Groups:         slices.Clone(groups),
 		}
 		seenAll[address] = len(allRelays)
 		allRelays = append(allRelays, relay)
@@ -207,7 +243,7 @@ func relayServers(config *nbconfig.Relay, registeredRelays []registeredRelay) []
 			if server == nil {
 				continue
 			}
-			addRelay(server.ID, server.Name, server.Address, server.Priority)
+			addRelay(server.ID, server.Name, server.Address, server.Priority, 0, nil)
 		}
 	}
 
@@ -215,7 +251,11 @@ func relayServers(config *nbconfig.Relay, registeredRelays []registeredRelay) []
 		if time.Since(relay.LastSeen) > relayRegistrationTTL {
 			continue
 		}
-		addRelay(relay.ID, relay.Name, relay.Address, relay.Priority)
+		connectedPeers := 0
+		if relay.ConnectedClients != nil && *relay.ConnectedClients > 0 {
+			connectedPeers = *relay.ConnectedClients
+		}
+		addRelay(relay.ID, relay.Name, relay.Address, relay.Priority, connectedPeers, relay.Groups)
 	}
 
 	sortRelayDescriptorsByPriority(allRelays)
@@ -238,6 +278,130 @@ func normalizeRelayPriority(priority int) int {
 		return defaultRelayPriority
 	}
 	return priority
+}
+
+// normalizeRelayGroups trims group names, drops empties and duplicates, and
+// enforces the count and length limits.
+func normalizeRelayGroups(groups []string) ([]string, error) {
+	if len(groups) > maxRelayGroups {
+		return nil, fmt.Errorf("relay groups must not exceed %d entries", maxRelayGroups)
+	}
+	result := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		name := strings.TrimSpace(group)
+		if name == "" {
+			continue
+		}
+		if strings.ContainsAny(name, "\x00\r\n") {
+			return nil, fmt.Errorf("relay group name %q contains invalid characters", name)
+		}
+		if len(name) > maxRelayGroupNameLength {
+			return nil, fmt.Errorf("relay group name %q exceeds %d characters", name, maxRelayGroupNameLength)
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	return result, nil
+}
+
+// resolveRelayGroupIDs maps user-supplied group names to group IDs for the
+// account. Relay distribution stores group IDs: they are stable across group
+// renames, and both distribution paths (sync pull and config push) already
+// work with IDs. The API keeps accepting names for usability; unknown names
+// are rejected so a typo cannot silently strand a relay.
+func (h *Handler) resolveRelayGroupIDs(ctx context.Context, accountID string, names []string) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	if h.accountManager == nil {
+		return nil, fmt.Errorf("account manager is not available")
+	}
+	account, err := h.accountManager.GetAccount(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load account groups: %w", err)
+	}
+	idsByName := make(map[string][]string)
+	for id, group := range account.Groups {
+		if group == nil || group.Name == "" {
+			continue
+		}
+		idsByName[group.Name] = append(idsByName[group.Name], id)
+	}
+	ids := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	var unknown []string
+	for _, name := range names {
+		matched, ok := idsByName[name]
+		if !ok {
+			unknown = append(unknown, name)
+			continue
+		}
+		for _, id := range matched {
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("unknown groups: %s", strings.Join(unknown, ", "))
+	}
+	return ids, nil
+}
+
+// groupNamesForIDs is the best-effort reverse of resolveRelayGroupIDs, used to
+// display stored group IDs as names in API responses. Unresolvable IDs are
+// returned as-is so a deleted group stays visible instead of vanishing.
+func (h *Handler) groupNamesForIDs(ctx context.Context, accountID string, ids []string) []string {
+	if len(ids) == 0 || h.accountManager == nil {
+		return nil
+	}
+	account, err := h.accountManager.GetAccount(ctx, accountID)
+	if err != nil {
+		return slices.Clone(ids)
+	}
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if group, ok := account.Groups[id]; ok && group != nil && group.Name != "" {
+			names = append(names, group.Name)
+			continue
+		}
+		names = append(names, id)
+	}
+	return names
+}
+
+// FilterRelayDescriptorsForGroups returns the relays a peer may receive:
+// relays without groups are distributed globally, relays with groups only to
+// peers whose group IDs intersect. peerGroupIDs holds the peer's group IDs;
+// matching is exact and case-sensitive.
+func FilterRelayDescriptorsForGroups(relays []RelayServerDescriptor, peerGroupIDs []string) []RelayServerDescriptor {
+	if len(relays) == 0 {
+		return nil
+	}
+	peerGroups := make(map[string]struct{}, len(peerGroupIDs))
+	for _, id := range peerGroupIDs {
+		peerGroups[id] = struct{}{}
+	}
+	result := make([]RelayServerDescriptor, 0, len(relays))
+	for _, relay := range relays {
+		if len(relay.Groups) == 0 {
+			result = append(result, relay)
+			continue
+		}
+		for _, group := range relay.Groups {
+			if _, ok := peerGroups[group]; ok {
+				result = append(result, relay)
+				break
+			}
+		}
+	}
+	return result
 }
 
 func sortRelayDescriptorsByPriority(relays []RelayServerDescriptor) {
@@ -290,18 +454,29 @@ func (h *Handler) getAllRelays(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, relay := range activeRelayRegistry.list(userAuth.AccountId) {
-		if _, ok := seen[relayKey(relay.ID, relay.Address)]; ok {
+		key := relayKey(relay.ID, relay.Address)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		relays = append(relays, h.registeredRelayStatus(ctx, relay, registeredClients))
-		seen[relayKey(relay.ID, relay.Address)] = struct{}{}
+		status := h.registeredRelayStatus(ctx, relay, registeredClients)
+		status.Groups = h.groupNamesForIDs(ctx, userAuth.AccountId, relay.Groups)
+		if status.Status == "online" && status.ConnectedClients != nil {
+			// Refresh the load snapshot so the effective-priority
+			// calculation in the relay config conversion sees live data.
+			relay.ConnectedClients = status.ConnectedClients
+			activeRelayRegistry.upsert(userAuth.AccountId, relay)
+		}
+		relays = append(relays, status)
+		seen[key] = struct{}{}
 	}
 
 	for _, relay := range h.storedRegisteredRelays(ctx, userAuth.AccountId) {
 		if _, ok := seen[relayKey(relay.ID, relay.Address)]; ok {
 			continue
 		}
-		relays = append(relays, h.registeredRelayStatus(ctx, relay, registeredClients))
+		status := h.registeredRelayStatus(ctx, relay, registeredClients)
+		status.Groups = h.groupNamesForIDs(ctx, userAuth.AccountId, relay.Groups)
+		relays = append(relays, status)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -460,13 +635,36 @@ func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	priority := normalizeRelayPriority(req.Priority)
-	storedPriority, stored := h.storedRelayPriority(r.Context(), accountID, req.ID, req.Address)
+	storedRelay, stored := h.storedRelay(r.Context(), accountID, req.ID, req.Address)
 	if claims.Expired(time.Now()) && !stored {
 		util.WriteErrorResponse("invalid relay setup token", http.StatusUnauthorized, w)
 		return
 	}
 	if stored {
-		priority = storedPriority
+		priority = normalizeRelayPriority(storedRelay.Priority)
+	}
+
+	groups, err := normalizeRelayGroups(req.Groups)
+	if err != nil {
+		util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
+		return
+	}
+	if req.Groups == nil {
+		// The relay agent does not report its distribution scope, so a
+		// re-registration must not wipe groups assigned through the API.
+		// Stored groups are already group IDs.
+		if stored {
+			groups = slices.Clone(storedRelay.Groups)
+		} else if activeGroups, ok := activeRelayRegistry.groupsFor(accountID, req.ID, req.Address); ok {
+			groups = activeGroups
+		}
+	} else {
+		// Resolve the supplied group names to IDs for distribution.
+		groups, err = h.resolveRelayGroupIDs(r.Context(), accountID, groups)
+		if err != nil {
+			util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
+			return
+		}
 	}
 
 	relay := registeredRelay{
@@ -477,6 +675,7 @@ func (h *Handler) registerRelay(w http.ResponseWriter, r *http.Request) {
 		ManagementURL:    req.ManagementURL,
 		Version:          req.Version,
 		ConnectedClients: req.ConnectedClients,
+		Groups:           groups,
 		LastSeen:         time.Now(),
 	}
 	if accountID != "" {
@@ -515,6 +714,20 @@ func (h *Handler) updateRelay(w http.ResponseWriter, r *http.Request) {
 	priority := normalizeRelayPriority(req.Priority)
 	updatedActive := activeRelayRegistry.updatePriority(userAuth.AccountId, id, priority)
 	updatedStored := h.updateStoredRelayPriority(ctx, userAuth.AccountId, id, priority)
+	if req.Groups != nil {
+		groups, err := normalizeRelayGroups(*req.Groups)
+		if err != nil {
+			util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
+			return
+		}
+		groupIDs, err := h.resolveRelayGroupIDs(ctx, userAuth.AccountId, groups)
+		if err != nil {
+			util.WriteErrorResponse(err.Error(), http.StatusBadRequest, w)
+			return
+		}
+		updatedActive = activeRelayRegistry.updateGroups(userAuth.AccountId, id, groupIDs) || updatedActive
+		updatedStored = h.updateStoredRelayGroups(ctx, userAuth.AccountId, id, groupIDs) || updatedStored
+	}
 	if !updatedActive && !updatedStored {
 		util.WriteErrorResponse("relay not found", http.StatusNotFound, w)
 		return
@@ -676,6 +889,21 @@ func (r *relayRegistry) updatePriority(accountID, id string, priority int) bool 
 	return false
 }
 
+func (r *relayRegistry) updateGroups(accountID, id string, groups []string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for key, relay := range r.relays {
+		if !strings.HasPrefix(key, registryKey(accountID, "")) || !matchesRelay(id, relayKey(relay.ID, relay.Address), relay.ID, relay.Address) {
+			continue
+		}
+		relay.Groups = slices.Clone(groups)
+		r.relays[key] = relay
+		return true
+	}
+	return false
+}
+
 func (r *relayRegistry) priorityFor(accountID, id, address string) (int, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -688,6 +916,20 @@ func (r *relayRegistry) priorityFor(accountID, id, address string) (int, bool) {
 		return normalizeRelayPriority(relay.Priority), true
 	}
 	return 0, false
+}
+
+func (r *relayRegistry) groupsFor(accountID, id, address string) ([]string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	searchID := relayKey(id, address)
+	for key, relay := range r.relays {
+		if !strings.HasPrefix(key, registryKey(accountID, "")) || !matchesRelayIdentity(searchID, address, relayKey(relay.ID, relay.Address), relay.ID, relay.Address) {
+			continue
+		}
+		return slices.Clone(relay.Groups), true
+	}
+	return nil, false
 }
 
 func (r *relayRegistry) list(accountID string) []registeredRelay {
@@ -733,6 +975,7 @@ func registeredRelaysFromSettings(settings *types.Settings) []registeredRelay {
 			ManagementURL:    relay.ManagementURL,
 			Version:          relay.Version,
 			ConnectedClients: relay.ConnectedClients,
+			Groups:           slices.Clone(relay.Groups),
 			LastSeen:         relay.LastSeen,
 		})
 	}
@@ -784,22 +1027,58 @@ func (h *Handler) updateStoredRelayPriority(ctx context.Context, accountID, id s
 	return updated
 }
 
-func (h *Handler) storedRelayPriority(ctx context.Context, accountID, id, address string) (int, bool) {
+// storedRelay returns the persisted registration for a relay identity, if any.
+func (h *Handler) storedRelay(ctx context.Context, accountID, id, address string) (types.RegisteredRelay, bool) {
 	if accountID == "" || h.accountManager == nil {
-		return 0, false
+		return types.RegisteredRelay{}, false
 	}
 	storeManager := h.accountManager.GetStore()
 	if storeManager == nil {
-		return 0, false
+		return types.RegisteredRelay{}, false
 	}
 	settings, err := storeManager.GetAccountSettings(ctx, store.LockingStrengthNone, accountID)
 	if err != nil || settings == nil || settings.Extra == nil {
-		return 0, false
+		return types.RegisteredRelay{}, false
 	}
-	if relay, ok := findStoredRelay(settings.Extra.RegisteredRelays, id, address); ok {
-		return normalizeRelayPriority(relay.Priority), true
+	return findStoredRelay(settings.Extra.RegisteredRelays, id, address)
+}
+
+func (h *Handler) updateStoredRelayGroups(ctx context.Context, accountID, id string, groups []string) bool {
+	if accountID == "" || h.accountManager == nil {
+		return false
 	}
-	return 0, false
+	storeManager := h.accountManager.GetStore()
+	if storeManager == nil {
+		return false
+	}
+
+	updated := false
+	if err := storeManager.ExecuteInTransaction(ctx, func(transaction store.Store) error {
+		settings, err := transaction.GetAccountSettings(ctx, store.LockingStrengthUpdate, accountID)
+		if err != nil {
+			return err
+		}
+		if settings == nil || settings.Extra == nil || len(settings.Extra.RegisteredRelays) == 0 {
+			return nil
+		}
+
+		settings = settings.Copy()
+		for key, relay := range settings.Extra.RegisteredRelays {
+			if !matchesRelay(id, key, relay.ID, relay.Address) {
+				continue
+			}
+			relay.Groups = slices.Clone(groups)
+			settings.Extra.RegisteredRelays[key] = relay
+			updated = true
+		}
+		if !updated {
+			return nil
+		}
+		return transaction.SaveAccountSettings(ctx, accountID, settings)
+	}); err != nil {
+		log.WithContext(ctx).Warnf("failed to update stored relay %s groups for account %s: %v", id, accountID, err)
+	}
+	return updated
 }
 
 func (h *Handler) persistRegisteredRelay(ctx context.Context, accountID string, relay registeredRelay) error {
@@ -831,6 +1110,7 @@ func (h *Handler) persistRegisteredRelay(ctx context.Context, accountID string, 
 			ManagementURL:    relay.ManagementURL,
 			Version:          relay.Version,
 			ConnectedClients: relay.ConnectedClients,
+			Groups:           slices.Clone(relay.Groups),
 			LastSeen:         relay.LastSeen,
 		}
 		return transaction.SaveAccountSettings(ctx, accountID, settings)

@@ -15,6 +15,7 @@ import (
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map"
 	"github.com/netbirdio/netbird/management/internals/controllers/network_map/controller/cache"
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
+	relayhandler "github.com/netbirdio/netbird/management/server/http/handlers/relays"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/shared/management/networkmap"
@@ -278,7 +279,7 @@ func TestToNetbirdConfig_RelayInvariant(t *testing.T) {
 	settings := &types.Settings{MetricsPushEnabled: true}
 
 	t.Run("nil server config returns nil config", func(t *testing.T) {
-		nbCfg := toNetbirdConfig(nil, nil, nil, nil, types.TwinAccountSettings(settings))
+		nbCfg := toNetbirdConfig(nil, nil, nil, nil, types.TwinAccountSettings(settings), nil)
 		assert.Nil(t, nbCfg, "fan-out updates must not carry a partial NetbirdConfig even when settings are present")
 	})
 
@@ -293,7 +294,7 @@ func TestToNetbirdConfig_RelayInvariant(t *testing.T) {
 		}
 		relayToken := &Token{Payload: "token-payload", Signature: "token-signature"}
 
-		nbCfg := toNetbirdConfig(cfg, nil, relayToken, nil, types.TwinAccountSettings(settings))
+		nbCfg := toNetbirdConfig(cfg, nil, relayToken, nil, types.TwinAccountSettings(settings), nil)
 		require.NotNil(t, nbCfg)
 		require.NotNil(t, nbCfg.Relay, "non-nil NetbirdConfig must include the relay section")
 		assert.Equal(t, cfg.Relay.Addresses, nbCfg.Relay.Urls, "relay URLs should match the server config")
@@ -305,6 +306,53 @@ func TestToNetbirdConfig_RelayInvariant(t *testing.T) {
 		require.NotNil(t, nbCfg.Metrics)
 		assert.True(t, nbCfg.Metrics.Enabled, "metrics flag should carry the settings value")
 	})
+}
+
+// TestToNetbirdConfig_RelayGroupFiltering verifies that group-scoped relays are
+// distributed per peer: a peer only receives global relays plus relays whose
+// group IDs intersect its own. A peer matching nothing gets no relay section,
+// which clients interpret as relay disabled for that peer.
+func TestToNetbirdConfig_RelayGroupFiltering(t *testing.T) {
+	const (
+		groupEng = "group-eng-id"
+		groupOps = "group-ops-id"
+	)
+	cfg := &nbconfig.Config{Relay: &nbconfig.Relay{}}
+	extra := &types.ExtraSettings{RegisteredRelays: map[string]types.RegisteredRelay{
+		"global": {ID: "global", Address: "rels://global.example.com:443", Priority: 30, LastSeen: time.Now()},
+		"eng":    {ID: "eng", Address: "rels://eng.example.com:443", Priority: 30, Groups: []string{groupEng}, LastSeen: time.Now()},
+		"ops":    {ID: "ops", Address: "rels://ops.example.com:443", Priority: 30, Groups: []string{groupOps}, LastSeen: time.Now()},
+	}}
+	settings := &types.Settings{Extra: extra}
+
+	collect := func(t *testing.T, peerGroupIDs []string) []string {
+		t.Helper()
+		nbCfg := toNetbirdConfig(cfg, nil, nil, extra, types.TwinAccountSettings(settings), peerGroupIDs)
+		require.NotNil(t, nbCfg)
+		if nbCfg.Relay == nil {
+			return nil
+		}
+		got := make([]string, 0, len(nbCfg.Relay.Servers))
+		for _, server := range nbCfg.Relay.Servers {
+			got = append(got, server.Url)
+		}
+		return got
+	}
+
+	engURLs := collect(t, []string{groupEng})
+	require.ElementsMatch(t,
+		[]string{"rels://global.example.com:443", "rels://eng.example.com:443"},
+		engURLs, "eng peer must receive the global and eng relays")
+
+	opsURLs := collect(t, []string{groupOps})
+	require.ElementsMatch(t,
+		[]string{"rels://global.example.com:443", "rels://ops.example.com:443"},
+		opsURLs, "ops peer must receive the global and ops relays")
+
+	plainURLs := collect(t, nil)
+	require.ElementsMatch(t,
+		[]string{"rels://global.example.com:443"},
+		plainURLs, "peer without groups must receive only the global relay")
 }
 
 func TestToPeerConfig_RoutingPeerDNSResolution(t *testing.T) {
@@ -337,4 +385,55 @@ func TestToPeerConfig_RoutingPeerDNSResolution(t *testing.T) {
 				"RoutingPeerDnsResolutionEnabled should reflect global || embedded || forced")
 		})
 	}
+}
+
+func TestRelayLoadPenalty(t *testing.T) {
+	cases := []struct {
+		peers int
+		want  int
+	}{
+		{peers: 0, want: 0},
+		{peers: -5, want: 0},
+		{peers: 19, want: 0},
+		{peers: 20, want: 1},
+		{peers: 85, want: 4},
+		{peers: 400, want: 20},
+		{peers: 10000, want: 20},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, relayLoadPenalty(tc.peers), "peers=%d", tc.peers)
+	}
+}
+
+func TestRelayConfigFromDescriptorsAppliesLoadPenalty(t *testing.T) {
+	relays := []relayhandler.RelayServerDescriptor{
+		{ID: "idle", Address: "rels://idle.example:443", Priority: 100},
+		{ID: "busy", Address: "rels://busy.example:443", Priority: 100, ConnectedPeers: 85},
+		{ID: "hammered", Address: "rels://hammered.example:443", Priority: 100, ConnectedPeers: 10000},
+	}
+
+	config := relayConfigFromDescriptors(relays)
+
+	require.Len(t, config.Servers, 3)
+	assert.Equal(t, int32(100), config.Servers[0].Priority)
+	assert.Equal(t, int32(96), config.Servers[1].Priority, "85 peers subtract 4 points")
+	assert.Equal(t, int32(80), config.Servers[2].Priority, "penalty is capped at 20 points")
+}
+
+func TestRelayConfigFromDescriptorsClampsNonPositivePriority(t *testing.T) {
+	// A low base priority under high load must not go to zero or negative:
+	// the client only honors priority > 0 and would otherwise treat the
+	// relay as unprioritized with the default weight.
+	relays := []relayhandler.RelayServerDescriptor{
+		{ID: "low-base", Address: "rels://low.example:443", Priority: 10, ConnectedPeers: 200},
+		{ID: "low-base-max", Address: "rels://lowmax.example:443", Priority: 10, ConnectedPeers: 10000},
+		{ID: "tiny", Address: "rels://tiny.example:443", Priority: 1},
+	}
+
+	config := relayConfigFromDescriptors(relays)
+
+	require.Len(t, config.Servers, 3)
+	assert.Equal(t, int32(1), config.Servers[0].Priority, "10 - 10 must clamp to 1, not 0")
+	assert.Equal(t, int32(1), config.Servers[1].Priority, "10 - 20 must clamp to 1, not -10")
+	assert.Equal(t, int32(1), config.Servers[2].Priority, "base 1 with no load stays 1")
 }

@@ -3,16 +3,45 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
 
 func TestServerPickerCancellationDoesNotCooldown(t *testing.T) {
-	for _, err := range []error{context.Canceled, context.DeadlineExceeded} {
+	for _, err := range []error{
+		context.Canceled,
+		fmt.Errorf("dial aborted: %w", context.Canceled),
+	} {
 		sp := ServerPicker{CooldownDuration: time.Minute}
 		sp.markServerFailure("rels://cancelled", time.Now(), err)
 		if len(sp.cooldowns) != 0 {
 			t.Fatalf("%v entered cooldown: %v", err, sp.cooldowns)
+		}
+	}
+}
+
+// A relay that is too slow to answer within the connection timeout is as
+// useless as a down one, so a (possibly wrapped) context.DeadlineExceeded
+// must put it into cooldown and keep it out of the next selection round.
+func TestServerPickerDeadlineExceededEntersCooldown(t *testing.T) {
+	for _, err := range []error{
+		context.DeadlineExceeded,
+		fmt.Errorf("handshake timeout: %w", context.DeadlineExceeded),
+	} {
+		sp := ServerPicker{CooldownDuration: time.Minute}
+		now := time.Now()
+		sp.markServerFailure("rels://slow", now, err)
+		until, ok := sp.cooldowns["rels://slow"]
+		if !ok {
+			t.Fatalf("%v did not enter cooldown: %v", err, sp.cooldowns)
+		}
+		if !until.After(now) {
+			t.Fatalf("%v cooldown did not extend into the future: %v", err, until)
+		}
+		got := sp.availableServerURLs(pickerConfig{}, []string{"rels://slow", "rels://healthy"}, now)
+		if len(got) != 1 || got[0] != "rels://healthy" {
+			t.Fatalf("%v kept the timed-out relay available: %v", err, got)
 		}
 	}
 }

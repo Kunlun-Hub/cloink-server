@@ -7036,14 +7036,16 @@ func (*StopBundleCaptureResponse) Descriptor() ([]byte, []int) {
 }
 
 type RelayServer struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uri           string                 `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
-	Weight        int32                  `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
-	Preferred     bool                   `protobuf:"varint,3,opt,name=preferred,proto3" json:"preferred,omitempty"`
-	Forced        bool                   `protobuf:"varint,4,opt,name=forced,proto3" json:"forced,omitempty"`
-	Current       bool                   `protobuf:"varint,5,opt,name=current,proto3" json:"current,omitempty"`
-	Available     bool                   `protobuf:"varint,6,opt,name=available,proto3" json:"available,omitempty"`
-	Error         string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Uri       string                 `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
+	Weight    int32                  `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
+	Preferred bool                   `protobuf:"varint,3,opt,name=preferred,proto3" json:"preferred,omitempty"`
+	Forced    bool                   `protobuf:"varint,4,opt,name=forced,proto3" json:"forced,omitempty"`
+	Current   bool                   `protobuf:"varint,5,opt,name=current,proto3" json:"current,omitempty"`
+	Available bool                   `protobuf:"varint,6,opt,name=available,proto3" json:"available,omitempty"`
+	Error     string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	// Last probed dial round-trip time in milliseconds. Zero means no measurement.
+	RttMs         int64 `protobuf:"varint,8,opt,name=rtt_ms,json=rttMs,proto3" json:"rtt_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7125,6 +7127,13 @@ func (x *RelayServer) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *RelayServer) GetRttMs() int64 {
+	if x != nil {
+		return x.RttMs
+	}
+	return 0
 }
 
 type ListRelaysResponse struct {
@@ -7911,7 +7920,7 @@ const file_daemon_proto_rawDesc = "" +
 	"\atimeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\x1c\n" +
 	"\x1aStartBundleCaptureResponse\"\x1a\n" +
 	"\x18StopBundleCaptureRequest\"\x1b\n" +
-	"\x19StopBundleCaptureResponse\"\xbb\x01\n" +
+	"\x19StopBundleCaptureResponse\"\xd2\x01\n" +
 	"\vRelayServer\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\x12\x16\n" +
 	"\x06weight\x18\x02 \x01(\x05R\x06weight\x12\x1c\n" +
@@ -7919,7 +7928,8 @@ const file_daemon_proto_rawDesc = "" +
 	"\x06forced\x18\x04 \x01(\bR\x06forced\x12\x18\n" +
 	"\acurrent\x18\x05 \x01(\bR\acurrent\x12\x1c\n" +
 	"\tavailable\x18\x06 \x01(\bR\tavailable\x12\x14\n" +
-	"\x05error\x18\a \x01(\tR\x05error\"A\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x12\x15\n" +
+	"\x06rtt_ms\x18\b \x01(\x03R\x05rttMs\"A\n" +
 	"\x12ListRelaysResponse\x12+\n" +
 	"\x06relays\x18\x01 \x03(\v2\x13.daemon.RelayServerR\x06relays\"'\n" +
 	"\x0fSetRelayRequest\x12\x14\n" +

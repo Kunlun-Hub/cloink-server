@@ -60,6 +60,7 @@ func listRelays(cmd *cobra.Command, _ []string) error {
 		cmd.Printf("    URI: %s\n", relay.GetUri())
 		cmd.Printf("    Weight: %d%s\n", relay.GetWeight(), labelText)
 		cmd.Printf("    Status: %s\n", relayProbeStatus(relay))
+		cmd.Printf("    RTT: %s\n", relayRTTDisplay(relay))
 	}
 
 	return nil
@@ -109,6 +110,15 @@ func relayProbeStatus(relay *proto.RelayServer) string {
 		return "Unavailable"
 	}
 	return fmt.Sprintf("Unavailable, reason: %s", relay.GetError())
+}
+
+// relayRTTDisplay renders the last probed dial RTT of a relay server.
+// A zero value means the probe produced no measurement.
+func relayRTTDisplay(relay *proto.RelayServer) string {
+	if relay.GetRttMs() <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%dms", relay.GetRttMs())
 }
 
 func relayDisplayID(relayURL string) string {

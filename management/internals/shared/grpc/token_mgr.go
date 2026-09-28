@@ -160,13 +160,13 @@ func (m *TimeBasedAuthSecretsManager) pushRelayList(ctx context.Context, account
 		log.WithContext(ctx).WithError(err).Warn("failed to generate relay token for relay list update")
 		return false
 	}
-	update := &proto.SyncResponse{NetbirdConfig: &proto.NetbirdConfig{Relay: m.relayConfig(ctx, accountID, token)}}
+	update := &proto.SyncResponse{NetbirdConfig: &proto.NetbirdConfig{Relay: m.relayConfig(ctx, accountID, peerID, token)}}
 	m.extendNetbirdConfig(ctx, peerID, accountID, update)
 	m.updateManager.SendUpdate(ctx, peerID, &network_map.UpdateMessage{Update: update, MessageType: network_map.MessageTypeControlConfig})
 	return true
 }
 
-func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID string, token *Token) *proto.RelayConfig {
+func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID, peerID string, token *Token) *proto.RelayConfig {
 	settings, err := m.settingsManager.GetExtraSettings(ctx, accountID)
 	if err != nil {
 		log.WithContext(ctx).WithError(err).Warn("failed to load registered relays")
@@ -174,6 +174,14 @@ func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID
 	servers := relayhandler.ActiveRelayServers(m.relayCfg)
 	if err == nil {
 		servers = relayhandler.RelayServersForAccount(m.relayCfg, &types.Settings{Extra: settings})
+	}
+	// Per-peer group distribution, mirroring the sync path. On lookup failure
+	// we send the unfiltered list (the pre-feature behavior); the next sync
+	// delivers the correctly filtered config.
+	if groupIDs, err := m.groupsManager.GetPeerGroupIDs(ctx, accountID, peerID); err != nil {
+		log.WithContext(ctx).WithError(err).Warn("failed to get peer groups for relay list push, sending unfiltered list")
+	} else {
+		servers = relayhandler.FilterRelayDescriptorsForGroups(servers, groupIDs)
 	}
 	config := relayConfigFromDescriptors(servers)
 	config.TokenPayload = token.Payload
@@ -294,7 +302,7 @@ func (m *TimeBasedAuthSecretsManager) pushNewTURNAndRelayTokens(ctx context.Cont
 	if m.relayCfg != nil {
 		token, err := m.GenerateRelayToken()
 		if err == nil {
-			update.NetbirdConfig.Relay = m.relayConfig(ctx, accountID, token)
+			update.NetbirdConfig.Relay = m.relayConfig(ctx, accountID, peerID, token)
 		}
 	}
 
@@ -316,7 +324,7 @@ func (m *TimeBasedAuthSecretsManager) pushNewRelayTokens(ctx context.Context, ac
 
 	update := &proto.SyncResponse{
 		NetbirdConfig: &proto.NetbirdConfig{
-			Relay: m.relayConfig(ctx, accountID, token),
+			Relay: m.relayConfig(ctx, accountID, peerID, token),
 			// omit Turns to avoid updates there
 		},
 	}
