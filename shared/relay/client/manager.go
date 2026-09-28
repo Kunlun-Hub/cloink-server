@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"net"
 	"net/netip"
 	"net/url"
@@ -32,6 +33,24 @@ var (
 	// relayRTTCacheTTL bounds how long a probed dial RTT stays eligible for
 	// in-priority-group relay ordering.
 	relayRTTCacheTTL = 5 * time.Minute
+	// relayRTTProbeInterval is how often the background probe loop refreshes
+	// dial RTTs for relays sharing the top priority group.
+	relayRTTProbeInterval = 60 * time.Second
+	// relayRTTProbeJitter bounds the random jitter added to each probe tick,
+	// so a fleet of clients does not probe in lockstep.
+	relayRTTProbeJitter = 15 * time.Second
+	// relayRTTEWMAAlpha is the weight of a fresh sample in the smoothed RTT.
+	relayRTTEWMAAlpha = 0.3
+	// relayRTTMinSamples is how many probes a relay needs before its RTT
+	// influences picker ordering. A single sample is too noisy to trust.
+	relayRTTMinSamples = 2
+	// relayRTTHysteresisMs is the absolute RTT band inside which two relays
+	// are treated as equally fast, so the picker does not reorder on noise.
+	relayRTTHysteresisMs = 25
+	// relayRTTMigrationStreaks is how many consecutive probe ticks the home
+	// relay must be significantly slower than a same-priority alternative
+	// before the manager migrates to it.
+	relayRTTMigrationStreaks = 3
 
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
 )
@@ -86,9 +105,9 @@ type RelayServerInfo struct {
 	RTTMs int64
 }
 
-// relayRTTCache stores dial round-trip times measured by ProbeRelayServers
-// with a TTL, so the server picker can prefer low-latency relays inside a
-// priority group.
+// relayRTTCache stores dial round-trip times measured by relay probes with a
+// TTL, so the server picker can prefer low-latency relays inside a priority
+// group. Samples are smoothed with an EWMA to damp single-probe noise.
 type relayRTTCache struct {
 	mu      sync.RWMutex
 	entries map[string]relayRTTEntry
@@ -96,6 +115,7 @@ type relayRTTCache struct {
 
 type relayRTTEntry struct {
 	rtt       time.Duration
+	samples   int
 	expiresAt time.Time
 }
 
@@ -103,6 +123,8 @@ func newRelayRTTCache() *relayRTTCache {
 	return &relayRTTCache{entries: make(map[string]relayRTTEntry)}
 }
 
+// get returns the smoothed RTT. It reports false when the entry is missing,
+// expired, or has fewer than relayRTTMinSamples probes.
 func (c *relayRTTCache) get(relayURL string) (time.Duration, bool) {
 	if c == nil {
 		return 0, false
@@ -110,18 +132,27 @@ func (c *relayRTTCache) get(relayURL string) (time.Duration, bool) {
 	c.mu.RLock()
 	entry, ok := c.entries[relayURL]
 	c.mu.RUnlock()
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok || time.Now().After(entry.expiresAt) || entry.samples < relayRTTMinSamples {
 		return 0, false
 	}
 	return entry.rtt, true
 }
 
-func (c *relayRTTCache) set(relayURL string, rtt time.Duration) {
+// set folds a fresh probe sample into the entry's EWMA and refreshes its TTL.
+func (c *relayRTTCache) set(relayURL string, sample time.Duration) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	c.entries[relayURL] = relayRTTEntry{rtt: rtt, expiresAt: time.Now().Add(relayRTTCacheTTL)}
+	entry, ok := c.entries[relayURL]
+	if !ok {
+		entry = relayRTTEntry{rtt: sample}
+	} else {
+		entry.rtt = time.Duration(float64(sample)*relayRTTEWMAAlpha + float64(entry.rtt)*(1-relayRTTEWMAAlpha))
+	}
+	entry.samples++
+	entry.expiresAt = time.Now().Add(relayRTTCacheTTL)
+	c.entries[relayURL] = entry
 	c.mu.Unlock()
 }
 
@@ -194,7 +225,7 @@ type Manager struct {
 	relayClients      map[string]*RelayTrack
 	relayClientsMutex sync.RWMutex
 
-	// rttCache holds dial RTTs measured by ProbeRelayServers so the server
+	// rttCache holds dial RTTs measured by the relay probes so the server
 	// picker can order same-weight relays by latency.
 	rttCache *relayRTTCache
 
@@ -417,6 +448,10 @@ func (m *Manager) Serve() error {
 	if m.autoFailback {
 		go m.startFailbackLoop()
 	}
+	// The probe loop keeps dial RTTs warm so the picker can order relays
+	// inside a priority group by latency. It is cheap: one transport
+	// handshake per relay per interval, no relay session is established.
+	go m.startProbeLoop()
 	return err
 }
 
@@ -673,8 +708,9 @@ func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
 			relays[idx].Available = true
 			relays[idx].RTTMs = rtt.Milliseconds()
 			if err := probeClient.Close(); err != nil {
-				relays[idx].Available = false
-				relays[idx].Error = err.Error()
+				// The probe itself succeeded; a close failure must not
+				// overturn the result and mark the relay unavailable.
+				log.Debugf("relay probe for %s: close failed after successful probe: %v", relays[idx].URL, err)
 			}
 		}(i)
 	}
@@ -1232,6 +1268,186 @@ func (m *Manager) startFailbackLoop() {
 			m.failbackTick(healthyStreaks)
 		}
 	}
+}
+
+// startProbeLoop periodically refreshes dial RTTs for the relays sharing the
+// top priority group, so the server picker can order them by latency. Like
+// DERP probing in Tailscale, each tick is jittered to keep a fleet of clients
+// from probing in lockstep.
+func (m *Manager) startProbeLoop() {
+	// slowStreaks counts consecutive ticks in which the home relay was
+	// significantly slower than a same-priority alternative. It is owned by
+	// this loop.
+	slowStreaks := make(map[string]int)
+	timer := time.NewTimer(relayRTTProbeInterval + rand.N(relayRTTProbeJitter))
+	defer timer.Stop()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-timer.C:
+			timer.Reset(relayRTTProbeInterval + rand.N(relayRTTProbeJitter))
+			m.probeTick(slowStreaks)
+		}
+	}
+}
+
+// probeTick probes the top priority group with the cheap transport probe and,
+// when the home relay is persistently much slower than an alternative, hands
+// the migration decision to maybeMigrateOnRTT.
+func (m *Manager) probeTick(slowStreaks map[string]int) {
+	if !m.running.Load() || m.ctx.Err() != nil {
+		return
+	}
+	// Skip while a home-relay switch is in flight; the switch holds switchMu,
+	// and TryLock keeps the probe loop from blocking on it.
+	if !m.switchMu.TryLock() {
+		return
+	}
+	m.switchMu.Unlock()
+
+	m.relayConfigMu.RLock()
+	urls := slices.Clone(m.configuredRelayURLs)
+	weights := maps.Clone(m.relayWeights)
+	m.relayConfigMu.RUnlock()
+
+	group := topPriorityGroup(urls, weights)
+	if len(group) < 2 {
+		clear(slowStreaks)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(m.ctx, relayProbeTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, relayURL := range group {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			rtt, err := m.lightProbe(ctx, url)
+			if err != nil {
+				log.Debugf("relay RTT probe for %s failed: %v", url, err)
+				return
+			}
+			m.rttCache.set(url, rtt)
+			log.Debugf("relay RTT probe for %s: %s", url, rtt.Round(time.Millisecond))
+		}(relayURL)
+	}
+	wg.Wait()
+
+	m.maybeMigrateOnRTT(group, slowStreaks)
+}
+
+// lightProbe measures the transport handshake round trip to a relay without
+// establishing a relay session, so periodic probing stays cheap for both the
+// client and the relay server.
+func (m *Manager) lightProbe(ctx context.Context, relayURL string) (time.Duration, error) {
+	probeClient := NewClient(relayURL, m.tokenStore, m.peerID+"-rtt-probe", m.mtu)
+	probeClient.SetTransportFallback(m.transportFallback)
+	return probeClient.ProbeTransport(ctx)
+}
+
+// topPriorityGroup returns the relay URLs sharing the highest effective
+// weight. Probing and RTT ordering only matter inside one weight group,
+// because a relay never outranks a higher-weight one.
+func topPriorityGroup(urls []string, weights map[string]int) []string {
+	best := -1
+	for _, u := range urls {
+		if w := relayWeightOrDefault(weights, u); w > best {
+			best = w
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	var group []string
+	for _, u := range urls {
+		if relayWeightOrDefault(weights, u) == best {
+			group = append(group, u)
+		}
+	}
+	return group
+}
+
+// maybeMigrateOnRTT migrates the home relay to a same-priority alternative
+// that has been significantly faster for relayRTTMigrationStreaks consecutive
+// ticks. It never overrides weight priority: both relays are in the top
+// priority group. The thresholds are deliberately conservative because a
+// migration briefly disrupts peer traffic.
+func (m *Manager) maybeMigrateOnRTT(group []string, slowStreaks map[string]int) {
+	homeURL := m.currentRelayURL()
+	if homeURL == "" || !slices.Contains(group, homeURL) {
+		clear(slowStreaks)
+		return
+	}
+	homeRTT, ok := m.rttCache.get(homeURL)
+	if !ok {
+		clear(slowStreaks)
+		return
+	}
+	bestURL, bestRTT := "", time.Duration(0)
+	for _, u := range group {
+		if u == homeURL {
+			continue
+		}
+		rtt, ok := m.rttCache.get(u)
+		if !ok {
+			continue
+		}
+		if bestURL == "" || rtt < bestRTT {
+			bestURL, bestRTT = u, rtt
+		}
+	}
+	// The alternative must be at least twice as fast and 100ms faster in
+	// absolute terms; below that the win is not worth a migration.
+	if bestURL == "" || homeRTT < 2*bestRTT || homeRTT-bestRTT < 100*time.Millisecond {
+		clear(slowStreaks)
+		return
+	}
+	slowStreaks[bestURL]++
+	if slowStreaks[bestURL] < relayRTTMigrationStreaks {
+		log.Debugf("home relay %s slower than %s (%s vs %s), streak %d/%d",
+			homeURL, bestURL, homeRTT.Round(time.Millisecond), bestRTT.Round(time.Millisecond),
+			slowStreaks[bestURL], relayRTTMigrationStreaks)
+		return
+	}
+	clear(slowStreaks)
+	log.Infof("home relay %s persistently slower than %s (%s vs %s); migrating",
+		homeURL, bestURL, homeRTT.Round(time.Millisecond), bestRTT.Round(time.Millisecond))
+	m.migrateHomeRelayTo(bestURL)
+}
+
+// migrateHomeRelayTo connects to targetURL and swaps it in as the home relay.
+// It follows the same swap-then-retire pattern as the data-plane recovery
+// path, guarded by the config generation so a concurrent reconfiguration wins.
+func (m *Manager) migrateHomeRelayTo(targetURL string) {
+	if !m.running.Load() || m.ctx.Err() != nil {
+		return
+	}
+	m.relayClientMu.RLock()
+	home := m.relayClient
+	m.relayClientMu.RUnlock()
+	if home == nil {
+		return
+	}
+	homeURL := home.connectionURL
+	if homeURL == targetURL {
+		return
+	}
+	generation := m.relayConfigGeneration.Load()
+	candidate, err := m.serverPicker.PickServerFrom(m.ctx, []string{targetURL})
+	if err != nil {
+		log.Warnf("RTT migration to %s failed to connect; keeping %s: %v", targetURL, homeURL, err)
+		return
+	}
+	if !m.swapHomeRelay(home, candidate, generation) {
+		log.Warnf("RTT migration to %s lost the race; keeping %s", targetURL, homeURL)
+		_ = candidate.Close()
+		return
+	}
+	log.Infof("RTT migration: home relay moved from %s to %s", homeURL, targetURL)
+	m.onServerConnected()
+	m.retireHomeRelay(home)
 }
 
 // failbackTick evaluates one automatic failback opportunity. It only ever
