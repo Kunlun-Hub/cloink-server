@@ -419,3 +419,21 @@ func TestRelayConfigFromDescriptorsAppliesLoadPenalty(t *testing.T) {
 	assert.Equal(t, int32(96), config.Servers[1].Priority, "85 peers subtract 4 points")
 	assert.Equal(t, int32(80), config.Servers[2].Priority, "penalty is capped at 20 points")
 }
+
+func TestRelayConfigFromDescriptorsClampsNonPositivePriority(t *testing.T) {
+	// A low base priority under high load must not go to zero or negative:
+	// the client only honors priority > 0 and would otherwise treat the
+	// relay as unprioritized with the default weight.
+	relays := []relayhandler.RelayServerDescriptor{
+		{ID: "low-base", Address: "rels://low.example:443", Priority: 10, ConnectedPeers: 200},
+		{ID: "low-base-max", Address: "rels://lowmax.example:443", Priority: 10, ConnectedPeers: 10000},
+		{ID: "tiny", Address: "rels://tiny.example:443", Priority: 1},
+	}
+
+	config := relayConfigFromDescriptors(relays)
+
+	require.Len(t, config.Servers, 3)
+	assert.Equal(t, int32(1), config.Servers[0].Priority, "10 - 10 must clamp to 1, not 0")
+	assert.Equal(t, int32(1), config.Servers[1].Priority, "10 - 20 must clamp to 1, not -10")
+	assert.Equal(t, int32(1), config.Servers[2].Priority, "base 1 with no load stays 1")
+}

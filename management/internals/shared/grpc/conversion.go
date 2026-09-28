@@ -152,9 +152,13 @@ func relayConfigFromDescriptors(relays []relayhandler.RelayServerDescriptor) *pr
 
 // effectiveRelayPriority discounts a relay's configured priority by its
 // current load: effective = base - min(connectedPeers/20, 20). Unknown load
-// (zero peers) applies no penalty.
+// (zero peers) applies no penalty. The result is clamped to at least 1: the
+// client only honors priority > 0 and falls back to the default weight 30
+// otherwise, so a non-positive value would promote a heavily loaded
+// low-priority relay above genuinely higher-priority ones.
 func effectiveRelayPriority(relay relayhandler.RelayServerDescriptor) int {
-	return relay.Priority - relayLoadPenalty(relay.ConnectedPeers)
+	effective := relay.Priority - relayLoadPenalty(relay.ConnectedPeers)
+	return max(effective, 1)
 }
 
 // relayLoadPenalty converts a connected-peer count into subtracted priority
