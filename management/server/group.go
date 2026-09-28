@@ -14,6 +14,7 @@ import (
 	nbdns "github.com/netbirdio/netbird/dns"
 	"github.com/netbirdio/netbird/management/server/activity"
 	"github.com/netbirdio/netbird/management/server/affectedpeers"
+	relayhandler "github.com/netbirdio/netbird/management/server/http/handlers/relays"
 	routerTypes "github.com/netbirdio/netbird/management/server/networks/routers/types"
 	"github.com/netbirdio/netbird/management/server/permissions/modules"
 	"github.com/netbirdio/netbird/management/server/permissions/operations"
@@ -525,6 +526,14 @@ func (am *DefaultAccountManager) DeleteGroups(ctx context.Context, accountID, us
 	}
 
 	am.ExpandAndUpdateAffected(ctx, accountID, snap, change)
+
+	for _, group := range deletedGroups {
+		// Drop the deleted group from relay distribution scopes. Best effort:
+		// the group delete already committed, so a relay cleanup failure must
+		// not fail the request. A relay left with no groups reverts to global
+		// distribution.
+		relayhandler.RemoveGroupFromRelays(ctx, am.Store, accountID, group.ID)
+	}
 
 	return allErrors
 }

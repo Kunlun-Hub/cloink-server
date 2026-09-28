@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -18,6 +19,14 @@ import (
 
 const (
 	bufferSize = messages.MaxMessageSize
+
+	// defaultSendQueueSize bounds the per-peer async transport send queue when
+	// no explicit size is configured. It absorbs bursts toward a slow peer
+	// without stalling the sender's read loop.
+	defaultSendQueueSize = 1024
+
+	// activitySampleInterval caps how often a peer reports activity metrics.
+	activitySampleInterval = time.Second
 
 	errCloseConn = "failed to close connection to peer: %s"
 )
@@ -35,14 +44,31 @@ type Peer struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 
+	// sendQueue carries outbound transport messages to the writer goroutine.
+	// Only MsgTypeTransport packets go through the queue; control messages use
+	// the synchronous Write path because they are low-frequency and must not
+	// be dropped. A full queue drops packets instead of blocking the read loop.
+	sendQueue chan []byte
+	writerWg  sync.WaitGroup
+
+	// droppedPackets counts transport messages discarded because sendQueue was full.
+	droppedPackets atomic.Uint64
+
+	// lastActivityUnixNano throttles PeerActivity reports to activitySampleInterval per peer.
+	lastActivityUnixNano atomic.Int64
+
 	peersListener *store.Listener
 
 	// between the online peer collection step and the notification sending should not be sent offline notifications from another thread
 	notificationMutex sync.Mutex
 }
 
-// NewPeer creates a new Peer instance and prepare custom logging
-func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, store *store.Store, notifier *store.PeerNotifier) *Peer {
+// NewPeer creates a new Peer instance and prepare custom logging.
+// sendQueueSize bounds the async transport send queue; values <= 0 select defaultSendQueueSize.
+func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, store *store.Store, notifier *store.PeerNotifier, sendQueueSize int) *Peer {
+	if sendQueueSize <= 0 {
+		sendQueueSize = defaultSendQueueSize
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Peer{
 		metrics:   metrics,
@@ -53,6 +79,7 @@ func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, s
 		notifier:  notifier,
 		ctx:       ctx,
 		ctxCancel: cancel,
+		sendQueue: make(chan []byte, sendQueueSize),
 	}
 
 	return p
@@ -63,6 +90,11 @@ func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, s
 // the message accordingly.
 func (p *Peer) Work() {
 	p.peersListener = p.notifier.NewListener(p.sendPeersOnline, p.sendPeersWentOffline)
+
+	// Drain outbound transport messages without blocking this read loop.
+	p.writerWg.Add(1)
+	go p.writeLoop()
+
 	defer func() {
 		p.ctxCancel()
 		p.notifier.RemoveListener(p.peersListener)
@@ -70,6 +102,9 @@ func (p *Peer) Work() {
 		if err := p.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			p.log.Errorf(errCloseConn, err)
 		}
+		// The close above unblocks the writer's in-flight write; wait for it
+		// to exit. Anything still queued is discarded.
+		p.writerWg.Wait()
 	}()
 
 	ctx := p.ctx
@@ -120,8 +155,8 @@ func (p *Peer) handleMsgType(ctx context.Context, msgType messages.MsgType, hc *
 	case messages.MsgTypeHealthCheck:
 		hc.OnHCResponse()
 	case messages.MsgTypeTransport:
-		p.metrics.TransferBytesRecv.Add(ctx, int64(n))
-		p.metrics.PeerActivity(p.String())
+		p.metrics.AddBytesRecv(int64(n))
+		p.recordActivity()
 		p.handleTransportMsg(msg)
 	case messages.MsgTypeClose:
 		p.log.Infof("peer exited gracefully")
@@ -142,6 +177,75 @@ func (p *Peer) Write(ctx context.Context, b []byte) (int, error) {
 	p.connMu.RLock()
 	defer p.connMu.RUnlock()
 	return p.conn.Write(ctx, b)
+}
+
+// EnqueueTransport queues a transport message for asynchronous delivery by the
+// peer's writer goroutine. The bytes are copied because the caller reuses its
+// read buffer. It never blocks: when the queue is full the message is dropped
+// and counted instead of stalling the sender's read loop.
+func (p *Peer) EnqueueTransport(msg []byte) {
+	buf := make([]byte, len(msg))
+	copy(buf, msg)
+
+	select {
+	case p.sendQueue <- buf:
+	default:
+		p.droppedPackets.Add(1)
+		p.metrics.RecordDroppedTransportPacket()
+		p.log.Debugf("send queue full, dropping transport packet")
+	}
+}
+
+// writeLoop drains sendQueue with synchronous writes until the peer is closed
+// or a write fails. It is the only goroutine writing transport messages, so a
+// slow peer backs up its own queue instead of stalling other peers' read loops.
+func (p *Peer) writeLoop() {
+	defer p.writerWg.Done()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case msg := <-p.sendQueue:
+			n, err := p.Write(p.ctx, msg)
+			if err != nil {
+				p.log.Errorf("failed to write transport message: %s", err)
+				// Break the connection so the read loop tears the peer down
+				// instead of leaving queued messages undeliverable.
+				_ = p.conn.Close()
+				return
+			}
+			p.metrics.AddBytesSent(int64(n))
+		}
+	}
+}
+
+// recordActivity reports peer activity at most once per activitySampleInterval.
+// Low-rate peers are unaffected: a packet arriving after a quiet interval is always reported.
+func (p *Peer) recordActivity() {
+	now := time.Now().UnixNano()
+	last := p.lastActivityUnixNano.Load()
+	if now-last < int64(activitySampleInterval) {
+		return
+	}
+	if p.lastActivityUnixNano.CompareAndSwap(last, now) {
+		p.metrics.PeerActivity(p.String())
+	}
+}
+
+// DroppedPackets returns the number of transport messages dropped because the send queue was full.
+func (p *Peer) DroppedPackets() uint64 {
+	return p.droppedPackets.Load()
+}
+
+// SendQueueLen returns the current number of queued outbound transport messages.
+func (p *Peer) SendQueueLen() int {
+	return len(p.sendQueue)
+}
+
+// SendQueueCap returns the capacity of the outbound transport send queue.
+func (p *Peer) SendQueueCap() int {
+	return cap(p.sendQueue)
 }
 
 // CloseGracefully closes the connection with the peer gracefully. Send a close message to the client and close the
@@ -226,12 +330,9 @@ func (p *Peer) handleTransportMsg(msg []byte) {
 		return
 	}
 
-	n, err := dp.Write(dp.ctx, msg)
-	if err != nil {
-		p.log.Errorf("failed to write transport message to: %s", dp.String())
-		return
-	}
-	p.metrics.TransferBytesSent.Add(p.ctx, int64(n))
+	// Hand the packet to the destination peer's send queue. This never blocks
+	// the read loop: a full queue drops the packet and counts it.
+	dp.EnqueueTransport(msg)
 }
 
 func (p *Peer) handleSubscribePeerState(msg []byte) {

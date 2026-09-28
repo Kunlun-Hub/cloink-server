@@ -29,8 +29,24 @@ var (
 	relayMigrationGrace   = 30 * time.Second
 	relayMigrationMinWait = time.Second
 	defaultRelayWeight    = 30
+	// relayRTTCacheTTL bounds how long a probed dial RTT stays eligible for
+	// in-priority-group relay ordering.
+	relayRTTCacheTTL = 5 * time.Minute
 
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
+)
+
+// EnvAutoFailback enables the manager's automatic failback to a recovered
+// higher-priority Relay server. It is disabled by default.
+const EnvAutoFailback = "NB_RELAY_AUTO_FAILBACK"
+
+const (
+	// relayAutoFailbackInterval is how often the manager checks whether the
+	// home Relay can move back to a higher-priority server that has recovered.
+	relayAutoFailbackInterval = 60 * time.Second
+	// relayFailbackStableChecks is the number of consecutive healthy checks a
+	// higher-priority Relay server needs before the manager fails back to it.
+	relayFailbackStableChecks = 2
 )
 
 // RelayTrack hold the relay clients for the foreign relay servers.
@@ -65,6 +81,48 @@ type RelayServerInfo struct {
 	Current   bool
 	Available bool
 	Error     string
+	// RTTMs is the last probed dial round-trip time in milliseconds, or zero
+	// when no fresh probe result is cached.
+	RTTMs int64
+}
+
+// relayRTTCache stores dial round-trip times measured by ProbeRelayServers
+// with a TTL, so the server picker can prefer low-latency relays inside a
+// priority group.
+type relayRTTCache struct {
+	mu      sync.RWMutex
+	entries map[string]relayRTTEntry
+}
+
+type relayRTTEntry struct {
+	rtt       time.Duration
+	expiresAt time.Time
+}
+
+func newRelayRTTCache() *relayRTTCache {
+	return &relayRTTCache{entries: make(map[string]relayRTTEntry)}
+}
+
+func (c *relayRTTCache) get(relayURL string) (time.Duration, bool) {
+	if c == nil {
+		return 0, false
+	}
+	c.mu.RLock()
+	entry, ok := c.entries[relayURL]
+	c.mu.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) {
+		return 0, false
+	}
+	return entry.rtt, true
+}
+
+func (c *relayRTTCache) set(relayURL string, rtt time.Duration) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.entries[relayURL] = relayRTTEntry{rtt: rtt, expiresAt: time.Now().Add(relayRTTCacheTTL)}
+	c.mu.Unlock()
 }
 
 // ManagerOption configures a Manager at construction time.
@@ -90,6 +148,14 @@ func WithMaxBackoffInterval(d time.Duration) ManagerOption {
 // WithRelayServerCooldown sets how long failed relay servers are skipped.
 func WithRelayServerCooldown(d time.Duration) ManagerOption {
 	return func(m *Manager) { m.relayServerCooldown = d }
+}
+
+// WithAutoFailback enables periodic checks that move the home Relay back to a
+// higher-priority server once it has recovered and proven stable. It only ever
+// moves upward to a strictly higher weight, never downward. Disabled by
+// default.
+func WithAutoFailback(enabled bool) ManagerOption {
+	return func(m *Manager) { m.autoFailback = enabled }
 }
 
 // WithNetEvents injects the OS network event handling.
@@ -128,6 +194,10 @@ type Manager struct {
 	relayClients      map[string]*RelayTrack
 	relayClientsMutex sync.RWMutex
 
+	// rttCache holds dial RTTs measured by ProbeRelayServers so the server
+	// picker can order same-weight relays by latency.
+	rttCache *relayRTTCache
+
 	onDisconnectedListeners map[*Client]*list.List
 	onReconnectedListenerFn func()
 	listenerLock            sync.Mutex
@@ -143,6 +213,7 @@ type Manager struct {
 	forcedRelayURL        string
 	relayConfigGeneration atomic.Uint64
 	relayMigrationGrace   time.Duration
+	autoFailback          bool
 
 	cleanupInterval      time.Duration
 	keepUnusedServerTime time.Duration
@@ -179,7 +250,9 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 		onDisconnectedListeners: make(map[*Client]*list.List),
 		cleanupInterval:         relayCleanupInterval,
 		keepUnusedServerTime:    keepUnusedServerTime,
+		rttCache:                newRelayRTTCache(),
 	}
+	m.serverPicker.rttLookup = m.rttCache.get
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -339,6 +412,11 @@ func (m *Manager) Serve() error {
 
 	go m.listenGuardEvent(m.ctx)
 	go m.startCleanupLoop()
+	// The failback loop only runs when explicitly enabled, so a disabled
+	// manager pays no cost for it.
+	if m.autoFailback {
+		go m.startFailbackLoop()
+	}
 	return err
 }
 
@@ -560,9 +638,13 @@ func (m *Manager) RelayServers() []RelayServerInfo {
 		if weight <= 0 {
 			weight = defaultRelayWeight
 		}
-		result = append(result, RelayServerInfo{
+		info := RelayServerInfo{
 			URL: relayURL, Weight: weight, Forced: relayURL == forcedURL, Current: relayURL == currentURL,
-		})
+		}
+		if rtt, ok := m.rttCache.get(relayURL); ok {
+			info.RTTMs = rtt.Milliseconds()
+		}
+		result = append(result, info)
 	}
 	return result
 }
@@ -581,11 +663,15 @@ func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
 			probeID := m.peerID + "-relay-probe-" + uuid.NewString()
 			probeClient := NewClient(relays[idx].URL, m.tokenStore, probeID, m.mtu)
 			probeClient.SetTransportFallback(m.transportFallback)
+			probeStarted := time.Now()
 			if err := probeClient.Connect(probeCtx); err != nil {
 				relays[idx].Error = err.Error()
 				return
 			}
+			rtt := time.Since(probeStarted)
+			m.rttCache.set(relays[idx].URL, rtt)
 			relays[idx].Available = true
+			relays[idx].RTTMs = rtt.Milliseconds()
 			if err := probeClient.Close(); err != nil {
 				relays[idx].Available = false
 				relays[idx].Error = err.Error()
@@ -1127,6 +1213,128 @@ func (m *Manager) startCleanupLoop() {
 			m.cleanUpUnusedRelays()
 		}
 	}
+}
+
+// startFailbackLoop periodically checks whether a higher-priority Relay server
+// has recovered so the home Relay can fail back to it.
+func (m *Manager) startFailbackLoop() {
+	log.Infof("Relay auto-failback enabled, checking every %s", relayAutoFailbackInterval)
+	ticker := time.NewTicker(relayAutoFailbackInterval)
+	defer ticker.Stop()
+	// healthyStreaks counts consecutive ticks in which the failback target was
+	// observed outside its failure cooldown. It is owned by this loop.
+	healthyStreaks := make(map[string]int)
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			m.failbackTick(healthyStreaks)
+		}
+	}
+}
+
+// failbackTick evaluates one automatic failback opportunity. It only ever
+// moves the home Relay upward to the strictly highest-weight server, and only
+// after that server has been observed healthy for relayFailbackStableChecks
+// consecutive ticks, which damps flapping around a recovering server. The
+// actual move reuses switchHomeRelayIfNeeded so the migration, its validation,
+// and the generation guard stay on the single existing path.
+func (m *Manager) failbackTick(healthyStreaks map[string]int) {
+	if !m.autoFailback || !m.running.Load() || m.ctx.Err() != nil {
+		return
+	}
+
+	m.relayConfigMu.RLock()
+	forcedURL := m.forcedRelayURL
+	weights := maps.Clone(m.relayWeights)
+	configuredURLs := slices.Clone(m.configuredRelayURLs)
+	m.relayConfigMu.RUnlock()
+
+	// A manual relay override always wins over automatic failback.
+	if forcedURL != "" {
+		clear(healthyStreaks)
+		return
+	}
+
+	homeURL := m.currentRelayURL()
+	homeWeight := relayWeightOrDefault(weights, homeURL)
+	targetURL, targetWeight := highestWeightRelay(configuredURLs, weights)
+	if homeURL == "" || targetURL == "" || targetURL == homeURL || targetWeight <= homeWeight {
+		clear(healthyStreaks)
+		return
+	}
+
+	// Drop streaks for servers that are no longer the failback target, so a
+	// stale count can never trigger a move to a different server.
+	for trackedURL := range healthyStreaks {
+		if trackedURL != targetURL {
+			delete(healthyStreaks, trackedURL)
+		}
+	}
+
+	// A server that failed recently sits in the picker's failure cooldown. It
+	// must stay out of cooldown for relayFailbackStableChecks consecutive ticks
+	// to count as stable enough to fail back to.
+	if m.relayServerCoolingDown(targetURL) {
+		if _, ok := healthyStreaks[targetURL]; ok {
+			log.Debugf("deferring Relay failback to %s: server is in failure cooldown", targetURL)
+			delete(healthyStreaks, targetURL)
+		}
+		return
+	}
+	healthyStreaks[targetURL]++
+	if healthyStreaks[targetURL] < relayFailbackStableChecks {
+		log.Debugf("Relay %s healthy for %d of %d failback checks", targetURL, healthyStreaks[targetURL], relayFailbackStableChecks)
+		return
+	}
+	clear(healthyStreaks)
+
+	log.Infof("failing back to higher-priority Relay %s (weight %d) from %s (weight %d): server is stable",
+		targetURL, targetWeight, homeURL, homeWeight)
+	// The config is unchanged, so the generation is observed, not advanced: a
+	// concurrent relay config update invalidates this attempt inside
+	// switchHomeRelayIfNeeded.
+	generation := m.relayConfigGeneration.Load()
+	go m.switchHomeRelayIfNeeded(sortRelayURLsByWeight(configuredURLs, weights), generation)
+}
+
+// relayServerCoolingDown reports whether the picker's failure cooldown
+// currently skips the given Relay server. Expired entries are evicted, mirroring
+// the picker's own availability check.
+func (m *Manager) relayServerCoolingDown(relayURL string) bool {
+	picker := m.serverPicker
+	picker.cooldownMu.Lock()
+	defer picker.cooldownMu.Unlock()
+	until, ok := picker.cooldowns[relayURL]
+	if !ok {
+		return false
+	}
+	if !time.Now().Before(until) {
+		delete(picker.cooldowns, relayURL)
+		return false
+	}
+	return true
+}
+
+// relayWeightOrDefault returns the configured weight of a Relay server,
+// falling back to the default weight for unknown or non-positive values.
+func relayWeightOrDefault(weights map[string]int, relayURL string) int {
+	if weight := weights[relayURL]; weight > 0 {
+		return weight
+	}
+	return defaultRelayWeight
+}
+
+// highestWeightRelay returns the first URL with the highest configured weight.
+func highestWeightRelay(relayURLs []string, weights map[string]int) (string, int) {
+	bestURL, bestWeight := "", 0
+	for _, relayURL := range relayURLs {
+		if weight := relayWeightOrDefault(weights, relayURL); weight > bestWeight {
+			bestURL, bestWeight = relayURL, weight
+		}
+	}
+	return bestURL, bestWeight
 }
 
 func (m *Manager) cleanUpUnusedRelays() {

@@ -75,7 +75,7 @@ func ToComponentSyncResponse(
 		Version:            int32(sharedgrpc.ComponentNetworkMap),
 	}
 
-	nbConfig := toNetbirdConfig(config, turnCredentials, relayCredentials, extraSettings, settings)
+	nbConfig := toNetbirdConfig(config, turnCredentials, relayCredentials, extraSettings, settings, peerGroups)
 	resp.NetbirdConfig = integrationsConfig.ExtendNetBirdConfig(peer.ID, peerGroups, nbConfig, extraSettings)
 
 	// settings == nil → field stays nil → "no info in this snapshot", client

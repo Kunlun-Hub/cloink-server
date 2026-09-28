@@ -33,6 +33,12 @@ type Config struct {
 	TLSSupport     bool
 	AuthValidator  Validator
 
+	// SendQueueSize bounds the per-peer async transport send queue. Only
+	// MsgTypeTransport packets go through the queue; a full queue drops
+	// packets instead of blocking the sender's read loop. Values <= 0
+	// select the default of 1024.
+	SendQueueSize int
+
 	instanceURL url.URL
 }
 
@@ -67,6 +73,7 @@ type Relay struct {
 	instanceURL    url.URL
 	instanceID     string
 	exposedAddress string
+	sendQueueSize  int
 	preparedMsg    *preparedMsg
 
 	closed  bool
@@ -82,6 +89,8 @@ type Relay struct {
 //	  - ExposedAddress: The external address clients use to reach this relay. Required.
 //	  - TLSSupport: A boolean indicating if the relay uses TLS. Affects the generated instance URL.
 //	  - AuthValidator: A Validator implementation used to authenticate peers. Required.
+//	  - SendQueueSize: Bounds the per-peer async transport send queue. Optional,
+//	    values <= 0 select the default of 1024.
 //
 // Returns:
 //
@@ -106,6 +115,7 @@ func NewRelay(config Config) (*Relay, error) {
 		instanceURL:    config.instanceURL,
 		instanceID:     config.InstanceID,
 		exposedAddress: config.ExposedAddress,
+		sendQueueSize:  config.SendQueueSize,
 		store:          store.NewStore(),
 		notifier:       store.NewPeerNotifier(),
 	}
@@ -149,7 +159,7 @@ func (r *Relay) Accept(conn listener.Conn) {
 		return
 	}
 
-	peer := NewPeer(r.metrics, *peerID, conn, r.store, r.notifier)
+	peer := NewPeer(r.metrics, *peerID, conn, r.store, r.notifier, r.sendQueueSize)
 	peer.log.Infof("peer connected from: %s", conn.RemoteAddr())
 	storeTime := time.Now()
 	if isReconnection := r.store.AddPeer(peer); isReconnection {

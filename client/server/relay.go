@@ -33,6 +33,7 @@ func (s *Server) ListRelays(ctx context.Context, _ *proto.EmptyRequest) (*proto.
 			Current:   relay.Current,
 			Available: relay.Available,
 			Error:     relay.Error,
+			RttMs:     relay.RTTMs,
 		})
 	}
 

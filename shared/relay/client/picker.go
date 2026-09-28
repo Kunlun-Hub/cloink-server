@@ -1,6 +1,7 @@
 package client
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -47,6 +48,11 @@ type ServerPicker struct {
 	TransportFallback *transportFallback
 	NetEvents         NetEvents
 	CooldownDuration  time.Duration
+
+	// rttLookup returns the cached dial RTT for a relay URL, set by the
+	// Manager. Same-weight servers with a cached RTT are attempted lowest
+	// RTT first; servers without a cached RTT keep their configured order.
+	rttLookup func(string) (time.Duration, bool)
 
 	cooldownMu sync.Mutex
 	cooldowns  map[string]time.Time
@@ -178,7 +184,12 @@ func (sp *ServerPicker) serverURLsByCooldownExpiryLocked(config pickerConfig, se
 }
 
 func (sp *ServerPicker) markServerFailure(relayURL string, now time.Time, err error) {
-	if sp.CooldownDuration <= 0 || relayURL == "" || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// Local cancellation is not a relay failure and never triggers cooldown.
+	// A deadline-exceeded error is: a relay too slow to answer within the
+	// connection timeout is equivalent to a down relay for routing, so it
+	// shares the same cooldown and backoff instead of being retried every
+	// round. errors.Is matches wrapped %w timeouts too.
+	if sp.CooldownDuration <= 0 || relayURL == "" || errors.Is(err, context.Canceled) {
 		return
 	}
 	sp.cooldownMu.Lock()
@@ -218,12 +229,45 @@ func (sp *ServerPicker) startNextPriorityGroupWithConfig(config pickerConfig, se
 		return startAt + 1
 	}
 	weight := config.weight(serverURLs[startAt])
-	idx := startAt
-	for capacity := maxConcurrentServers; idx < len(serverURLs) && config.weight(serverURLs[idx]) == weight && capacity > 0; capacity-- {
-		startConnection(serverURLs[idx])
-		idx++
+	// Find the full same-weight group so the lowest-RTT relay of the whole
+	// group is attempted first, even when the group is larger than one
+	// attempt batch. The scan stops before the forced relay, which is
+	// dialed on its own when a batch starts on it.
+	groupStart := startAt
+	for groupStart > 0 && serverURLs[groupStart-1] != config.forcedURL && config.weight(serverURLs[groupStart-1]) == weight {
+		groupStart--
 	}
-	return idx
+	groupEnd := startAt
+	for groupEnd < len(serverURLs) && config.weight(serverURLs[groupEnd]) == weight {
+		groupEnd++
+	}
+	group := slices.Clone(serverURLs[groupStart:groupEnd])
+	// Order the group by cached dial RTT so the lowest-latency relay wins the
+	// race. Relays without a cached RTT keep their configured relative order
+	// at the back.
+	if sp.rttLookup != nil {
+		slices.SortStableFunc(group, func(left, right string) int {
+			leftRTT, leftOK := sp.rttLookup(left)
+			rightRTT, rightOK := sp.rttLookup(right)
+			if leftOK != rightOK {
+				if leftOK {
+					return -1
+				}
+				return 1
+			}
+			if !leftOK {
+				return 0
+			}
+			return cmp.Compare(leftRTT, rightRTT)
+		})
+	}
+	// Attempt the next batch of the RTT-ordered group.
+	offset := startAt - groupStart
+	batch := group[offset:min(offset+maxConcurrentServers, len(group))]
+	for _, relayURL := range batch {
+		startConnection(relayURL)
+	}
+	return startAt + len(batch)
 }
 
 func (config pickerConfig) weight(relayURL string) int {

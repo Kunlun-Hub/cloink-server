@@ -22,23 +22,43 @@ func TestRelayDataPlaneFailuresDistinctPeersTriggerRecovery(t *testing.T) {
 	require.True(t, failures.reportFailure("relay-a", "peer-b"))
 }
 
-func TestRelayDataPlaneFailuresRepeatedPeerDoesNotTriggerRelayWideRecovery(t *testing.T) {
+func TestRelayDataPlaneFailuresSinglePeerConsecutiveFailuresTriggerRecovery(t *testing.T) {
 	failures := newRelayDataPlaneFailures()
 
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+	require.True(t, failures.reportFailure("relay-a", "peer-a"),
+		"consecutive handshake timeouts from a single peer must rebuild the Relay")
+	require.False(t, failures.reportFailure("relay-a", "peer-a"),
+		"cooldown must suppress rebuilds right after a single-peer trigger")
+}
+
+func TestRelayDataPlaneFailuresStaleFailureDoesNotCountAsConsecutive(t *testing.T) {
+	now := time.Unix(100, 0)
+	failures := newRelayDataPlaneFailures()
+	failures.now = func() time.Time { return now }
+
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+
+	now = now.Add(dataPlaneFailureWindow + time.Second)
+	require.False(t, failures.reportFailure("relay-a", "peer-a"),
+		"a failure older than the window must not count toward the consecutive trigger")
+	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+	require.True(t, failures.reportFailure("relay-a", "peer-a"))
 }
 
 func TestRelayDataPlaneFailuresSuccessClearsPeer(t *testing.T) {
 	failures := newRelayDataPlaneFailures()
 
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
+	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 	failures.reportSuccess("relay-a", "peer-a")
+	// The two failures above must not count toward the consecutive trigger.
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
 	require.False(t, failures.reportFailure("relay-a", "peer-a"))
-	require.False(t, failures.reportFailure("relay-a", "peer-a"))
-	require.True(t, failures.reportFailure("relay-a", "peer-b"))
+	require.True(t, failures.reportFailure("relay-a", "peer-a"),
+		"three consecutive failures after the success must rebuild the Relay")
 }
 
 func TestRelayDataPlaneFailuresCooldownPreventsStorm(t *testing.T) {
