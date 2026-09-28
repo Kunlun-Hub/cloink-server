@@ -332,9 +332,19 @@ func (s *serverInstances) createSignalServer(ctx context.Context, cfg *CombinedC
 }
 
 func (s *serverInstances) createHealthcheckServer(cfg *CombinedConfig) error {
+	// The relay server only exists when relay is enabled; a disabled relay is
+	// an intended configuration, so report it as disabled instead of failing
+	// the whole combined server at startup.
+	var checker healthcheck.ServiceChecker
+	if s.relaySrv != nil {
+		checker = s.relaySrv
+	} else {
+		log.Info("relay server is disabled, healthcheck will report relay as disabled")
+		checker = healthcheck.DisabledServiceChecker()
+	}
 	hCfg := healthcheck.Config{
 		ListenAddress:  cfg.Server.HealthcheckAddress,
-		ServiceChecker: s.relaySrv,
+		ServiceChecker: checker,
 	}
 
 	var err error

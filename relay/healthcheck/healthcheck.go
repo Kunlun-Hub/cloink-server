@@ -32,6 +32,21 @@ type ServiceChecker interface {
 	ConnectedPeerCount() int
 }
 
+// disabledChecker is a ServiceChecker for deployments where the relay is
+// disabled by configuration. The health handler interprets it as
+// "relay disabled" (healthy) rather than "relay unhealthy".
+type disabledChecker struct{}
+
+// DisabledServiceChecker returns a ServiceChecker for use when the relay
+// server is disabled. Health checks report the server as healthy with no
+// relay listeners instead of failing at startup.
+func DisabledServiceChecker() ServiceChecker { return disabledChecker{} }
+
+func (disabledChecker) ListenerProtocols() []protocol.Protocol { return nil }
+func (disabledChecker) InstanceURL() url.URL                   { return url.URL{} }
+func (disabledChecker) InstanceID() string                     { return "" }
+func (disabledChecker) ConnectedPeerCount() int                { return 0 }
+
 type HealthStatus struct {
 	Status           string              `json:"status"`
 	Timestamp        time.Time           `json:"timestamp"`
@@ -125,6 +140,15 @@ func (s *Server) handleHealthcheck(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) getHealthStatus(ctx context.Context) (*HealthStatus, bool) {
+	if _, disabled := s.config.ServiceChecker.(disabledChecker); disabled {
+		// Relay is disabled by configuration; that is an intended state, not
+		// an unhealthy one. Report healthy with no relay identity.
+		return &HealthStatus{
+			Status:    statusHealthy,
+			Timestamp: time.Now(),
+		}, true
+	}
+
 	healthy := true
 	status := &HealthStatus{
 		Timestamp:        time.Now(),
