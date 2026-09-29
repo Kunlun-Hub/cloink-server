@@ -296,6 +296,8 @@ type Store interface {
 	GetAccountNetworkTrafficGroups(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter) ([]*networktraffic.Group, int64, error)
 	GetAccountNetworkTrafficGroupEvents(ctx context.Context, lockStrength LockingStrength, accountID string, filter networktraffic.Filter, windowStart time.Time, userID, reporterID string) ([]*networktraffic.Event, int64, error)
 	CleanupNetworkTrafficEvents(ctx context.Context, olderThan time.Time, maxPerAccount int) (int64, error)
+	GetFlowRetention(ctx context.Context) (time.Duration, error)
+	SetFlowRetention(ctx context.Context, retention time.Duration) error
 
 	// SetFieldEncrypt sets the field encryptor for encrypting sensitive user data.
 	SetFieldEncrypt(enc *crypt.FieldEncrypt)

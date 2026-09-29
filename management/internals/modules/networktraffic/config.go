@@ -25,9 +25,11 @@ import (
 const (
 	flowTokenVersion      = 1
 	defaultReportInterval = 30 * time.Second
+	defaultRetention      = 48 * time.Hour
 	envFlowURL            = "NB_FLOW_URL"
 	envFlowTokenSecret    = "NB_FLOW_TOKEN_SECRET"
 	envFlowReportInterval = "NB_FLOW_REPORT_INTERVAL"
+	envFlowRetention      = "NB_FLOW_RETENTION"
 )
 
 var errInvalidFlowToken = errors.New("invalid flow token")
@@ -204,4 +206,20 @@ func flowReportInterval() time.Duration {
 		return defaultReportInterval
 	}
 	return interval
+}
+
+// FlowRetention returns the configured flow event retention duration.
+// NB_FLOW_RETENTION accepts a Go duration string (e.g. "168h" for 7 days).
+// Unset or invalid values fall back to the default.
+func FlowRetention() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(envFlowRetention))
+	if raw == "" {
+		return defaultRetention
+	}
+	retention, err := time.ParseDuration(raw)
+	if err != nil || retention <= 0 {
+		log.Warnf("invalid %s value %q; using %s", envFlowRetention, raw, defaultRetention)
+		return defaultRetention
+	}
+	return retention
 }

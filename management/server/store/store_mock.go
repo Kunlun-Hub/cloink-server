@@ -175,6 +175,35 @@ func (mr *MockStoreMockRecorder) CleanupNetworkTrafficEvents(ctx, olderThan, max
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupNetworkTrafficEvents", reflect.TypeOf((*MockStore)(nil).CleanupNetworkTrafficEvents), ctx, olderThan, maxPerAccount)
 }
 
+// GetFlowRetention mocks base method.
+func (m *MockStore) GetFlowRetention(ctx context.Context) (time.Duration, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFlowRetention", ctx)
+	ret0, _ := ret[0].(time.Duration)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFlowRetention indicates an expected call of GetFlowRetention.
+func (mr *MockStoreMockRecorder) GetFlowRetention(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlowRetention", reflect.TypeOf((*MockStore)(nil).GetFlowRetention), ctx)
+}
+
+// SetFlowRetention mocks base method.
+func (m *MockStore) SetFlowRetention(ctx context.Context, retention time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetFlowRetention", ctx, retention)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetFlowRetention indicates an expected call of SetFlowRetention.
+func (mr *MockStoreMockRecorder) SetFlowRetention(ctx, retention any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetFlowRetention", reflect.TypeOf((*MockStore)(nil).SetFlowRetention), ctx, retention)
+}
+
 // CleanupStaleProxies mocks base method.
 func (m *MockStore) CleanupStaleProxies(ctx context.Context, inactivityDuration time.Duration) error {
 	m.ctrl.T.Helper()

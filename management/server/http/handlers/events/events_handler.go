@@ -30,6 +30,8 @@ func AddEndpoints(accountManager account.Manager, permissionsManager permissions
 	router.HandleFunc("/events", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
 	router.HandleFunc("/events/audit", eventsHandler.getAllEvents).Methods("GET", "OPTIONS")
 	router.HandleFunc("/events/network-traffic", eventsHandler.getAllNetworkTrafficEvents).Methods("GET", "OPTIONS")
+	router.HandleFunc("/events/network-traffic/retention", eventsHandler.getFlowRetention).Methods("GET", "OPTIONS")
+	router.HandleFunc("/events/network-traffic/retention", eventsHandler.updateFlowRetention).Methods("PUT", "OPTIONS")
 }
 
 // newHandler creates a new events handler

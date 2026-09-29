@@ -145,6 +145,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&agentNetworkTypes.AgentNetworkAccessLog{}, &agentNetworkTypes.AgentNetworkAccessLogGroup{},
 		&agentNetworkTypes.AgentNetworkUsage{}, &agentNetworkTypes.AgentNetworkUsageGroup{},
 		&networktraffic.Event{},
+		&types.FlowRetention{},
 		&types.EmailSettings{},
 		&types.PasswordResetRecord{},
 		&types.EventStreamingIntegration{}, &types.EventStreamingCursor{},

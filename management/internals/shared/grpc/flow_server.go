@@ -64,6 +64,8 @@ type FlowServer struct {
 	cleanupMu      sync.Mutex
 	cleanupCancel  context.CancelFunc
 	cleanupDone    chan struct{}
+	retentionMu    sync.RWMutex
+	retention      time.Duration
 	resourcesMu    sync.Mutex
 	resourcesCache map[string]*cachedAccountResources
 }
@@ -102,6 +104,10 @@ func (s *FlowServer) SetConfigManager(configManager *networktraffic.ConfigManage
 }
 
 // StartPeriodicCleanup removes expired and excess flow events until ctx ends.
+// The retention is read dynamically on every cycle: the stored DB value takes
+// precedence, falling back to the given retention (usually from NB_FLOW_RETENTION).
+// A dashboard-updated retention therefore takes effect at the next tick
+// without a restart.
 func (s *FlowServer) StartPeriodicCleanup(ctx context.Context, retention time.Duration, maxPerAccount int, interval time.Duration) {
 	s.cleanupMu.Lock()
 	defer s.cleanupMu.Unlock()
@@ -111,8 +117,15 @@ func (s *FlowServer) StartPeriodicCleanup(ctx context.Context, retention time.Du
 	if retention <= 0 {
 		retention = 48 * time.Hour
 	}
+	s.SetRetention(retention)
 	if interval <= 0 {
 		interval = time.Hour
+	}
+	// Pick up a dashboard-configured retention stored in the DB, if any.
+	if stored, err := s.accountManager.GetStore().GetFlowRetention(ctx); err == nil && stored > 0 {
+		s.SetRetention(stored)
+	} else if err != nil {
+		log.WithContext(ctx).Debugf("flow retention: using default %s: %v", retention, err)
 	}
 	cleanupCtx, cancel := context.WithCancel(ctx)
 	s.cleanupCancel = cancel
@@ -122,16 +135,34 @@ func (s *FlowServer) StartPeriodicCleanup(ctx context.Context, retention time.Du
 		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		s.cleanup(cleanupCtx, retention, maxPerAccount)
+		s.cleanup(cleanupCtx, maxPerAccount)
 		for {
 			select {
 			case <-cleanupCtx.Done():
 				return
 			case <-ticker.C:
-				s.cleanup(cleanupCtx, retention, maxPerAccount)
+				s.cleanup(cleanupCtx, maxPerAccount)
 			}
 		}
 	}()
+}
+
+// SetRetention updates the flow event retention used by the cleanup worker.
+// It takes effect on the next cleanup cycle without requiring a restart.
+func (s *FlowServer) SetRetention(retention time.Duration) {
+	if retention <= 0 {
+		return
+	}
+	s.retentionMu.Lock()
+	defer s.retentionMu.Unlock()
+	s.retention = retention
+}
+
+// GetRetention returns the flow event retention currently used by the cleanup worker.
+func (s *FlowServer) GetRetention() time.Duration {
+	s.retentionMu.RLock()
+	defer s.retentionMu.RUnlock()
+	return s.retention
 }
 
 // StopCleanup stops the flow event cleanup worker and waits for it to exit.
@@ -147,8 +178,13 @@ func (s *FlowServer) StopCleanup() {
 	}
 }
 
-func (s *FlowServer) cleanup(ctx context.Context, retention time.Duration, maxPerAccount int) {
+func (s *FlowServer) cleanup(ctx context.Context, maxPerAccount int) {
 	started := time.Now()
+	// Refresh from the DB so a dashboard change applies without restart.
+	if stored, err := s.accountManager.GetStore().GetFlowRetention(ctx); err == nil && stored > 0 {
+		s.SetRetention(stored)
+	}
+	retention := s.GetRetention()
 	rows, err := s.accountManager.GetStore().CleanupNetworkTrafficEvents(ctx, time.Now().UTC().Add(-retention), maxPerAccount)
 	if err != nil {
 		s.metrics.RecordCleanup(ctx, "error", 0, time.Since(started))
