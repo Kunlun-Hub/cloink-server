@@ -3807,6 +3807,109 @@ func (mr *MockStoreMockRecorder) SaveDNSSettings(ctx, accountID, settings any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveDNSSettings", reflect.TypeOf((*MockStore)(nil).SaveDNSSettings), ctx, accountID, settings)
 }
 
+
+// CreateEventStreamingIntegration mocks base method.
+func (m *MockStore) CreateEventStreamingIntegration(ctx context.Context, integration *types3.EventStreamingIntegration) (*types3.EventStreamingIntegration, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEventStreamingIntegration", ctx, integration)
+	ret0, _ := ret[0].(*types3.EventStreamingIntegration)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateEventStreamingIntegration indicates an expected call of CreateEventStreamingIntegration.
+func (mr *MockStoreMockRecorder) CreateEventStreamingIntegration(ctx, integration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEventStreamingIntegration", reflect.TypeOf((*MockStore)(nil).CreateEventStreamingIntegration), ctx, integration)
+}
+
+// GetEventStreamingIntegration mocks base method.
+func (m *MockStore) GetEventStreamingIntegration(ctx context.Context, lockStrength LockingStrength, accountID string, id uint64) (*types3.EventStreamingIntegration, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEventStreamingIntegration", ctx, lockStrength, accountID, id)
+	ret0, _ := ret[0].(*types3.EventStreamingIntegration)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEventStreamingIntegration indicates an expected call of GetEventStreamingIntegration.
+func (mr *MockStoreMockRecorder) GetEventStreamingIntegration(ctx, lockStrength, accountID, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEventStreamingIntegration", reflect.TypeOf((*MockStore)(nil).GetEventStreamingIntegration), ctx, lockStrength, accountID, id)
+}
+
+// ListEventStreamingIntegrations mocks base method.
+func (m *MockStore) ListEventStreamingIntegrations(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types3.EventStreamingIntegration, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEventStreamingIntegrations", ctx, lockStrength, accountID)
+	ret0, _ := ret[0].([]*types3.EventStreamingIntegration)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEventStreamingIntegrations indicates an expected call of ListEventStreamingIntegrations.
+func (mr *MockStoreMockRecorder) ListEventStreamingIntegrations(ctx, lockStrength, accountID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventStreamingIntegrations", reflect.TypeOf((*MockStore)(nil).ListEventStreamingIntegrations), ctx, lockStrength, accountID)
+}
+
+// UpdateEventStreamingIntegration mocks base method.
+func (m *MockStore) UpdateEventStreamingIntegration(ctx context.Context, integration *types3.EventStreamingIntegration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateEventStreamingIntegration", ctx, integration)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateEventStreamingIntegration indicates an expected call of UpdateEventStreamingIntegration.
+func (mr *MockStoreMockRecorder) UpdateEventStreamingIntegration(ctx, integration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEventStreamingIntegration", reflect.TypeOf((*MockStore)(nil).UpdateEventStreamingIntegration), ctx, integration)
+}
+
+// DeleteEventStreamingIntegration mocks base method.
+func (m *MockStore) DeleteEventStreamingIntegration(ctx context.Context, accountID string, id uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteEventStreamingIntegration", ctx, accountID, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteEventStreamingIntegration indicates an expected call of DeleteEventStreamingIntegration.
+func (mr *MockStoreMockRecorder) DeleteEventStreamingIntegration(ctx, accountID, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteEventStreamingIntegration", reflect.TypeOf((*MockStore)(nil).DeleteEventStreamingIntegration), ctx, accountID, id)
+}
+
+// GetEventStreamingCursor mocks base method.
+func (m *MockStore) GetEventStreamingCursor(ctx context.Context, accountID string, integrationID uint64) (*types3.EventStreamingCursor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEventStreamingCursor", ctx, accountID, integrationID)
+	ret0, _ := ret[0].(*types3.EventStreamingCursor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEventStreamingCursor indicates an expected call of GetEventStreamingCursor.
+func (mr *MockStoreMockRecorder) GetEventStreamingCursor(ctx, accountID, integrationID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEventStreamingCursor", reflect.TypeOf((*MockStore)(nil).GetEventStreamingCursor), ctx, accountID, integrationID)
+}
+
+// SaveEventStreamingCursor mocks base method.
+func (m *MockStore) SaveEventStreamingCursor(ctx context.Context, cursor *types3.EventStreamingCursor) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveEventStreamingCursor", ctx, cursor)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveEventStreamingCursor indicates an expected call of SaveEventStreamingCursor.
+func (mr *MockStoreMockRecorder) SaveEventStreamingCursor(ctx, cursor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveEventStreamingCursor", reflect.TypeOf((*MockStore)(nil).SaveEventStreamingCursor), ctx, cursor)
+}
+
 // SaveEmailSettings mocks base method.
 func (m *MockStore) SaveEmailSettings(ctx context.Context, settings *types3.EmailSettings) error {
 	m.ctrl.T.Helper()

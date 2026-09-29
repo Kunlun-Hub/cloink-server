@@ -147,6 +147,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&networktraffic.Event{},
 		&types.EmailSettings{},
 		&types.PasswordResetRecord{},
+		&types.EventStreamingIntegration{}, &types.EventStreamingCursor{},
 		&types.VersionRelease{}, &types.VersionReleaseArtifact{},
 	)
 	if err != nil {
@@ -1133,6 +1134,138 @@ func (s *SqlStore) SaveEmailSettings(ctx context.Context, settings *types.EmailS
 	if result.Error != nil {
 		log.WithContext(ctx).WithError(result.Error).Error("failed to save email settings to store")
 		return status.Errorf(status.Internal, "failed to save email settings to store")
+	}
+	return nil
+}
+
+
+// CreateEventStreamingIntegration persists a new event streaming integration.
+func (s *SqlStore) CreateEventStreamingIntegration(ctx context.Context, integration *types.EventStreamingIntegration) (*types.EventStreamingIntegration, error) {
+	if integration == nil {
+		return nil, status.Errorf(status.InvalidArgument, "event streaming integration is required")
+	}
+	integrationCopy := integration.Copy()
+	if err := integrationCopy.EncryptSensitiveData(s.fieldEncrypt); err != nil {
+		return nil, err
+	}
+	result := s.db.Create(integrationCopy)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to create event streaming integration in store")
+		return nil, status.Errorf(status.Internal, "failed to create event streaming integration in store")
+	}
+	integrationCopy.Config = integration.Config
+	return integrationCopy, nil
+}
+
+// GetEventStreamingIntegration returns a single integration with its config decrypted.
+func (s *SqlStore) GetEventStreamingIntegration(ctx context.Context, lockStrength LockingStrength, accountID string, id uint64) (*types.EventStreamingIntegration, error) {
+	tx := s.db
+	if lockStrength != LockingStrengthNone {
+		tx = tx.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+	var integration types.EventStreamingIntegration
+	result := tx.Take(&integration, "account_id = ? AND id = ?", accountID, id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, status.Errorf(status.NotFound, "event streaming integration not found")
+		}
+		log.WithContext(ctx).WithError(result.Error).Error("failed to get event streaming integration from store")
+		return nil, status.Errorf(status.Internal, "failed to get event streaming integration from store")
+	}
+	if err := integration.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+		return nil, err
+	}
+	return &integration, nil
+}
+
+// ListEventStreamingIntegrations returns all integrations of an account.
+func (s *SqlStore) ListEventStreamingIntegrations(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.EventStreamingIntegration, error) {
+	tx := s.db
+	if lockStrength != LockingStrengthNone {
+		tx = tx.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+	var integrations []*types.EventStreamingIntegration
+	result := tx.Where("account_id = ?", accountID).Order("id ASC").Find(&integrations)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to list event streaming integrations from store")
+		return nil, status.Errorf(status.Internal, "failed to list event streaming integrations from store")
+	}
+	for _, integration := range integrations {
+		if err := integration.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+			return nil, err
+		}
+	}
+	return integrations, nil
+}
+
+// UpdateEventStreamingIntegration persists changes to an integration.
+func (s *SqlStore) UpdateEventStreamingIntegration(ctx context.Context, integration *types.EventStreamingIntegration) error {
+	if integration == nil {
+		return status.Errorf(status.InvalidArgument, "event streaming integration is required")
+	}
+	integrationCopy := integration.Copy()
+	if err := integrationCopy.EncryptSensitiveData(s.fieldEncrypt); err != nil {
+		return err
+	}
+	result := s.db.Where("account_id = ? AND id = ?", integrationCopy.AccountID, integrationCopy.ID).Save(integrationCopy)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to update event streaming integration in store")
+		return status.Errorf(status.Internal, "failed to update event streaming integration in store")
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "event streaming integration not found")
+	}
+	return nil
+}
+
+// DeleteEventStreamingIntegration removes an integration and its cursor.
+func (s *SqlStore) DeleteEventStreamingIntegration(ctx context.Context, accountID string, id uint64) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("account_id = ? AND integration_id = ?", accountID, id).Delete(&types.EventStreamingCursor{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("account_id = ? AND id = ?", accountID, id).Delete(&types.EventStreamingIntegration{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return status.Errorf(status.NotFound, "event streaming integration not found")
+		}
+		return nil
+	})
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			return st
+		}
+		log.WithContext(ctx).WithError(err).Error("failed to delete event streaming integration from store")
+		return status.Errorf(status.Internal, "failed to delete event streaming integration from store")
+	}
+	return nil
+}
+
+// GetEventStreamingCursor returns the forwarding watermark for an integration.
+func (s *SqlStore) GetEventStreamingCursor(ctx context.Context, accountID string, integrationID uint64) (*types.EventStreamingCursor, error) {
+	var cursor types.EventStreamingCursor
+	result := s.db.Take(&cursor, "account_id = ? AND integration_id = ?", accountID, integrationID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return &types.EventStreamingCursor{AccountID: accountID, IntegrationID: integrationID}, nil
+		}
+		log.WithContext(ctx).WithError(result.Error).Error("failed to get event streaming cursor from store")
+		return nil, status.Errorf(status.Internal, "failed to get event streaming cursor from store")
+	}
+	return &cursor, nil
+}
+
+// SaveEventStreamingCursor persists the forwarding watermark.
+func (s *SqlStore) SaveEventStreamingCursor(ctx context.Context, cursor *types.EventStreamingCursor) error {
+	if cursor == nil {
+		return status.Errorf(status.InvalidArgument, "event streaming cursor is required")
+	}
+	result := s.db.Save(cursor)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to save event streaming cursor in store")
+		return status.Errorf(status.Internal, "failed to save event streaming cursor in store")
 	}
 	return nil
 }

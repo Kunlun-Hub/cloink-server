@@ -39,6 +39,7 @@ import (
 
 	"github.com/netbirdio/netbird/management/server/auth"
 	emailmanager "github.com/netbirdio/netbird/management/server/email"
+	eventstreaming "github.com/netbirdio/netbird/management/server/eventstreaming"
 	"github.com/netbirdio/netbird/management/server/geolocation"
 	nbgroups "github.com/netbirdio/netbird/management/server/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/accounts"
@@ -46,6 +47,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/http/handlers/dns"
 	emailhandler "github.com/netbirdio/netbird/management/server/http/handlers/email"
 	"github.com/netbirdio/netbird/management/server/http/handlers/events"
+	eventstreaminghandler "github.com/netbirdio/netbird/management/server/http/handlers/event_streaming"
 	"github.com/netbirdio/netbird/management/server/http/handlers/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/idp"
 	"github.com/netbirdio/netbird/management/server/http/handlers/instance"
@@ -141,6 +143,8 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 
 	accounts.AddEndpoints(accountManager, settingsManager, router)
 	emailhandler.AddEndpoints(emailService, router)
+	eventStreamingManager := eventstreaming.NewManager(accountManager.GetStore(), permissionsManager)
+	eventstreaminghandler.AddEndpoints(eventStreamingManager, router)
 	peers.AddEndpoints(accountManager, router, networkMapController, permissionsManager)
 	users.AddEndpoints(accountManager, router)
 	users.AddInvitesEndpoints(accountManager, router)
