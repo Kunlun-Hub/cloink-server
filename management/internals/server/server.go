@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/metric"
+	"github.com/netbirdio/netbird/management/server/eventstreaming"
+	"github.com/netbirdio/netbird/management/server/eventstreaming/senders"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c" //nolint:staticcheck
@@ -142,6 +144,22 @@ func (s *BaseServer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to expose metrics: %v", err)
 	}
 	s.EphemeralManager().LoadInitialPeers(srvCtx)
+
+	// Start the event-streaming forwarder for forwarding audit events to
+	// configured external platforms (Datadog, S3, Firehose, Generic HTTP).
+	// NOTE (cloink): event-streaming is an open-source feature.
+	eventStreamingSenders := []eventstreaming.Sender{
+		senders.NewDatadogSender(),
+		senders.NewS3Sender(),
+		senders.NewFirehoseSender(),
+		senders.NewGenericHTTPSender(),
+	}
+	eventStreamingForwarder := eventstreaming.NewForwarder(
+		s.Store(),
+		s.EventStore(),
+		eventStreamingSenders,
+	)
+	go eventStreamingForwarder.Run(srvCtx)
 
 	tlsEnabled, err := s.setupTLS(srvCtx)
 	if err != nil {
