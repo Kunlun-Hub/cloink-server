@@ -39,17 +39,21 @@ import (
 
 	"github.com/netbirdio/netbird/management/server/auth"
 	emailmanager "github.com/netbirdio/netbird/management/server/email"
+	eventstreaming "github.com/netbirdio/netbird/management/server/eventstreaming"
+	"github.com/netbirdio/netbird/management/server/notifications"
 	"github.com/netbirdio/netbird/management/server/geolocation"
 	nbgroups "github.com/netbirdio/netbird/management/server/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/accounts"
 	debugbundles "github.com/netbirdio/netbird/management/server/http/handlers/debug_bundles"
 	"github.com/netbirdio/netbird/management/server/http/handlers/dns"
 	emailhandler "github.com/netbirdio/netbird/management/server/http/handlers/email"
+	eventstreaminghandler "github.com/netbirdio/netbird/management/server/http/handlers/event_streaming"
 	"github.com/netbirdio/netbird/management/server/http/handlers/events"
 	"github.com/netbirdio/netbird/management/server/http/handlers/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/idp"
 	"github.com/netbirdio/netbird/management/server/http/handlers/instance"
 	"github.com/netbirdio/netbird/management/server/http/handlers/networks"
+	notificationshandler "github.com/netbirdio/netbird/management/server/http/handlers/notifications"
 	"github.com/netbirdio/netbird/management/server/http/handlers/peers"
 	"github.com/netbirdio/netbird/management/server/http/handlers/policies"
 	"github.com/netbirdio/netbird/management/server/http/handlers/relays"
@@ -138,6 +142,12 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if setter, ok := accountManager.(interface{ SetEmailService(emailmanager.Service) }); ok {
 		setter.SetEmailService(emailService)
 	}
+
+	eventStreamingManager := eventstreaming.NewManager(accountManager.GetStore(), permissionsManager)
+	eventstreaminghandler.AddEndpoints(eventStreamingManager, router)
+
+	notificationsManager := notifications.NewManager(accountManager.GetStore(), permissionsManager)
+	notificationshandler.AddEndpoints(notificationsManager, router)
 
 	accounts.AddEndpoints(accountManager, settingsManager, router)
 	emailhandler.AddEndpoints(emailService, router)
