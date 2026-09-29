@@ -10,6 +10,7 @@ import (
 	"github.com/netbirdio/netbird/management/server/context"
 	"github.com/netbirdio/netbird/management/server/permissions/modules"
 	"github.com/netbirdio/netbird/management/server/permissions/operations"
+	"github.com/netbirdio/netbird/shared/auth"
 	"github.com/netbirdio/netbird/shared/management/http/util"
 	"github.com/netbirdio/netbird/shared/management/status"
 )
@@ -35,8 +36,9 @@ func (h *handler) getFlowRetention(w http.ResponseWriter, r *http.Request) {
 
 	retention, err := h.accountManager.GetStore().GetFlowRetention(permissionCtx)
 	if err != nil {
-		util.WriteError(permissionCtx, err, w)
-		return
+		// FileStore and other non-SQL stores do not persist retention;
+		// fall back to the environment default instead of failing.
+		retention = networktraffic.FlowRetention()
 	}
 	if retention <= 0 {
 		retention = networktraffic.FlowRetention()
@@ -76,26 +78,26 @@ func (h *handler) updateFlowRetention(w http.ResponseWriter, r *http.Request) {
 
 // checkNetworkTrafficPermission validates the user and their permission for
 // the network traffic module, returning the permission context on success.
-func (h *handler) checkNetworkTrafficPermission(w http.ResponseWriter, r *http.Request, op operations.Operation) (stdcontext.Context, *context.UserAuth, bool) {
+func (h *handler) checkNetworkTrafficPermission(w http.ResponseWriter, r *http.Request, op operations.Operation) (stdcontext.Context, auth.UserAuth, bool) {
 	userAuth, err := context.GetUserAuthFromContext(r.Context())
 	if err != nil {
 		util.WriteError(r.Context(), err, w)
-		return nil, nil, false
+		return nil, auth.UserAuth{}, false
 	}
 	if h.permissionsManager == nil {
 		util.WriteError(r.Context(), status.NewPermissionDeniedError(), w)
-		return nil, nil, false
+		return nil, auth.UserAuth{}, false
 	}
 	allowed, permissionCtx, err := h.permissionsManager.ValidateUserPermissions(
 		r.Context(), userAuth.AccountId, userAuth.UserId, modules.NetworkTraffic, op,
 	)
 	if err != nil {
 		util.WriteError(permissionCtx, status.NewPermissionValidationError(err), w)
-		return nil, nil, false
+		return nil, auth.UserAuth{}, false
 	}
 	if !allowed {
 		util.WriteError(permissionCtx, status.NewPermissionDeniedError(), w)
-		return nil, nil, false
+		return nil, auth.UserAuth{}, false
 	}
 	return permissionCtx, userAuth, true
 }

@@ -17,12 +17,14 @@ func TestFlowServerCleanupFailureIsRecoverable(t *testing.T) {
 	manager := account.NewMockManager(ctrl)
 	dbStore := store.NewMockStore(ctrl)
 	manager.EXPECT().GetStore().Return(dbStore).AnyTimes()
+	dbStore.EXPECT().GetFlowRetention(gomock.Any()).Return(time.Duration(0), nil).AnyTimes()
 	dbStore.EXPECT().CleanupNetworkTrafficEvents(gomock.Any(), gomock.Any(), 10).
 		Return(int64(0), errors.New("database unavailable")).Times(1)
 	dbStore.EXPECT().CleanupNetworkTrafficEvents(gomock.Any(), gomock.Any(), 10).
 		Return(int64(3), nil).Times(1)
 
 	server := NewFlowServer(manager)
-	server.cleanup(context.Background(), time.Hour, 10)
-	server.cleanup(context.Background(), time.Hour, 10)
+	server.SetRetention(time.Hour)
+	server.cleanup(context.Background(), 10)
+	server.cleanup(context.Background(), 10)
 }
