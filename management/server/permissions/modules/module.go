@@ -25,6 +25,7 @@ const (
 	VersionReleases   Module = "version_releases"
 	AgentNetwork      Module = "agent_network"
 	EventStreaming    Module = "event_streaming"
+	Notifications     Module = "notifications"
 
 	// Agent Network submodules. A role may grant one of these directly
 	// or grant the AgentNetwork parent, which covers all of them (see
@@ -59,6 +60,7 @@ var All = map[Module]struct{}{
 	VersionReleases:   {},
 	AgentNetwork:      {},
 	EventStreaming:    {},
+	Notifications:     {},
 
 	AgentNetworkProviders:  {},
 	AgentNetworkPolicies:   {},

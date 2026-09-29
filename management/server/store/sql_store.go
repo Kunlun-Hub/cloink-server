@@ -148,6 +148,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&types.EmailSettings{},
 		&types.PasswordResetRecord{},
 		&types.EventStreamingIntegration{}, &types.EventStreamingCursor{},
+		&types.NotificationChannel{},
 		&types.VersionRelease{}, &types.VersionReleaseArtifact{},
 	)
 	if err != nil {
@@ -1137,7 +1138,6 @@ func (s *SqlStore) SaveEmailSettings(ctx context.Context, settings *types.EmailS
 	}
 	return nil
 }
-
 
 // CreateEventStreamingIntegration persists a new event streaming integration.
 func (s *SqlStore) CreateEventStreamingIntegration(ctx context.Context, integration *types.EventStreamingIntegration) (*types.EventStreamingIntegration, error) {
@@ -7107,4 +7107,82 @@ func (s *SqlStore) GetRoutingPeerNetworks(_ context.Context, accountID, peerID s
 	}
 
 	return names, nil
+}
+
+// CreateNotificationChannel persists a new notification channel for an account.
+func (s *SqlStore) CreateNotificationChannel(ctx context.Context, channel *types.NotificationChannel) (*types.NotificationChannel, error) {
+	if channel == nil {
+		return nil, status.Errorf(status.InvalidArgument, "notification channel is required")
+	}
+	channelCopy := *channel
+	result := s.db.Create(&channelCopy)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to create notification channel in store")
+		return nil, status.Errorf(status.Internal, "failed to create notification channel in store")
+	}
+	return &channelCopy, nil
+}
+
+// GetNotificationChannel returns a single notification channel by ID.
+func (s *SqlStore) GetNotificationChannel(ctx context.Context, lockStrength LockingStrength, accountID string, id string) (*types.NotificationChannel, error) {
+	tx := s.db
+	if lockStrength != LockingStrengthNone {
+		tx = tx.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+
+	var channel types.NotificationChannel
+	result := tx.Take(&channel, "account_id = ? AND id = ?", accountID, id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, status.Errorf(status.NotFound, "notification channel not found")
+		}
+		log.WithContext(ctx).WithError(result.Error).Error("failed to get notification channel from store")
+		return nil, status.Errorf(status.Internal, "failed to get notification channel from store")
+	}
+	return &channel, nil
+}
+
+// ListNotificationChannels returns all notification channels of an account.
+func (s *SqlStore) ListNotificationChannels(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.NotificationChannel, error) {
+	tx := s.db
+	if lockStrength != LockingStrengthNone {
+		tx = tx.Clauses(clause.Locking{Strength: string(lockStrength)})
+	}
+
+	var channels []*types.NotificationChannel
+	result := tx.Where("account_id = ?", accountID).Order("id ASC").Find(&channels)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to list notification channels from store")
+		return nil, status.Errorf(status.Internal, "failed to list notification channels from store")
+	}
+	return channels, nil
+}
+
+// UpdateNotificationChannel persists changes to an existing notification channel.
+func (s *SqlStore) UpdateNotificationChannel(ctx context.Context, channel *types.NotificationChannel) error {
+	if channel == nil {
+		return status.Errorf(status.InvalidArgument, "notification channel is required")
+	}
+	result := s.db.Where("account_id = ? AND id = ?", channel.AccountID, channel.ID).Save(channel)
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to update notification channel in store")
+		return status.Errorf(status.Internal, "failed to update notification channel in store")
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "notification channel not found")
+	}
+	return nil
+}
+
+// DeleteNotificationChannel removes a notification channel by ID.
+func (s *SqlStore) DeleteNotificationChannel(ctx context.Context, accountID string, id string) error {
+	result := s.db.Where("account_id = ? AND id = ?", accountID, id).Delete(&types.NotificationChannel{})
+	if result.Error != nil {
+		log.WithContext(ctx).WithError(result.Error).Error("failed to delete notification channel from store")
+		return status.Errorf(status.Internal, "failed to delete notification channel from store")
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "notification channel not found")
+	}
+	return nil
 }

@@ -615,6 +615,79 @@ func (mr *MockStoreMockRecorder) DeleteDNSRecord(ctx, accountID, zoneID, recordI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDNSRecord", reflect.TypeOf((*MockStore)(nil).DeleteDNSRecord), ctx, accountID, zoneID, recordID)
 }
 
+// CreateNotificationChannel mocks base method.
+func (m *MockStore) CreateNotificationChannel(ctx context.Context, channel *types3.NotificationChannel) (*types3.NotificationChannel, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNotificationChannel", ctx, channel)
+	ret0, _ := ret[0].(*types3.NotificationChannel)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateNotificationChannel indicates an expected call of CreateNotificationChannel.
+func (mr *MockStoreMockRecorder) CreateNotificationChannel(ctx, channel any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNotificationChannel", reflect.TypeOf((*MockStore)(nil).CreateNotificationChannel), ctx, channel)
+}
+
+// GetNotificationChannel mocks base method.
+func (m *MockStore) GetNotificationChannel(ctx context.Context, lockStrength LockingStrength, accountID, id string) (*types3.NotificationChannel, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNotificationChannel", ctx, lockStrength, accountID, id)
+	ret0, _ := ret[0].(*types3.NotificationChannel)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNotificationChannel indicates an expected call of GetNotificationChannel.
+func (mr *MockStoreMockRecorder) GetNotificationChannel(ctx, lockStrength, accountID, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNotificationChannel", reflect.TypeOf((*MockStore)(nil).GetNotificationChannel), ctx, lockStrength, accountID, id)
+}
+
+// ListNotificationChannels mocks base method.
+func (m *MockStore) ListNotificationChannels(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types3.NotificationChannel, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNotificationChannels", ctx, lockStrength, accountID)
+	ret0, _ := ret[0].([]*types3.NotificationChannel)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNotificationChannels indicates an expected call of ListNotificationChannels.
+func (mr *MockStoreMockRecorder) ListNotificationChannels(ctx, lockStrength, accountID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNotificationChannels", reflect.TypeOf((*MockStore)(nil).ListNotificationChannels), ctx, lockStrength, accountID)
+}
+
+// UpdateNotificationChannel mocks base method.
+func (m *MockStore) UpdateNotificationChannel(ctx context.Context, channel *types3.NotificationChannel) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateNotificationChannel", ctx, channel)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateNotificationChannel indicates an expected call of UpdateNotificationChannel.
+func (mr *MockStoreMockRecorder) UpdateNotificationChannel(ctx, channel any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateNotificationChannel", reflect.TypeOf((*MockStore)(nil).UpdateNotificationChannel), ctx, channel)
+}
+
+// DeleteNotificationChannel mocks base method.
+func (m *MockStore) DeleteNotificationChannel(ctx context.Context, accountID, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteNotificationChannel", ctx, accountID, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteNotificationChannel indicates an expected call of DeleteNotificationChannel.
+func (mr *MockStoreMockRecorder) DeleteNotificationChannel(ctx, accountID, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNotificationChannel", reflect.TypeOf((*MockStore)(nil).DeleteNotificationChannel), ctx, accountID, id)
+}
+
 // DeleteExpiredCustomDomain mocks base method.
 func (m *MockStore) DeleteExpiredCustomDomain(ctx context.Context, d *domain.Domain, now time.Time) (bool, error) {
 	m.ctrl.T.Helper()

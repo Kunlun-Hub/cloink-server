@@ -96,6 +96,11 @@ type Store interface {
 	DeleteEventStreamingIntegration(ctx context.Context, accountID string, id uint64) error
 	GetEventStreamingCursor(ctx context.Context, accountID string, integrationID uint64) (*types.EventStreamingCursor, error)
 	SaveEventStreamingCursor(ctx context.Context, cursor *types.EventStreamingCursor) error
+	CreateNotificationChannel(ctx context.Context, channel *types.NotificationChannel) (*types.NotificationChannel, error)
+	GetNotificationChannel(ctx context.Context, lockStrength LockingStrength, accountID string, id string) (*types.NotificationChannel, error)
+	ListNotificationChannels(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.NotificationChannel, error)
+	UpdateNotificationChannel(ctx context.Context, channel *types.NotificationChannel) error
+	DeleteNotificationChannel(ctx context.Context, accountID string, id string) error
 	SaveVersionRelease(ctx context.Context, release *types.VersionRelease) error
 	GetVersionRelease(ctx context.Context, accountID, releaseID string) (*types.VersionRelease, error)
 	ListVersionReleases(ctx context.Context, accountID string) ([]*types.VersionRelease, error)
