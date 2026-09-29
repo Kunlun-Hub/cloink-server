@@ -11,6 +11,9 @@ type Store interface {
 	Save(ctx context.Context, event *Event) (*Event, error)
 	// Get returns "limit" number of events from the "offset" index ordered descending or ascending by a timestamp
 	Get(ctx context.Context, accountID string, offset, limit int, descending bool) ([]*Event, error)
+	// GetAfterID returns up to "limit" events with ID greater than afterID, ordered by ID ascending.
+	// Used by the event-streaming forwarder for cursor-based pagination.
+	GetAfterID(ctx context.Context, accountID string, afterID uint64, limit int) ([]*Event, error)
 	// Close the sink flushing events if necessary
 	Close(ctx context.Context) error
 }
@@ -43,6 +46,22 @@ func (store *InMemoryEventStore) Get(_ context.Context, accountID string, offset
 	for _, event := range store.events {
 		if event.AccountID == accountID {
 			events = append(events, event)
+		}
+	}
+	return events, nil
+}
+
+// GetAfterID returns up to limit events with ID greater than afterID, ordered by ID ascending.
+func (store *InMemoryEventStore) GetAfterID(_ context.Context, accountID string, afterID uint64, limit int) ([]*Event, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	events := make([]*Event, 0, limit)
+	for _, event := range store.events {
+		if event.AccountID == accountID && event.ID > afterID {
+			events = append(events, event)
+			if len(events) >= limit {
+				break
+			}
 		}
 	}
 	return events, nil
