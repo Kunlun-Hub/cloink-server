@@ -28,7 +28,7 @@ type flowRetentionRequest struct {
 
 // getFlowRetention returns the global flow event retention setting.
 func (h *handler) getFlowRetention(w http.ResponseWriter, r *http.Request) {
-	permissionCtx, userAuth, ok := h.checkNetworkTrafficPermission(w, r, operations.Read)
+	permissionCtx, userAuth, ok := h.checkSettingsPermission(w, r, operations.Read)
 	if !ok {
 		return
 	}
@@ -51,7 +51,7 @@ func (h *handler) getFlowRetention(w http.ResponseWriter, r *http.Request) {
 // updateFlowRetention updates the global flow event retention setting.
 // The flow cleanup worker picks up the new value on its next cycle.
 func (h *handler) updateFlowRetention(w http.ResponseWriter, r *http.Request) {
-	permissionCtx, userAuth, ok := h.checkNetworkTrafficPermission(w, r, operations.Update)
+	permissionCtx, userAuth, ok := h.checkSettingsPermission(w, r, operations.Update)
 	if !ok {
 		return
 	}
@@ -74,9 +74,14 @@ func (h *handler) updateFlowRetention(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSONObject(permissionCtx, w, flowRetentionResponse(req))
 }
 
-// checkNetworkTrafficPermission validates the user and their permission for
-// the network traffic module, returning the permission context on success.
-func (h *handler) checkNetworkTrafficPermission(w http.ResponseWriter, r *http.Request, op operations.Operation) (stdcontext.Context, auth.UserAuth, bool) {
+// checkSettingsPermission validates the user and their permission for the
+// account settings module, returning the permission context on success.
+//
+// The flow retention is a deployment-wide setting surfaced next to the other
+// traffic event controls, so it is gated on Settings like they are. The
+// NetworkTraffic module is read-only for every built-in role, which would make
+// the setting impossible to change.
+func (h *handler) checkSettingsPermission(w http.ResponseWriter, r *http.Request, op operations.Operation) (stdcontext.Context, auth.UserAuth, bool) {
 	userAuth, err := context.GetUserAuthFromContext(r.Context())
 	if err != nil {
 		util.WriteError(r.Context(), err, w)
@@ -87,7 +92,7 @@ func (h *handler) checkNetworkTrafficPermission(w http.ResponseWriter, r *http.R
 		return nil, auth.UserAuth{}, false
 	}
 	allowed, permissionCtx, err := h.permissionsManager.ValidateUserPermissions(
-		r.Context(), userAuth.AccountId, userAuth.UserId, modules.NetworkTraffic, op,
+		r.Context(), userAuth.AccountId, userAuth.UserId, modules.Settings, op,
 	)
 	if err != nil {
 		util.WriteError(permissionCtx, status.NewPermissionValidationError(err), w)
