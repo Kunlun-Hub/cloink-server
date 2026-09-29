@@ -22,6 +22,7 @@ import (
 
 	"github.com/netbirdio/netbird/encryption"
 	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
+	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
 	"github.com/netbirdio/netbird/management/server/idp"
 	"github.com/netbirdio/netbird/management/server/metrics"
 	"github.com/netbirdio/netbird/management/server/store"
@@ -190,7 +191,7 @@ func (s *BaseServer) Start(ctx context.Context) error {
 	// before we iterate them. Lazy creation after the loop would miss hooks
 	// registered during GRPCServer() construction (e.g., SetServiceManager).
 	s.GRPCServer()
-	s.FlowServer().StartPeriodicCleanup(srvCtx, 48*time.Hour, 50000, time.Hour)
+	s.FlowServer().StartPeriodicCleanup(srvCtx, networktraffic.FlowRetention(), 50000, time.Hour)
 
 	for _, fn := range s.afterInit {
 		if fn != nil {

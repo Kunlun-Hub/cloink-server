@@ -318,3 +318,13 @@ func (s *FileStore) GetAccountNetworkTrafficGroupEvents(context.Context, Locking
 func (s *FileStore) CleanupNetworkTrafficEvents(context.Context, time.Time, int) (int64, error) {
 	return 0, errors.New("network traffic events require a SQL store")
 }
+
+// GetFlowRetention is unsupported by the legacy JSON store.
+func (s *FileStore) GetFlowRetention(context.Context) (time.Duration, error) {
+	return 0, errors.New("flow retention requires a SQL store")
+}
+
+// SetFlowRetention is unsupported by the legacy JSON store.
+func (s *FileStore) SetFlowRetention(context.Context, time.Duration) error {
+	return errors.New("flow retention requires a SQL store")
+}

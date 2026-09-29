@@ -255,3 +255,34 @@ func applyNetworkTrafficFilters(query *gorm.DB, filter networktraffic.Filter) *g
 	}
 	return query
 }
+
+// flowRetentionSingletonID is the fixed primary key of the singleton
+// flow retention row.
+const flowRetentionSingletonID = 1
+
+// GetFlowRetention returns the configured global flow event retention.
+// It returns 0 when no value was ever stored, letting the caller fall
+// back to the environment default.
+func (s *SqlStore) GetFlowRetention(ctx context.Context) (time.Duration, error) {
+	var retention types.FlowRetention
+	if err := s.db.WithContext(ctx).First(&retention, flowRetentionSingletonID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return retention.Retention, nil
+}
+
+// SetFlowRetention stores the global flow event retention, creating the
+// singleton row when it does not exist yet.
+func (s *SqlStore) SetFlowRetention(ctx context.Context, retention time.Duration) error {
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"retention", "updated_at"}),
+	}).Create(&types.FlowRetention{
+		ID:        flowRetentionSingletonID,
+		Retention: retention,
+		UpdatedAt: time.Now().UTC(),
+	}).Error
+}
