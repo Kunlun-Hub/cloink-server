@@ -165,6 +165,31 @@ func (store *Store) Get(ctx context.Context, accountID string, offset, limit int
 	return store.processResult(ctx, events)
 }
 
+// GetAfterID returns up to limit events with ID greater than afterID, ordered by ID ascending.
+// Used by the event-streaming forwarder for cursor-based pagination.
+func (store *Store) GetAfterID(ctx context.Context, accountID string, afterID uint64, limit int) ([]*activity.Event, error) {
+	baseQuery := store.db.Model(&activity.Event{}).
+		Select(`
+      events.*,
+      u.name  AS initiator_name,
+      u.email AS initiator_email,
+      t.name  AS target_name,
+      t.email AS target_email
+    `).
+		Joins(`LEFT JOIN deleted_users u ON u.id = events.initiator_id`).
+		Joins(`LEFT JOIN deleted_users t ON t.id = events.target_id`)
+
+	var events []*eventWithNames
+	err := baseQuery.Where("account_id = ? AND events.id > ?", accountID, afterID).
+		Order("events.id ASC").Limit(limit).
+		Find(&events).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return store.processResult(ctx, events)
+}
+
 // Save persists an activity event and encrypts deleted user details using the caller's context.
 func (store *Store) Save(ctx context.Context, event *activity.Event) (*activity.Event, error) {
 	eventCopy := event.Copy()
