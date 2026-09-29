@@ -17,6 +17,16 @@ import (
 
 const networkTrafficSourceKeyExpression = "COALESCE(NULLIF(source_id, ''), NULLIF(source_name, ''), source_address)"
 
+// networkTrafficGroupOrderBy orders the grouped network traffic query.
+//
+// It must list latest_timestamp plus every GROUP BY column of
+// GetAccountNetworkTrafficGroups. The GROUP BY combination is unique, so
+// covering all of its columns makes the ordering total: without them, groups
+// sharing a latest_timestamp (e.g. connections seen in the same minute) may
+// come back in an arbitrary order and consecutive pages can overlap.
+// Guarded by TestNetworkTrafficGroupOrderCoversGroupBy.
+const networkTrafficGroupOrderBy = "latest_timestamp DESC, user_id DESC, reporter_id DESC, source_key DESC, destination_id DESC, destination_address DESC, protocol DESC, direction DESC, connection_type DESC"
+
 // CreateNetworkTrafficEvent stores one client-reported flow event. Replayed
 // event IDs are treated as successful writes so the client can discard them.
 func (s *SqlStore) CreateNetworkTrafficEvent(ctx context.Context, event *networktraffic.Event) error {
@@ -103,7 +113,7 @@ func (s *SqlStore) GetAccountNetworkTrafficGroups(ctx context.Context, lockStren
 		Group("user_id, reporter_id, " + networkTrafficSourceKeyExpression + ", destination_id, destination_address, protocol, direction, connection_type")
 	query := s.db.WithContext(ctx).Table("(?) AS network_traffic_groups", grouped).
 		Select("network_traffic_groups.*, COUNT(*) OVER() AS total_groups").
-		Order("latest_timestamp DESC, user_id DESC, reporter_id DESC, source_key DESC, destination_address DESC").
+		Order(networkTrafficGroupOrderBy).
 		Limit(filter.PageSize).Offset(filter.Offset())
 	var groups []*networktraffic.Group
 	if err := query.Scan(&groups).Error; err != nil {
