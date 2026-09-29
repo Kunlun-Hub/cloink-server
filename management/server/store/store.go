@@ -89,13 +89,6 @@ type Store interface {
 	SaveAccountOnboarding(ctx context.Context, onboarding *types.AccountOnboarding) error
 	GetEmailSettings(ctx context.Context, lockStrength LockingStrength, accountID string) (*types.EmailSettings, error)
 	SaveEmailSettings(ctx context.Context, settings *types.EmailSettings) error
-	CreateEventStreamingIntegration(ctx context.Context, integration *types.EventStreamingIntegration) (*types.EventStreamingIntegration, error)
-	GetEventStreamingIntegration(ctx context.Context, lockStrength LockingStrength, accountID string, id uint64) (*types.EventStreamingIntegration, error)
-	ListEventStreamingIntegrations(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.EventStreamingIntegration, error)
-	UpdateEventStreamingIntegration(ctx context.Context, integration *types.EventStreamingIntegration) error
-	DeleteEventStreamingIntegration(ctx context.Context, accountID string, id uint64) error
-	GetEventStreamingCursor(ctx context.Context, accountID string, integrationID uint64) (*types.EventStreamingCursor, error)
-	SaveEventStreamingCursor(ctx context.Context, cursor *types.EventStreamingCursor) error
 	CreateNotificationChannel(ctx context.Context, channel *types.NotificationChannel) (*types.NotificationChannel, error)
 	GetNotificationChannel(ctx context.Context, lockStrength LockingStrength, accountID string, id string) (*types.NotificationChannel, error)
 	ListNotificationChannels(ctx context.Context, lockStrength LockingStrength, accountID string) ([]*types.NotificationChannel, error)
