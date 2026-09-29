@@ -71,9 +71,7 @@ func (h *handler) updateFlowRetention(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(permissionCtx, err, w)
 		return
 	}
-	util.WriteJSONObject(permissionCtx, w, flowRetentionResponse{
-		RetentionDays: req.RetentionDays,
-	})
+	util.WriteJSONObject(permissionCtx, w, flowRetentionResponse(req))
 }
 
 // checkNetworkTrafficPermission validates the user and their permission for
