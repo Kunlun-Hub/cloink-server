@@ -46,12 +46,13 @@ import (
 	debugbundles "github.com/netbirdio/netbird/management/server/http/handlers/debug_bundles"
 	"github.com/netbirdio/netbird/management/server/http/handlers/dns"
 	emailhandler "github.com/netbirdio/netbird/management/server/http/handlers/email"
-	"github.com/netbirdio/netbird/management/server/http/handlers/events"
 	eventstreaminghandler "github.com/netbirdio/netbird/management/server/http/handlers/event_streaming"
+	"github.com/netbirdio/netbird/management/server/http/handlers/events"
 	"github.com/netbirdio/netbird/management/server/http/handlers/groups"
 	"github.com/netbirdio/netbird/management/server/http/handlers/idp"
 	"github.com/netbirdio/netbird/management/server/http/handlers/instance"
 	"github.com/netbirdio/netbird/management/server/http/handlers/networks"
+	notificationshandler "github.com/netbirdio/netbird/management/server/http/handlers/notifications"
 	"github.com/netbirdio/netbird/management/server/http/handlers/peers"
 	"github.com/netbirdio/netbird/management/server/http/handlers/policies"
 	"github.com/netbirdio/netbird/management/server/http/handlers/relays"
@@ -65,6 +66,7 @@ import (
 	nbnetworks "github.com/netbirdio/netbird/management/server/networks"
 	"github.com/netbirdio/netbird/management/server/networks/resources"
 	"github.com/netbirdio/netbird/management/server/networks/routers"
+	"github.com/netbirdio/netbird/management/server/notifications"
 	"github.com/netbirdio/netbird/management/server/telemetry"
 )
 
@@ -140,6 +142,9 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if setter, ok := accountManager.(interface{ SetEmailService(emailmanager.Service) }); ok {
 		setter.SetEmailService(emailService)
 	}
+
+	notificationsManager := notifications.NewManager(accountManager.GetStore(), permissionsManager)
+	notificationshandler.AddEndpoints(notificationsManager, router)
 
 	accounts.AddEndpoints(accountManager, settingsManager, router)
 	emailhandler.AddEndpoints(emailService, router)
