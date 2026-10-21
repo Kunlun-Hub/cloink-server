@@ -825,7 +825,7 @@ func (h *Handler) pushRelayListToAccount(ctx context.Context, accountID, userID 
 		result = "skipped"
 		return 0, nil
 	}
-	peers, err := h.accountManager.GetPeers(ctx, accountID, userID, "", "")
+	peers, err := h.accountManager.GetPeers(ctx, accountID, userID, "", "", "")
 	if err != nil {
 		return 0, err
 	}
@@ -842,7 +842,7 @@ func (h *Handler) pushRelayListToAccount(ctx context.Context, accountID, userID 
 }
 
 func (h *Handler) registeredClients(ctx context.Context, accountID, userID string) (int, error) {
-	peers, err := h.accountManager.GetPeers(ctx, accountID, userID, "", "")
+	peers, err := h.accountManager.GetPeers(ctx, accountID, userID, "", "", "")
 	if err != nil {
 		return 0, err
 	}

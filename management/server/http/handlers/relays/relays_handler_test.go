@@ -121,7 +121,7 @@ func TestApplyRelayConfigPushesAccountPeers(t *testing.T) {
 			GetAccountByIDFunc: func(context.Context, string, string) (*types.Account, error) {
 				return &types.Account{Id: accountID}, nil
 			},
-			GetPeersFunc: func(context.Context, string, string, string, string) ([]*nbpeer.Peer, error) {
+			GetPeersFunc: func(context.Context, string, string, string, string, string) ([]*nbpeer.Peer, error) {
 				return []*nbpeer.Peer{{ID: "peer-a"}, {ID: "embedded", ProxyMeta: nbpeer.ProxyMeta{Embedded: true}}, {ID: "peer-b"}}, nil
 			},
 		},
@@ -301,7 +301,7 @@ func TestDeleteRelayPushesUpdatedAccountPeers(t *testing.T) {
 		configPusher: pusher,
 		accountManager: &mock_server.MockAccountManager{
 			GetStoreFunc: func() store.Store { return nil },
-			GetPeersFunc: func(context.Context, string, string, string, string) ([]*nbpeer.Peer, error) {
+			GetPeersFunc: func(context.Context, string, string, string, string, string) ([]*nbpeer.Peer, error) {
 				return []*nbpeer.Peer{{ID: "peer-1"}}, nil
 			},
 		},

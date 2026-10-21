@@ -16,22 +16,22 @@ import (
 	"golang.org/x/oauth2"
 
 	nbgrpc "github.com/netbirdio/netbird/management/internals/shared/grpc"
-	"github.com/netbirdio/netbird/management/server/http/middleware"
 	"github.com/netbirdio/netbird/management/server/types"
 	"github.com/netbirdio/netbird/proxy/auth"
 	"github.com/netbirdio/netbird/shared/i18n"
+	"github.com/netbirdio/netbird/shared/ratelimit"
 )
 
 // AuthCallbackHandler handles OAuth callbacks for proxy authentication.
 type AuthCallbackHandler struct {
 	proxyService   *nbgrpc.ProxyServiceServer
-	rateLimiter    *middleware.APIRateLimiter
+	rateLimiter    *ratelimit.APIRateLimiter
 	trustedProxies []netip.Prefix
 }
 
 // NewAuthCallbackHandler creates a new OAuth callback handler.
 func NewAuthCallbackHandler(proxyService *nbgrpc.ProxyServiceServer, trustedProxies []netip.Prefix) *AuthCallbackHandler {
-	rateLimiterConfig := &middleware.RateLimiterConfig{
+	rateLimiterConfig := &ratelimit.RateLimiterConfig{
 		RequestsPerMinute: 10,
 		Burst:             15,
 		CleanupInterval:   5 * time.Minute,
@@ -40,7 +40,7 @@ func NewAuthCallbackHandler(proxyService *nbgrpc.ProxyServiceServer, trustedProx
 
 	return &AuthCallbackHandler{
 		proxyService:   proxyService,
-		rateLimiter:    middleware.NewAPIRateLimiter(rateLimiterConfig),
+		rateLimiter:    ratelimit.NewAPIRateLimiter(rateLimiterConfig),
 		trustedProxies: trustedProxies,
 	}
 }
@@ -61,7 +61,7 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 
 	state := r.URL.Query().Get("state")
 
-	codeVerifier, originalURL, err := h.proxyService.ValidateState(state)
+	codeVerifier, originalURL, useSessionCode, err := h.proxyService.ValidateState(state)
 	if err != nil {
 		log.WithError(err).Error("OAuth callback state validation failed")
 		http.Error(w, i18n.T(lang, "error.invalidStateParameter"), http.StatusBadRequest)
@@ -121,10 +121,19 @@ func (h *AuthCallbackHandler) handleCallback(w http.ResponseWriter, r *http.Requ
 	redirectURL.Scheme = "https"
 
 	query := redirectURL.Query()
-	query.Set("session_token", sessionToken)
+	if useSessionCode {
+		code, ok := h.proxyService.GenerateSessionCode(sessionToken)
+		if !ok {
+			http.Error(w, "Failed to create session", http.StatusInternalServerError)
+			return
+		}
+		query.Set(auth.SessionCodeQueryParam, code)
+	} else {
+		query.Set(auth.SessionTokenQueryParam, sessionToken)
+	}
 	redirectURL.RawQuery = query.Encode()
 
-	log.WithField("redirect", redirectURL.Host).Debug("OAuth callback: redirecting user with session token")
+	log.WithField("redirect", redirectURL.Host).Debug("OAuth callback: redirecting user to proxy")
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 

@@ -75,6 +75,23 @@ func (p *PopulateFields) setNonZero(field reflect.Value) (int, error) {
 			return 0, err
 		}
 		field.Set(s)
+	case reflect.Map:
+		m := reflect.MakeMapWithSize(field.Type(), 1)
+		key := reflect.New(field.Type().Key()).Elem()
+		if _, err := p.setNonZero(key); err != nil {
+			return 0, err
+		}
+		value := reflect.New(field.Type().Elem()).Elem()
+		if _, err := p.setNonZero(value); err != nil {
+			return 0, err
+		}
+		m.SetMapIndex(key, value)
+		field.Set(m)
+	case reflect.Pointer:
+		field.Set(reflect.New(field.Type().Elem()))
+		if _, err := p.setNonZero(field.Elem()); err != nil {
+			return 0, err
+		}
 	default:
 		return 0, fmt.Errorf("unhandled field kind %s; extend setNonZero", field.Kind())
 	}

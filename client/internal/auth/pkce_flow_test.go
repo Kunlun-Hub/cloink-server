@@ -104,6 +104,32 @@ func TestPKCEExternalRedirectValidation(t *testing.T) {
 	require.ErrorContains(t, err, "Invalid state")
 }
 
+func TestForceAccountPromptAppliesOnlyToTheRetry(t *testing.T) {
+	config := PKCEAuthProviderConfig{
+		ClientID:              "test-client-id",
+		Audience:              "test-audience",
+		TokenEndpoint:         "https://test-token-endpoint.com/token",
+		Scope:                 "openid email profile",
+		AuthorizationEndpoint: "https://test-auth-endpoint.com/authorize",
+		RedirectURLs:          []string{"http://127.0.0.1:33992/"},
+		UseIDToken:            true,
+		LoginFlag:             mgm.LoginFlagNone,
+	}
+	pkce, err := NewPKCEAuthorizationFlow(config)
+	require.NoError(t, err)
+
+	pkce.ForceAccountPrompt()
+
+	retry, err := pkce.RequestAuthInfo(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, retry.VerificationURIComplete, "prompt=login")
+
+	next, err := pkce.RequestAuthInfo(context.Background())
+	require.NoError(t, err)
+	require.NotContains(t, next.VerificationURIComplete, "prompt=login",
+		"the forced prompt outlived the retry it was armed for")
+}
+
 func TestIsPortInExcludedRange(t *testing.T) {
 	tests := []struct {
 		name            string

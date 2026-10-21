@@ -143,13 +143,16 @@ type Conn struct {
 	// used to store the remote Rosenpass key for Relayed connection in case of connection update from ice
 	rosenpassRemoteKey []byte
 
-	wgProxyICE   wgproxy.Proxy
-	wgProxyRelay wgproxy.Proxy
+	wgProxyICE     wgproxy.Proxy
+	wgProxyRelay   wgproxy.Proxy
+	relayedConnRef *relayClient.Conn
+
 	// retiredRelayProxies keep the previous Relay paths alive during a
 	// make-before-break migration. They are closed after the replacement path
 	// produces a WireGuard handshake or when the grace period expires.
 	retiredRelayProxies []wgproxy.Proxy
-	handshaker          *Handshaker
+
+	handshaker *Handshaker
 
 	guard *guard.Guard
 	wg    sync.WaitGroup
@@ -574,7 +577,7 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
-	if conn.ctx.Err() != nil {
+	if conn.ctx.Err() != nil || rci.relayedConn.Context().Err() != nil {
 		if err := rci.relayedConn.Close(); err != nil {
 			conn.Log.Warnf("failed to close unnecessary relayed connection: %v", err)
 		}
@@ -589,7 +592,9 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 		conn.Log.Errorf("failed to add relayed net.Conn to local proxy: %v", err)
 		return
 	}
-	wgProxy.SetDisconnectListener(conn.onRelayDisconnected)
+	wgProxy.SetDisconnectListener(func() {
+		conn.onRelayDisconnected(rci.relayedConn)
+	})
 
 	conn.dumpState.NewLocalProxy()
 
@@ -602,7 +607,7 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 
 	if conn.isICEActive() {
 		conn.Log.Debugf("do not switch to relay because current priority is: %s", conn.currentConnPriority.String())
-		conn.setRelayedProxy(wgProxy, false)
+		conn.setRelayedProxy(wgProxy, rci.relayedConn, false)
 		conn.statusRelay.SetConnected()
 		conn.updateRelayStatus(rci.relayedConn.RemoteAddr().String(), rci.rosenpassPubKey, time.Now())
 		return
@@ -639,15 +644,26 @@ func (conn *Conn) onRelayConnectionIsReady(rci RelayConnInfo) {
 	conn.rosenpassRemoteKey = rci.rosenpassPubKey
 	conn.currentConnPriority = conntype.Relay
 	conn.statusRelay.SetConnected()
-	conn.setRelayedProxy(wgProxy, migratingActiveRelay)
+	conn.setRelayedProxy(wgProxy, rci.relayedConn, migratingActiveRelay)
 	conn.updateRelayStatus(rci.relayedConn.RemoteAddr().String(), rci.rosenpassPubKey, updateTime)
 	conn.Log.Infof("start to communicate with peer via relay")
 	conn.doOnConnected(rci.rosenpassPubKey, rci.rosenpassAddr, updateTime)
 }
 
-func (conn *Conn) onRelayDisconnected() {
+// onRelayDisconnected reports the teardown of a relayed connection. relayedConn
+// names the connection the signal belongs to, so a signal that arrives after
+// its connection was replaced is ignored instead of tearing down its successor.
+// A nil relayedConn means the caller does not track generations and the current
+// connection is always torn down.
+func (conn *Conn) onRelayDisconnected(relayedConn *relayClient.Conn) {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
+
+	if relayedConn != nil && conn.relayedConnRef != relayedConn {
+		conn.Log.Debugf("ignoring relay disconnect of a superseded connection")
+		return
+	}
+
 	conn.handleRelayDisconnectedLocked()
 }
 
@@ -673,6 +689,7 @@ func (conn *Conn) handleRelayDisconnectedLocked() {
 		conn.wgProxyRelay = nil
 	}
 	conn.closeRetiredRelayProxiesLocked()
+	conn.relayedConnRef = nil
 
 	changed := conn.statusRelay.Get() != worker.StatusDisconnected
 	if changed {
@@ -847,7 +864,8 @@ func (conn *Conn) evalStatus() ConnStatus {
 //
 // The result is a tri-state:
 //   - ConnStatusConnected:          all available transports are up
-//   - ConnStatusPartiallyConnected: relay is up but ICE is still pending/reconnecting
+//   - ConnStatusPartiallyConnected: one transport carries the traffic and the other does
+//     not: relay up with ICE down, or ICE up with the shared relay transport down
 //   - ConnStatusDisconnected:       no working transport
 func (conn *Conn) isConnectedOnAllWay() (status guard.ConnStatus) {
 	defer func() {
@@ -864,13 +882,14 @@ func (conn *Conn) isConnectedOnAllWay() (status guard.ConnStatus) {
 	}
 
 	return evalConnStatus(connStatusInputs{
-		forceRelay:          IsForceRelayed(),
-		peerUsesRelay:       conn.workerRelay.IsRelayConnectionSupportedWithPeer(),
-		relayConnected:      conn.statusRelay.Get() == worker.StatusConnected,
-		remoteSupportsICE:   conn.handshaker.RemoteICESupported(),
-		iceWorkerCreated:    iceWorkerCreated,
-		iceStatusConnecting: conn.statusICE.Get() != worker.StatusDisconnected,
-		iceInProgress:       iceInProgress,
+		forceRelay:              IsForceRelayed(),
+		peerUsesRelay:           conn.workerRelay.IsRelayConnectionSupportedWithPeer(),
+		relayConnected:          conn.statusRelay.Get() == worker.StatusConnected,
+		relayTransportConnected: conn.workerRelay.IsTransportConnected(),
+		remoteSupportsICE:       conn.handshaker.RemoteICESupported(),
+		iceWorkerCreated:        iceWorkerCreated,
+		iceStatusConnected:      conn.statusICE.Get() == worker.StatusConnected,
+		iceInProgress:           iceInProgress,
 	})
 }
 
@@ -964,7 +983,7 @@ func (conn *Conn) logTraceConnState() {
 	}
 }
 
-func (conn *Conn) setRelayedProxy(proxy wgproxy.Proxy, preserveOld bool) {
+func (conn *Conn) setRelayedProxy(proxy wgproxy.Proxy, relayedConn *relayClient.Conn, preserveOld bool) {
 	if conn.wgProxyRelay != nil {
 		retired := conn.wgProxyRelay
 		if preserveOld {
@@ -977,6 +996,7 @@ func (conn *Conn) setRelayedProxy(proxy wgproxy.Proxy, preserveOld bool) {
 		}
 	}
 	conn.wgProxyRelay = proxy
+	conn.relayedConnRef = relayedConn
 }
 
 func (conn *Conn) beginRelayProxyMigrationLocked() (wgproxy.Proxy, bool) {
@@ -1154,18 +1174,20 @@ func evalConnStatus(in connStatusInputs) guard.ConnStatus {
 		return boolToConnStatus(relayUsedAndUp)
 	}
 
-	// ICE counts as "up" when the status is anything other than Disconnected, OR
-	// when a negotiation is currently in progress (so we don't spam offers while one is in flight).
-	iceUp := in.iceStatusConnecting || in.iceInProgress
+	// ICE counts as "running" when either connected or attempting to connect.
+	iceRunning := in.iceStatusConnected || in.iceInProgress
 
 	// Relay side is acceptable if the peer doesn't rely on relay, or relay is connected.
 	relayOK := !in.peerUsesRelay || in.relayConnected
 
 	switch {
-	case iceUp && relayOK:
+	case iceRunning && relayOK:
 		return guard.ConnStatusConnected
 	case relayUsedAndUp:
 		// Relay is up but ICE is down — partially connected.
+		return guard.ConnStatusPartiallyConnected
+	case in.iceStatusConnected && !in.relayTransportConnected:
+		// ICE is up and the shared relay transport is down — offers cannot restore it.
 		return guard.ConnStatusPartiallyConnected
 	default:
 		return guard.ConnStatusDisconnected

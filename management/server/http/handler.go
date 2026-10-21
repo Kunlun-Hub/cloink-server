@@ -7,8 +7,6 @@ import (
 	"net/netip"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/cors"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/domain/manager"
 
@@ -37,7 +35,6 @@ import (
 
 	"github.com/netbirdio/netbird/management/server/http/handlers/proxy"
 
-	"github.com/netbirdio/netbird/management/server/auth"
 	emailmanager "github.com/netbirdio/netbird/management/server/email"
 	eventstreaming "github.com/netbirdio/netbird/management/server/eventstreaming"
 	"github.com/netbirdio/netbird/management/server/geolocation"
@@ -60,7 +57,6 @@ import (
 	"github.com/netbirdio/netbird/management/server/http/handlers/setup_keys"
 	"github.com/netbirdio/netbird/management/server/http/handlers/users"
 	versionreleases "github.com/netbirdio/netbird/management/server/http/handlers/version_releases"
-	"github.com/netbirdio/netbird/management/server/http/middleware"
 	"github.com/netbirdio/netbird/management/server/http/middleware/bypass"
 	nbinstance "github.com/netbirdio/netbird/management/server/instance"
 	nbnetworks "github.com/netbirdio/netbird/management/server/networks"
@@ -71,7 +67,13 @@ import (
 )
 
 // NewAPIHandler creates the Management service HTTP API handler registering all the available endpoints.
-func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager account.Manager, networksManager nbnetworks.Manager, resourceManager resources.Manager, routerManager routers.Manager, groupsManager nbgroups.Manager, LocationManager geolocation.Geolocation, authManager auth.Manager, appMetrics telemetry.AppMetrics, permissionsManager permissions.Manager, settingsManager settings.Manager, zManager zones.Manager, rManager records.Manager, networkMapController network_map.Controller, idpManager idpmanager.Manager, serviceManager service.Manager, reverseProxyDomainManager *manager.Manager, reverseProxyAccessLogsManager accesslogs.Manager, proxyGRPCServer *nbgrpc.ProxyServiceServer, trustedHTTPProxies []netip.Prefix, rateLimiter *middleware.APIRateLimiter, isValidChildAccount middleware.IsValidChildAccountFunc, agentNetworkManager agentnetwork.Manager, relayConfig *nbconfig.Relay, secretsManager nbgrpc.SecretsManager) (http.Handler, error) {
+func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager account.Manager, networksManager nbnetworks.Manager,
+	resourceManager resources.Manager, routerManager routers.Manager, groupsManager nbgroups.Manager, LocationManager geolocation.Geolocation,
+	permissionsManager permissions.Manager, settingsManager settings.Manager, zManager zones.Manager, rManager records.Manager,
+	networkMapController network_map.Controller, idpManager idpmanager.Manager, serviceManager service.Manager,
+	reverseProxyDomainManager *manager.Manager, reverseProxyAccessLogsManager accesslogs.Manager, proxyGRPCServer *nbgrpc.ProxyServiceServer,
+	trustedHTTPProxies []netip.Prefix, agentNetworkManager agentnetwork.Manager, proxyTokenRevocationGuard proxytoken.RevocationGuard,
+	appMetrics telemetry.AppMetrics, relayConfig *nbconfig.Relay, secretsManager nbgrpc.SecretsManager) (http.Handler, error) {
 
 	// Register bypass paths for unauthenticated endpoints
 	if err := bypass.AddBypassPath("/api/instance"); err != nil {
@@ -110,28 +112,6 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 	if err := bypass.AddBypassPath("/api/relays/register"); err != nil {
 		return nil, fmt.Errorf("failed to add bypass path: %w", err)
 	}
-
-	if rateLimiter == nil {
-		log.Warn("NewAPIHandler: nil rate limiter, rate limiting disabled")
-		rateLimiter = middleware.NewAPIRateLimiter(nil)
-		rateLimiter.SetEnabled(false)
-	}
-
-	authMiddleware := middleware.NewAuthMiddleware(
-		authManager,
-		accountManager.GetAccountIDFromUserAuth,
-		accountManager.SyncUserJWTGroups,
-		accountManager.GetUserFromUserAuth,
-		rateLimiter,
-		appMetrics.GetMeter(),
-		isValidChildAccount,
-	)
-
-	corsMiddleware := cors.AllowAll()
-
-	metricsMiddleware := appMetrics.HTTPMiddleware()
-
-	router.Use(metricsMiddleware.Handler, corsMiddleware.Handler, authMiddleware.Handler)
 
 	instanceManager, err := nbinstance.NewManager(ctx, accountManager.GetStore(), idpManager)
 	if err != nil {
@@ -178,7 +158,7 @@ func NewAPIHandler(ctx context.Context, router *mux.Router, accountManager accou
 		reverseproxymanager.RegisterEndpoints(serviceManager, *reverseProxyDomainManager, reverseProxyAccessLogsManager, permissionsManager, router)
 	}
 
-	proxytoken.RegisterEndpoints(accountManager.GetStore(), permissionsManager, router)
+	proxytoken.RegisterEndpoints(accountManager.GetStore(), permissionsManager, proxyTokenRevocationGuard, router)
 
 	// Register OAuth callback handler for proxy authentication
 	if proxyGRPCServer != nil {

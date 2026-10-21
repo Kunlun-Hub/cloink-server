@@ -55,7 +55,7 @@ func TestSendUpdatesFromDataPreservesSelfHostedFlow(t *testing.T) {
 				updates := updateManager.CreateChannel(ctx, "peer-1")
 				t.Cleanup(func() { updateManager.CloseChannel(ctx, "peer-1") })
 				controller := NewController(ctx, dbStore, appMetrics, updateManager, nil, nil,
-					settings.NewManager(dbStore, nil, nil, nil, settings.IdpConfig{}), "cloink.test", nil, nil, &nbconfig.Config{}, nil)
+					settings.NewManager(dbStore, nil, nil, nil, settings.IdpConfig{}), "cloink.test", nil, &nbconfig.Config{}, nil)
 				controller.serverSupportedSyncMessageVersion = syncVersion
 				controller.SetFlowConfigManager(flowManager)
 				peer := &nmdata.Peer{

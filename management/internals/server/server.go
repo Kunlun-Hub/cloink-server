@@ -11,21 +11,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/metric"
 	"github.com/netbirdio/netbird/management/server/eventstreaming"
 	"github.com/netbirdio/netbird/management/server/eventstreaming/senders"
+	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c" //nolint:staticcheck
 	"google.golang.org/grpc"
 
 	"github.com/netbirdio/netbird/encryption"
-	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/internals/modules/networktraffic"
+	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
 	"github.com/netbirdio/netbird/management/server/idp"
 	"github.com/netbirdio/netbird/management/server/metrics"
 	"github.com/netbirdio/netbird/management/server/store"
+	"github.com/netbirdio/netbird/shared/lifecycle"
+	"github.com/netbirdio/netbird/shared/profiling"
 	"github.com/netbirdio/netbird/util/wsproxy"
 	wsproxyserver "github.com/netbirdio/netbird/util/wsproxy/server"
 	"github.com/netbirdio/netbird/version"
@@ -39,6 +41,8 @@ const (
 	DefaultSelfHostedDomain = "netbird.selfhosted"
 
 	ContainerKeyBaseServer = "baseServer"
+
+	applicationName = "management"
 )
 
 type Server interface {
@@ -67,6 +71,7 @@ type BaseServer struct {
 	mgmtMetricsPort             int
 	mgmtPort                    int
 	disableLegacyManagementPort bool
+	letsEncryptListenAddress    string
 	autoResolveDomains          bool
 
 	proxyAuthClose    func()
@@ -81,10 +86,14 @@ type BaseServer struct {
 	tlsConfig   *tls.Config
 	certManager *autocert.Manager
 	update      *version.Update
+	// certListener serves Let's Encrypt challenges when mgmtPort is not 443.
+	certListener net.Listener
 
 	errCh  chan error
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
+
+	lifecycle.StopHandlers
 }
 
 // Config holds the configuration parameters for creating a new server
@@ -100,6 +109,9 @@ type Config struct {
 	UserDeleteFromIDPEnabled    bool
 	AutoResolveDomains          bool
 	TLSConfig                   *tls.Config
+	// LetsEncryptListenAddress is the separate Let's Encrypt challenge listener
+	// used when MgmtPort is not 443. Empty disables it.
+	LetsEncryptListenAddress string
 }
 
 // NewServer initializes and configures a new Server instance
@@ -114,11 +126,15 @@ func NewServer(cfg *Config) *BaseServer {
 		userDeleteFromIDPEnabled:    cfg.UserDeleteFromIDPEnabled,
 		mgmtPort:                    cfg.MgmtPort,
 		disableLegacyManagementPort: cfg.DisableLegacyManagementPort,
+		letsEncryptListenAddress:    cfg.LetsEncryptListenAddress,
 		mgmtMetricsPort:             cfg.MgmtMetricsPort,
 		autoResolveDomains:          cfg.AutoResolveDomains,
 		tlsConfig:                   cfg.TLSConfig,
 	}
 	s.container[ContainerKeyBaseServer] = s
+
+	stopProfiling := profiling.Start(applicationName)
+	s.OnStop(stopProfiling)
 
 	return s
 }
@@ -129,6 +145,14 @@ func (s *BaseServer) AfterInit(fn func(s *BaseServer)) {
 
 // Start begins listening for HTTP requests on the configured address
 func (s *BaseServer) Start(ctx context.Context) error {
+	if err := s.start(ctx); err != nil {
+		s.RunStopHandlers()
+		return err
+	}
+	return nil
+}
+
+func (s *BaseServer) start(ctx context.Context) error {
 	srvCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.errCh = make(chan error, 4)
@@ -213,19 +237,18 @@ func (s *BaseServer) Start(ctx context.Context) error {
 	rootHandler := s.handlerFunc(srvCtx, s.GRPCServer(), s.APIHandler(), s.IDPHandler(), s.Metrics().GetMeter())
 	switch {
 	case s.certManager != nil:
-		// a call to certManager.Listener() always creates a new listener so we do it once
-		cml := s.certManager.Listener()
 		if s.mgmtPort == 443 {
 			// CertManager, HTTP and gRPC API all on the same port
 			rootHandler = s.certManager.HTTPHandler(rootHandler)
-			s.listener = cml
+			s.listener = s.certManager.Listener()
 		} else {
 			s.listener, err = tls.Listen("tcp", fmt.Sprintf(":%d", s.mgmtPort), s.certManager.TLSConfig())
 			if err != nil {
 				return fmt.Errorf("failed creating TLS listener on port %d: %v", s.mgmtPort, err)
 			}
-			log.WithContext(ctx).Infof("running HTTP server (LetsEncrypt challenge handler): %s", cml.Addr().String())
-			s.serveHTTP(ctx, cml, s.certManager.HTTPHandler(nil))
+			if err := s.serveLetsEncryptChallenges(ctx); err != nil {
+				return err
+			}
 		}
 	case s.tlsConfig != nil:
 		s.listener, err = tls.Listen("tcp", fmt.Sprintf(":%d", s.mgmtPort), s.tlsConfig)
@@ -298,6 +321,7 @@ func (s *BaseServer) setupTLS(ctx context.Context) (bool, error) {
 func (s *BaseServer) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	defer s.RunStopHandlers()
 	if s.domainCleanupStop != nil {
 		s.domainCleanupStop()
 	}
@@ -311,8 +335,8 @@ func (s *BaseServer) Stop() error {
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
-	if s.certManager != nil {
-		_ = s.certManager.Listener().Close()
+	if s.certListener != nil {
+		_ = s.certListener.Close()
 	}
 	s.GRPCServer().Stop()
 	s.FlowServer().StopCleanup()
@@ -419,6 +443,26 @@ func (s *BaseServer) serveGRPC(ctx context.Context, grpcServer *grpc.Server, por
 	}()
 
 	return listener, nil
+}
+
+// serveLetsEncryptChallenges starts the separate Let's Encrypt challenge listener
+// unless it is disabled. The main TLS listener uses the cert manager's TLS
+// config, so it still answers TLS-ALPN-01 challenges when public port 443 is
+// forwarded to it.
+func (s *BaseServer) serveLetsEncryptChallenges(ctx context.Context) error {
+	if s.letsEncryptListenAddress == "" {
+		log.WithContext(ctx).Infof("LetsEncrypt challenge server disabled, challenges are answered on port %d", s.mgmtPort)
+		return nil
+	}
+
+	cml, err := tls.Listen("tcp", s.letsEncryptListenAddress, s.certManager.TLSConfig())
+	if err != nil {
+		return fmt.Errorf("create LetsEncrypt challenge listener on %s: %w", s.letsEncryptListenAddress, err)
+	}
+	s.certListener = cml
+	log.WithContext(ctx).Infof("running HTTP server (LetsEncrypt challenge handler): %s", cml.Addr().String())
+	s.serveHTTP(ctx, cml, s.certManager.HTTPHandler(nil))
+	return nil
 }
 
 func (s *BaseServer) serveHTTP(ctx context.Context, httpListener net.Listener, handler http.Handler) {
