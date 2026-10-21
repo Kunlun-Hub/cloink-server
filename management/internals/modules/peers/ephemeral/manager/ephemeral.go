@@ -132,6 +132,11 @@ func (e *EphemeralManager) OnPeerDisconnected(ctx context.Context, peer *nbpeer.
 
 	log.WithContext(ctx).Tracef("add peer to ephemeral list: %s", peer.ID)
 
+	// The cleanup timer outlives the request that reported the disconnect.
+	// Detach it from the request cancellation while keeping its values for
+	// logging, otherwise every delayed deletion runs with a canceled context.
+	cleanupCtx := context.WithoutCancel(ctx)
+
 	e.peersLock.Lock()
 	defer e.peersLock.Unlock()
 
@@ -147,7 +152,7 @@ func (e *EphemeralManager) OnPeerDisconnected(ctx context.Context, peer *nbpeer.
 			delay = 0
 		}
 		e.timer = time.AfterFunc(delay, func() {
-			e.cleanup(ctx)
+			e.cleanup(cleanupCtx)
 		})
 	}
 }

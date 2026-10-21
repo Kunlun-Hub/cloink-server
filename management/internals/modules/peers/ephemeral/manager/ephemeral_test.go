@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	nbdns "github.com/netbirdio/netbird/dns"
 	"github.com/netbirdio/netbird/management/internals/modules/peers"
@@ -274,6 +274,42 @@ func TestCleanupSchedulingBehaviorIsBatched(t *testing.T) {
 	assert.Len(t, mockStore.account.Peers, 0, "all ephemeral peers should be cleaned up after the lifetime")
 	assert.Equal(t, 1, mockAM.GetBufferUpdateCalls(account.Id), "buffer update should be called once")
 	assert.Equal(t, ephemeralPeers, mockAM.GetDeletePeerCalls(), "should have deleted all peers")
+}
+
+func TestCleanupSurvivesRequestContextCancellation(t *testing.T) {
+	mockStore := &MockStore{}
+	account := newAccountWithId(context.Background(), "account", "", "", false)
+	mockStore.account = account
+
+	peer := &nbpeer.Peer{ID: "ephemeral-peer", AccountID: account.Id, Ephemeral: true}
+	account.Peers[peer.ID] = peer
+
+	ctrl := gomock.NewController(t)
+	peersManager := peers.NewMockManager(ctrl)
+	cleanupCtxErr := make(chan error, 1)
+	peersManager.EXPECT().
+		DeletePeers(gomock.Any(), account.Id, []string{peer.ID}, gomock.Any(), true).
+		DoAndReturn(func(ctx context.Context, _ string, _ []string, _ string, _ bool) error {
+			cleanupCtxErr <- ctx.Err()
+			return ctx.Err()
+		}).
+		Times(1)
+
+	mgr := NewEphemeralManager(mockStore, peersManager)
+	mgr.lifeTime = 20 * time.Millisecond
+	mgr.cleanupWindow = 5 * time.Millisecond
+	t.Cleanup(mgr.Stop)
+
+	requestCtx, cancel := context.WithCancel(context.Background())
+	mgr.OnPeerDisconnected(requestCtx, peer)
+	cancel()
+
+	select {
+	case err := <-cleanupCtxErr:
+		assert.NoError(t, err, "cleanup must not inherit the canceled request context")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for ephemeral cleanup")
+	}
 }
 
 func seedPeers(store *MockStore, numberOfPeers int, numberOfEphemeralPeers int) {
