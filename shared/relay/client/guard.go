@@ -46,6 +46,10 @@ type Guard struct {
 	// lastErr is the error from the most recent failed reconnect attempt,
 	// surfaced as the home relay status while disconnected.
 	lastErr atomic.Pointer[error]
+
+	// reconnecting prevents overlapping reconnect rounds when several
+	// disconnect events arrive for the same home relay.
+	reconnecting atomic.Bool
 }
 
 // NewGuard creates a new guard for the relay client. A non-positive
@@ -82,8 +86,13 @@ func (g *Guard) LastError() error {
 // Parameters:
 // - ctx: The context to control the lifecycle of the reconnection attempts.
 // - relayClient: The relay client instance that was disconnected.
-// todo prevent multiple reconnection instances. In the current usage it should not happen, but it is better to prevent
 func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
+	if !g.reconnecting.CompareAndSwap(false, true) {
+		log.Debug("reconnect attempt already active; ignoring duplicate request")
+		return
+	}
+	defer g.reconnecting.Store(false)
+
 	// try to reconnect to the same server
 	if ok := g.tryToQuickReconnect(ctx, relayClient); ok {
 		if g.isServerURLStillValid(relayClient) {

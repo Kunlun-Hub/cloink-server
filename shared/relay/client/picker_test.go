@@ -4,8 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/netbirdio/netbird/shared/relay/auth/hmac"
 )
 
 func TestServerPickerCancellationDoesNotCooldown(t *testing.T) {
@@ -135,4 +141,87 @@ func TestServerPicker_UnavailableServers(t *testing.T) {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Errorf("PickServer() took too long to complete")
 	}
+}
+
+// A blackholed higher-weight Relay must not consume the entire selection
+// timeout. The lower-weight Relay is started after the grace period and can
+// win while the first attempt remains in flight.
+func TestServerPickerHedgedFallbackFromBlackholedHigherWeightRelay(t *testing.T) {
+	blackholedURL := startBlackholeListener(t)
+	healthyURL := startMigrationRelayServer(t, "picker-hedge")
+
+	picker := &ServerPicker{
+		TokenStore:        &hmac.TokenStore{},
+		PeerID:            "picker-hedge-peer",
+		ConnectionTimeout: 5 * time.Second,
+		CooldownDuration:  time.Minute,
+	}
+	picker.storeConfig(pickerConfig{
+		serverURLs: []string{blackholedURL, healthyURL},
+		serverWeights: map[string]int{
+			blackholedURL: 100,
+			healthyURL:    10,
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	started := time.Now()
+	relayClient, err := picker.PickServer(ctx)
+	require.NoError(t, err)
+	defer func() { _ = relayClient.Close() }()
+
+	require.Equal(t, healthyURL, relayClient.connectionURL)
+	require.Less(t, time.Since(started), 4*time.Second,
+		"fallback Relay should be selected after the grace period, not the full timeout")
+}
+
+// A manual override must get an immediate attempt even when its previous
+// failure is still in cooldown.
+func TestServerPickerForcedRelayBypassesCooldown(t *testing.T) {
+	const (
+		forcedURL   = "rels://forced.example:443"
+		fallbackURL = "rels://fallback.example:443"
+	)
+	picker := &ServerPicker{CooldownDuration: time.Minute}
+	picker.markServerFailure(forcedURL, time.Now(), errors.New("previous attempt failed"))
+
+	config := pickerConfig{
+		serverURLs:    []string{forcedURL, fallbackURL},
+		serverWeights: map[string]int{forcedURL: 100, fallbackURL: 10},
+		forcedURL:     forcedURL,
+	}
+	got := picker.availableServerURLs(config, config.serverURLs, time.Now())
+
+	require.Equal(t, []string{forcedURL, fallbackURL}, got,
+		"forced Relay must remain first and bypass cooldown")
+
+	// Even when every fallback is still cooling down, a failed forced attempt
+	// must be able to hedge to the rest of the list.
+	picker.markServerFailure(fallbackURL, time.Now(), errors.New("fallback failed recently"))
+	got = picker.availableServerURLs(config, config.serverURLs, time.Now())
+	require.Equal(t, []string{forcedURL, fallbackURL}, got,
+		"forced Relay must stay first while cooled-down fallbacks remain available after it")
+}
+
+func startBlackholeListener(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer func() { _ = conn.Close() }()
+				_, _ = io.Copy(io.Discard, conn)
+			}(conn)
+		}
+	}()
+
+	return "rel://" + listener.Addr().String()
 }

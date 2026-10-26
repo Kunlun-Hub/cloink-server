@@ -2,7 +2,12 @@ package internal
 
 import (
 	"net"
+	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	relayClient "github.com/netbirdio/netbird/shared/relay/client"
 )
 
 // probeFreePort asks the OS for a free UDP port and immediately releases it.
@@ -79,4 +84,16 @@ func Test_freePort(t *testing.T) {
 			t.Errorf("got the same port %v, want a different port", busyPort)
 		}
 	})
+}
+
+func TestRelayAutoFailbackDefaultsEnabled(t *testing.T) {
+	t.Setenv(relayClient.EnvAutoFailback, "true")
+	require.NoError(t, os.Unsetenv(relayClient.EnvAutoFailback))
+	require.True(t, relayAutoFailbackFromEnv())
+
+	t.Setenv(relayClient.EnvAutoFailback, "false")
+	require.False(t, relayAutoFailbackFromEnv())
+
+	t.Setenv(relayClient.EnvAutoFailback, "not-a-bool")
+	require.True(t, relayAutoFailbackFromEnv())
 }

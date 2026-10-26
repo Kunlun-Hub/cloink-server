@@ -54,8 +54,9 @@ var (
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
 )
 
-// EnvAutoFailback enables the manager's automatic failback to a recovered
-// higher-priority Relay server. It is disabled by default.
+// EnvAutoFailback controls the client's automatic failback to a recovered
+// higher-priority Relay server. The client enables it by default; the Manager
+// and its WithAutoFailback option remain opt-in for other embedders.
 const EnvAutoFailback = "NB_RELAY_AUTO_FAILBACK"
 
 const (
@@ -745,6 +746,7 @@ func (m *Manager) SetForcedRelay(identifier string) (string, error) {
 	m.forcedRelayURL = relayURL
 	effectiveURLs := m.effectiveRelayURLsLocked()
 	m.relayConfigMu.Unlock()
+	m.serverPicker.clearServerFailure(relayURL)
 	m.serverPicker.storeConfig(pickerConfig{
 		serverURLs:    effectiveURLs,
 		serverWeights: maps.Clone(m.relayWeights),

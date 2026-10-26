@@ -20,6 +20,11 @@ import (
 const (
 	maxConcurrentServers     = 7
 	defaultConnectionTimeout = 30 * time.Second
+	// relayPriorityFallbackGrace is how long the current priority group gets
+	// before the next weight group starts in parallel. A blackholed transport
+	// can otherwise consume the full selection timeout without ever giving a
+	// lower-priority relay a chance to connect.
+	relayPriorityFallbackGrace = 1500 * time.Millisecond
 )
 
 // relayRTTHysteresis is the absolute RTT band inside which two relays count
@@ -106,13 +111,18 @@ func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfi
 	connectionCancels := make(map[string]context.CancelFunc, totalServers)
 
 	startConnection := func(url string) {
-		concurrentLimiter <- struct{}{}
 		startedServers++
 		connectionCtx, connectionCancel := context.WithCancel(ctx)
 		connectionCancels[url] = connectionCancel
 		go func(url string) {
-			defer func() { <-concurrentLimiter }()
-			sp.startConnection(connectionCtx, parentCtx, connResultChan, url)
+			select {
+			case concurrentLimiter <- struct{}{}:
+				defer func() { <-concurrentLimiter }()
+				sp.startConnection(connectionCtx, parentCtx, connResultChan, url)
+			case <-connectionCtx.Done():
+				// The picker still accounts for every scheduled attempt.
+				connResultChan <- connResult{Url: url, Err: connectionCtx.Err()}
+			}
 		}(url)
 	}
 
@@ -126,6 +136,25 @@ func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfi
 
 	log.Debugf("pick server from list: %v", serverURLs)
 	startedUpTo := sp.startNextPriorityGroupWithConfig(config, serverURLs, 0, startConnection)
+	var fallbackTimer *time.Timer
+	var fallbackTimerC <-chan time.Time
+	stopFallbackTimer := func() {
+		if fallbackTimer != nil {
+			fallbackTimer.Stop()
+			fallbackTimer = nil
+		}
+		fallbackTimerC = nil
+	}
+	resetFallbackTimer := func() {
+		stopFallbackTimer()
+		if startedUpTo < totalServers {
+			fallbackTimer = time.NewTimer(relayPriorityFallbackGrace)
+			fallbackTimerC = fallbackTimer.C
+		}
+	}
+	defer stopFallbackTimer()
+	resetFallbackTimer()
+
 	receivedResults := 0
 	for receivedResults < startedServers || startedUpTo < totalServers {
 		select {
@@ -148,13 +177,27 @@ func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfi
 			sp.markServerFailure(cr.Url, time.Now(), cr.Err)
 			if receivedResults == startedServers && startedUpTo < totalServers {
 				startedUpTo = sp.startNextPriorityGroupWithConfig(config, serverURLs, startedUpTo, startConnection)
+				resetFallbackTimer()
 			}
+		case <-fallbackTimerC:
+			// Keep the slower priority group dialing; this is a hedged
+			// request, not a cancellation. Whichever relay succeeds first
+			// wins and the remaining attempts are cancelled by the success
+			// path above.
+			startedUpTo = sp.startNextPriorityGroupWithConfig(config, serverURLs, startedUpTo, startConnection)
+			resetFallbackTimer()
 		case <-ctx.Done():
 			cancelConnectionsExcept("")
+			stopFallbackTimer()
+			// A connection may have completed between the timeout firing and
+			// its cancellation. Drain every scheduled result and close any
+			// late winner so the failed pick cannot leak a live client.
+			go sp.drainConnResults(connResultChan, receivedResults, startedServers)
 			return nil, fmt.Errorf("failed to connect to any relay server: %w", ctx.Err())
 		}
 	}
 
+	stopFallbackTimer()
 	cancelConnectionsExcept("")
 	return nil, errors.New("failed to connect to any relay server: all attempts failed")
 }
@@ -165,16 +208,46 @@ func (sp *ServerPicker) availableServerURLs(config pickerConfig, serverURLs []st
 	}
 	sp.cooldownMu.Lock()
 	defer sp.cooldownMu.Unlock()
+
+	forcedPresent := config.forcedURL != "" && slices.Contains(serverURLs, config.forcedURL)
 	available := make([]string, 0, len(serverURLs))
+	if forcedPresent {
+		// A manual override always gets a chance immediately, even when its
+		// previous attempt put it into cooldown.
+		available = append(available, config.forcedURL)
+	}
+	unavailableOthers := 0
 	for _, relayURL := range serverURLs {
+		if relayURL == config.forcedURL && forcedPresent {
+			delete(sp.cooldowns, relayURL)
+			continue
+		}
 		until, ok := sp.cooldowns[relayURL]
 		if !ok || !now.Before(until) {
 			delete(sp.cooldowns, relayURL)
 			available = append(available, relayURL)
+		} else {
+			unavailableOthers++
 		}
 	}
-	if len(available) == 0 {
-		return sp.serverURLsByCooldownExpiryLocked(config, serverURLs)
+	allNonForcedCoolingDown := forcedPresent && unavailableOthers > 0 && len(available) == 1
+	if len(available) == 0 || allNonForcedCoolingDown {
+		// When every non-forced relay is cooling down, keep the full fallback
+		// list so a failed forced attempt can still try them after its own
+		// failure. Without a forced URL this preserves the historical behavior
+		// of trying every relay once the cooldown list is exhausted.
+		fallback := sp.serverURLsByCooldownExpiryLocked(config, serverURLs)
+		if !forcedPresent {
+			return fallback
+		}
+		ordered := make([]string, 0, len(fallback))
+		ordered = append(ordered, config.forcedURL)
+		for _, relayURL := range fallback {
+			if relayURL != config.forcedURL {
+				ordered = append(ordered, relayURL)
+			}
+		}
+		return ordered
 	}
 	return available
 }

@@ -572,19 +572,20 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan 
 	return nil
 }
 
-// relayAutoFailbackFromEnv reports whether the NB_RELAY_AUTO_FAILBACK
-// environment variable enables automatic failback to a recovered
-// higher-priority Relay server. It defaults to false; an unparsable value logs
-// a warning and keeps the default.
+// relayAutoFailbackFromEnv reports whether automatic failback to a recovered
+// higher-priority Relay server is enabled. It defaults to true so clients that
+// fall back to a lower-priority Relay eventually return to the preferred one;
+// NB_RELAY_AUTO_FAILBACK=false disables it. An unparsable value logs a warning
+// and keeps the default.
 func relayAutoFailbackFromEnv() bool {
 	raw := os.Getenv(relayClient.EnvAutoFailback)
 	if raw == "" {
-		return false
+		return true
 	}
 	enabled, err := strconv.ParseBool(raw)
 	if err != nil {
-		log.Warnf("invalid %s value %q: %v; Relay auto-failback stays disabled", relayClient.EnvAutoFailback, raw, err)
-		return false
+		log.Warnf("invalid %s value %q: %v; using the default enabled value", relayClient.EnvAutoFailback, raw, err)
+		return true
 	}
 	return enabled
 }

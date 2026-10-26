@@ -72,6 +72,8 @@ func TestManagerAutoFailbackRequiresStableTarget(t *testing.T) {
 		return manager.relayClient != nil && manager.relayClient != oldClient &&
 			manager.relayClient.connectionURL == highURL && manager.relayClient.Ready()
 	}, 5*time.Second, 20*time.Millisecond, "home Relay should fail back to the stable higher-priority server")
+	require.True(t, oldClient.Ready(),
+		"failback must swap clients without interrupting the existing Relay connection")
 }
 
 // With auto-failback disabled the manager never evaluates a failback, even
