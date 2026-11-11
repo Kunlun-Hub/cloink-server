@@ -38,6 +38,11 @@ func (c *Conn) Protocol() string {
 	return Network
 }
 
+// Ping sends a WebSocket Ping control frame and waits for the peer's Pong.
+func (c *Conn) Ping(ctx context.Context) error {
+	return c.Conn.Ping(ctx)
+}
+
 func (c *Conn) Read(b []byte) (n int, err error) {
 	t, ioReader, err := c.Conn.Reader(c.ctx)
 	if err != nil {

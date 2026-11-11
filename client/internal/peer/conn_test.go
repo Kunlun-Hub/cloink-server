@@ -81,7 +81,7 @@ func TestConn_OnRemoteOffer(t *testing.T) {
 
 	onNewOfferChan := make(chan struct{})
 
-	conn.handshaker.AddRelayListener(func(remoteOfferAnswer *OfferAnswer) {
+	conn.handshaker.AddRelayListener(func(_ context.Context, remoteOfferAnswer *OfferAnswer) {
 		onNewOfferChan <- struct{}{}
 	})
 
@@ -119,7 +119,7 @@ func TestConn_OnRemoteAnswer(t *testing.T) {
 
 	onNewOfferChan := make(chan struct{})
 
-	conn.handshaker.AddRelayListener(func(remoteOfferAnswer *OfferAnswer) {
+	conn.handshaker.AddRelayListener(func(_ context.Context, remoteOfferAnswer *OfferAnswer) {
 		onNewOfferChan <- struct{}{}
 	})
 

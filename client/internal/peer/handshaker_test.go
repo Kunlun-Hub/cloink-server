@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestHandshakerHoldsSignalArrivingBeforeListen(t *testing.T) {
 	h := newTestHandshaker(t)
 
 	processed := make(chan *OfferAnswer, 4)
-	h.AddRelayListener(func(o *OfferAnswer) { processed <- o })
+	h.AddRelayListener(func(_ context.Context, o *OfferAnswer) { processed <- o })
 
 	// Delivered before Listen is reading, as when the peer is woken by the remote's
 	// signal and the message is delivered right after Open.
@@ -47,7 +48,7 @@ func TestHandshakerKeepsLatestSignalBeforeListen(t *testing.T) {
 	h := newTestHandshaker(t)
 
 	processed := make(chan *OfferAnswer, 4)
-	h.AddRelayListener(func(o *OfferAnswer) { processed <- o })
+	h.AddRelayListener(func(_ context.Context, o *OfferAnswer) { processed <- o })
 
 	h.OnRemoteAnswer(OfferAnswer{WgListenPort: 1111})
 	h.OnRemoteAnswer(OfferAnswer{WgListenPort: 2222})

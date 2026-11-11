@@ -39,7 +39,7 @@ func TestRelayProxyMigrationKeepsOldPathUntilHandshake(t *testing.T) {
 	newProxy := &migrationProxy{listener: func() {}}
 	conn := &Conn{ctx: ctx, wgProxyRelay: oldProxy}
 
-	conn.setRelayedProxy(newProxy, true)
+	conn.setRelayedProxy(newProxy, nil, true)
 
 	require.Same(t, newProxy, conn.wgProxyRelay)
 	require.Len(t, conn.retiredRelayProxies, 1)
@@ -62,7 +62,7 @@ func TestRelayProxyMigrationExpiresOldPath(t *testing.T) {
 	newProxy := &migrationProxy{listener: func() {}}
 	conn := &Conn{ctx: ctx, wgProxyRelay: oldProxy}
 
-	conn.setRelayedProxy(newProxy, true)
+	conn.setRelayedProxy(newProxy, nil, true)
 
 	require.Eventually(t, func() bool { return oldProxy.closed.Load() == 1 }, time.Second, 5*time.Millisecond)
 	require.Empty(t, conn.retiredRelayProxies)

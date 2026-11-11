@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -93,8 +94,25 @@ func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
 	}
 	defer g.reconnecting.Store(false)
 
-	// try to reconnect to the same server
-	if ok := g.tryToQuickReconnect(ctx, relayClient); ok {
+	if relayClient != nil && g.hasAlternativeRelay(relayClient.connectionURL) {
+		if g.serverPicker.loadConfig().forcedURL != relayClient.connectionURL {
+			g.serverPicker.markServerFailure(relayClient.connectionURL, time.Now(), ErrServerDisconnected)
+		}
+		canTryImmediate := true
+		if g.netWatcher != nil && !g.netWatcher.IsOnline() {
+			if !g.netWatcher.WaitSettled(ctx, quickReconnectBudget, verdictSettleWindow) || !g.netWatcher.IsOnline() {
+				canTryImmediate = false
+			}
+		}
+		if canTryImmediate {
+			if err := g.failoverFrom(ctx, relayClient.connectionURL); err == nil {
+				return
+			} else {
+				log.Errorf("immediate standby failover from %s failed: %s", relayClient.connectionURL, err)
+				g.setLastError(err)
+			}
+		}
+	} else if ok := g.tryToQuickReconnect(ctx, relayClient); ok {
 		if g.isServerURLStillValid(relayClient) {
 			g.notifyReconnected()
 			return
@@ -168,6 +186,46 @@ func (g *Guard) tryToQuickReconnect(parentCtx context.Context, rc *Client) bool 
 		return false
 	}
 	return true
+}
+
+func (g *Guard) hasAlternativeRelay(failedURL string) bool {
+	if g.serverPicker == nil {
+		return false
+	}
+	for _, u := range g.serverPicker.loadConfig().serverURLs {
+		if u != "" && u != failedURL {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Guard) failoverFrom(ctx context.Context, failedURL string) error {
+	configURLs := g.serverPicker.loadConfig().serverURLs
+	standbyURL := ""
+	if g.serverPicker.standbyLookup != nil {
+		standbyURL = g.serverPicker.standbyLookup()
+	}
+	if standbyURL == failedURL || !slices.Contains(configURLs, standbyURL) {
+		standbyURL = ""
+	}
+	fallbackURLs := make([]string, 0, len(configURLs))
+	for _, u := range configURLs {
+		if u != "" && u != failedURL && u != standbyURL {
+			fallbackURLs = append(fallbackURLs, u)
+		}
+	}
+	if standbyURL == "" && len(fallbackURLs) == 0 {
+		return g.retry(ctx)
+	}
+	relayClient, err := g.serverPicker.PickStandbyWithFallback(ctx, standbyURL, fallbackURLs)
+	if err != nil {
+		return err
+	}
+	g.setLastError(nil)
+	g.drainRelayClientChan()
+	g.OnNewRelayClient <- relayClient
+	return nil
 }
 
 func (g *Guard) retry(ctx context.Context) error {

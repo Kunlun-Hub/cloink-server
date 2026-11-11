@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/netbirdio/netbird/client/iface"
 	"github.com/netbirdio/netbird/relay/server"
 	"github.com/netbirdio/netbird/shared/relay/auth/allow"
+	"github.com/netbirdio/netbird/shared/relay/healthcheck"
 )
 
 // startFailoverRelayServer starts an in-process relay server on a free port
@@ -39,7 +42,7 @@ func startFailoverRelayServer(t *testing.T, name string) (*server.Server, string
 
 // TestManagerFailoverToBackupRelay kills the primary relay server while two
 // peers communicate through it. Both managers must observe the disconnect,
-// migrate their home relay to the backup server, and resume traffic there.
+// immediately promote their standby relay to primary, and resume traffic there.
 func TestManagerFailoverToBackupRelay(t *testing.T) {
 	primarySrv, primaryURL := startFailoverRelayServer(t, "primary")
 	_, backupURL := startFailoverRelayServer(t, "backup")
@@ -47,19 +50,22 @@ func TestManagerFailoverToBackupRelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	weights := map[string]int{primaryURL: 80, backupURL: 20}
 	newPeerManager := func(peerID string) *Manager {
 		t.Helper()
-		// The higher weight pins the initial home relay to the primary
-		// server deterministically: the picker dials the top-weight group
-		// first and takes the first success.
-		mgr := NewManager(ctx, []string{primaryURL, backupURL}, peerID, iface.DefaultMTU,
+		// Start with primaryURL first so both peers deterministically connect
+		// to primaryURL, then add backupURL so it is probed and selected as
+		// the standby relay.
+		mgr := NewManager(ctx, []string{primaryURL}, peerID, iface.DefaultMTU,
 			WithMaxBackoffInterval(5*time.Second))
-		mgr.UpdateServerURLsWithWeights([]string{primaryURL, backupURL}, weights)
 		require.NoError(t, mgr.Serve())
 		require.NoError(t, waitForReady(ctx, mgr, 15*time.Second))
 		require.Equal(t, primaryURL, mgr.currentRelayURL(),
 			"peer %s should start on the primary relay", peerID)
+
+		mgr.UpdateServerURLs([]string{primaryURL, backupURL})
+		require.Eventually(t, func() bool {
+			return mgr.StandbyURL() == backupURL
+		}, 5*time.Second, 20*time.Millisecond, "peer %s should select backupURL as standby", peerID)
 		return mgr
 	}
 
@@ -71,7 +77,7 @@ func TestManagerFailoverToBackupRelay(t *testing.T) {
 
 	// Kill the primary relay server. The graceful shutdown closes every peer
 	// session, which drives both managers through disconnect and the
-	// reconnect guard must pick the backup server.
+	// reconnect guard must immediately promote the standby server to primary.
 	require.NoError(t, primarySrv.Shutdown(context.Background()))
 
 	peers := []struct {
@@ -79,40 +85,18 @@ func TestManagerFailoverToBackupRelay(t *testing.T) {
 		mgr *Manager
 	}{{"alice", alice}, {"bob", bob}}
 
-	// Phase 1: both managers must observe the disconnect. The watches run
-	// concurrently because the reconnect guard migrates concurrently too:
-	// a sequential check could miss the disconnect window of a peer that
-	// already migrated while another peer was being awaited.
-	observed := make([]bool, len(peers))
 	var wg sync.WaitGroup
-	for i := range peers {
+	for _, peer := range peers {
 		wg.Add(1)
-		go func() {
+		go func(id string, mgr *Manager) {
 			defer wg.Done()
-			deadline := time.Now().Add(10 * time.Second)
-			for time.Now().Before(deadline) {
-				if !peers[i].mgr.Ready() {
-					observed[i] = true
-					return
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-		}()
+			require.Eventually(t, func() bool {
+				return mgr.Ready() && mgr.currentRelayURL() == backupURL
+			}, 15*time.Second, 20*time.Millisecond,
+				"peer %s did not fail over its home relay to the standby server", id)
+		}(peer.id, peer.mgr)
 	}
 	wg.Wait()
-	for i, peer := range peers {
-		require.True(t, observed[i], "peer %s did not observe the primary relay failure", peer.id)
-	}
-
-	// Phase 2: both managers must migrate their home relay to the backup
-	// server. Migration takes at least the guard's quick-reconnect budget,
-	// so phase 1 always completes first.
-	for _, peer := range peers {
-		require.Eventually(t, func() bool {
-			return peer.mgr.Ready() && peer.mgr.currentRelayURL() == backupURL
-		}, 30*time.Second, 50*time.Millisecond,
-			"peer %s did not migrate its home relay to the backup server", peer.id)
-	}
 
 	// Traffic must recover through the backup relay with fresh connections.
 	requireEcho(t, ctx, alice, bob, "post-failover")
@@ -187,4 +171,117 @@ func readWithTimeout(r net.Conn, buf []byte, payload string, timeout time.Durati
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+type fakeSilentQUICConn struct {
+	net.Conn
+	recvPackets atomic.Uint64
+	blackholed  atomic.Bool
+	closed      atomic.Bool
+}
+
+func (f *fakeSilentQUICConn) Write(b []byte) (int, error) {
+	if f.closed.Load() {
+		return 0, net.ErrClosed
+	}
+	if !f.blackholed.Load() {
+		f.recvPackets.Add(1)
+	}
+	return len(b), nil
+}
+
+func (f *fakeSilentQUICConn) Close() error {
+	f.closed.Store(true)
+	return nil
+}
+
+func (f *fakeSilentQUICConn) PacketsReceived() uint64 {
+	return f.recvPackets.Load()
+}
+
+type fakeSilentWSConn struct {
+	net.Conn
+	blackholed atomic.Bool
+	closed     atomic.Bool
+}
+
+func (f *fakeSilentWSConn) Write(b []byte) (int, error) {
+	if f.closed.Load() {
+		return 0, net.ErrClosed
+	}
+	return len(b), nil
+}
+
+func (f *fakeSilentWSConn) Ping(ctx context.Context) error {
+	if f.closed.Load() {
+		return net.ErrClosed
+	}
+	if f.blackholed.Load() {
+		<-ctx.Done()
+		return errors.New("pong timeout")
+	}
+	return nil
+}
+
+func (f *fakeSilentWSConn) Close() error {
+	f.closed.Store(true)
+	return nil
+}
+
+func TestClientProbeConnectionLivenessClosesSilentQUICAndWebSocket(t *testing.T) {
+	prevInterval := relayLivenessProbeInterval
+	prevTimeout := relayLivenessProbeTimeout
+	prevThreshold := relayLivenessFailureThreshold
+	relayLivenessProbeInterval = 30 * time.Millisecond
+	relayLivenessProbeTimeout = 30 * time.Millisecond
+	relayLivenessFailureThreshold = 2
+	t.Cleanup(func() {
+		relayLivenessProbeInterval = prevInterval
+		relayLivenessProbeTimeout = prevTimeout
+		relayLivenessFailureThreshold = prevThreshold
+	})
+
+	t.Run("silent QUIC blackhole closes connection after threshold", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		client := NewClient("rels://quic-relay:443", hmacTokenStore, "alice", iface.DefaultMTU)
+		hc := healthcheck.NewReceiver(client.log)
+		defer hc.Stop()
+		stopFlag := newInternalStopFlag()
+		qConn := &fakeSilentQUICConn{}
+
+		go client.probeConnectionLiveness(ctx, hc, qConn, nil, qConn, stopFlag)
+
+		// Healthy while ACKs arrive.
+		time.Sleep(80 * time.Millisecond)
+		require.False(t, qConn.closed.Load(), "healthy QUIC connection must stay open")
+
+		// Simulate container force-kill / silent UDP blackhole.
+		qConn.blackholed.Store(true)
+		require.Eventually(t, func() bool {
+			return qConn.closed.Load() && stopFlag.isSet()
+		}, 500*time.Millisecond, 10*time.Millisecond, "silent QUIC blackhole must close connection promptly")
+	})
+
+	t.Run("silent WebSocket blackhole closes connection after threshold", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		client := NewClient("rels://ws-relay:443", hmacTokenStore, "bob", iface.DefaultMTU)
+		hc := healthcheck.NewReceiver(client.log)
+		defer hc.Stop()
+		stopFlag := newInternalStopFlag()
+		wsConn := &fakeSilentWSConn{}
+
+		go client.probeConnectionLiveness(ctx, hc, wsConn, wsConn, nil, stopFlag)
+
+		time.Sleep(80 * time.Millisecond)
+		require.False(t, wsConn.closed.Load(), "healthy WebSocket connection must stay open")
+
+		wsConn.blackholed.Store(true)
+		require.Eventually(t, func() bool {
+			return wsConn.closed.Load() && stopFlag.isSet()
+		}, 500*time.Millisecond, 10*time.Millisecond, "silent WebSocket blackhole must close connection promptly")
+	})
 }

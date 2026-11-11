@@ -100,23 +100,6 @@ func TestServerPickerAllCooledDownOrdersByExpiry(t *testing.T) {
 	}
 }
 
-func TestServerPickerAllCooledDownKeepsWeightGroups(t *testing.T) {
-	sp := ServerPicker{CooldownDuration: time.Minute}
-	now := time.Now()
-	config := pickerConfig{serverWeights: map[string]int{
-		"rels://heavy": 100,
-		"rels://light": 10,
-	}}
-	// the light relay recovers first, but must not jump the weight group
-	sp.markServerFailure("rels://light", now.Add(-45*time.Second), errors.New("handshake failed"))
-	sp.markServerFailure("rels://heavy", now, errors.New("handshake failed"))
-
-	got := sp.availableServerURLs(config, []string{"rels://heavy", "rels://light"}, now)
-	if len(got) != 2 || got[0] != "rels://heavy" {
-		t.Fatalf("weight grouping must stay authoritative, got: %v", got)
-	}
-}
-
 func TestServerPicker_UnavailableServers(t *testing.T) {
 	timeout := 5 * time.Second
 	sp := ServerPicker{

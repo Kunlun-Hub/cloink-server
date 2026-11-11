@@ -104,7 +104,7 @@ func (h *Handshaker) RemoteICESupported() bool {
 	return h.remoteICESupported.Load()
 }
 
-func (h *Handshaker) AddRelayListener(offer func(remoteOfferAnswer *OfferAnswer)) {
+func (h *Handshaker) AddRelayListener(offer func(ctx context.Context, remoteOfferAnswer *OfferAnswer)) {
 	h.relayListener = NewAsyncOfferListener(offer)
 }
 

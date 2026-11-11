@@ -18,13 +18,14 @@ import (
 )
 
 const (
-	maxConcurrentServers     = 7
+	maxConcurrentServers     = 16
 	defaultConnectionTimeout = 30 * time.Second
-	// relayPriorityFallbackGrace is how long the current priority group gets
-	// before the next weight group starts in parallel. A blackholed transport
-	// can otherwise consume the full selection timeout without ever giving a
-	// lower-priority relay a chance to connect.
+	// relayPriorityFallbackGrace is how long a forced relay gets before the
+	// remaining relays start in parallel.
 	relayPriorityFallbackGrace = 1500 * time.Millisecond
+	// standbyFailoverGrace is how long the standby relay gets during failover
+	// before all remaining candidate relays are dialed in parallel as fallback.
+	standbyFailoverGrace = 800 * time.Millisecond
 )
 
 // relayRTTHysteresis is the absolute RTT band inside which two relays count
@@ -66,9 +67,12 @@ type ServerPicker struct {
 	CooldownDuration  time.Duration
 
 	// rttLookup returns the cached dial RTT for a relay URL, set by the
-	// Manager. Same-weight servers with a cached RTT are attempted lowest
-	// RTT first; servers without a cached RTT keep their configured order.
+	// Manager. Relays with a cached RTT are scheduled lowest RTT first;
+	// servers without a cached RTT keep their configured order.
 	rttLookup func(string) (time.Duration, bool)
+
+	// standbyLookup returns the current standby relay URL, set by the Manager.
+	standbyLookup func() string
 
 	cooldownMu sync.Mutex
 	cooldowns  map[string]time.Time
@@ -80,7 +84,7 @@ func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
 }
 
 // PickServerFrom limits a selection attempt to the supplied Relay URLs while
-// retaining their configured weights, transport fallback and cooldown state.
+// retaining transport fallback and cooldown state.
 func (sp *ServerPicker) PickServerFrom(parentCtx context.Context, serverURLs []string) (*Client, error) {
 	config := sp.loadConfig()
 	config.serverURLs = slices.Clone(serverURLs)
@@ -88,6 +92,157 @@ func (sp *ServerPicker) PickServerFrom(parentCtx context.Context, serverURLs []s
 		config.forcedURL = ""
 	}
 	return sp.pickServer(parentCtx, config)
+}
+
+// PickStandbyWithFallback dials standbyURL immediately and, if it fails or does
+// not complete within standbyFailoverGrace (800ms), dials all remaining
+// fallbackURLs in parallel while keeping standbyURL in flight.
+func (sp *ServerPicker) PickStandbyWithFallback(parentCtx context.Context, standbyURL string, fallbackURLs []string) (*Client, error) {
+	config := sp.loadConfig()
+	if len(config.serverURLs) > 0 && standbyURL != "" && !slices.Contains(config.serverURLs, standbyURL) {
+		standbyURL = ""
+	}
+	if config.forcedURL != "" {
+		all := make([]string, 0, 1+len(fallbackURLs))
+		if standbyURL != "" {
+			all = append(all, standbyURL)
+		}
+		for _, u := range fallbackURLs {
+			if u != "" && u != standbyURL && !slices.Contains(all, u) {
+				all = append(all, u)
+			}
+		}
+		return sp.PickServerFrom(parentCtx, all)
+	}
+
+	now := time.Now()
+	cleanFallbacks := make([]string, 0, len(fallbackURLs))
+	for _, u := range fallbackURLs {
+		if u != "" && u != standbyURL && !slices.Contains(cleanFallbacks, u) {
+			cleanFallbacks = append(cleanFallbacks, u)
+		}
+	}
+
+	standbyAvailable := standbyURL != "" && !sp.isCoolingDown(standbyURL, now)
+	if !standbyAvailable {
+		all := slices.Clone(cleanFallbacks)
+		if standbyURL != "" {
+			all = append(all, standbyURL)
+		}
+		return sp.PickServerFrom(parentCtx, all)
+	}
+
+	availableFallbacks := sp.availableNonForcedURLs(cleanFallbacks, now)
+	if len(availableFallbacks) == 0 && len(cleanFallbacks) > 0 {
+		availableFallbacks = sp.orderByCooldownExpiry(cleanFallbacks)
+	}
+	availableFallbacks = sp.orderURLsByRTT(availableFallbacks)
+
+	connectionTimeout := sp.ConnectionTimeout
+	if connectionTimeout <= 0 {
+		connectionTimeout = defaultConnectionTimeout
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, connectionTimeout)
+	defer cancel()
+
+	totalServers := 1 + len(availableFallbacks)
+	connResultChan := make(chan connResult, totalServers)
+	concurrentLimiter := make(chan struct{}, maxConcurrentServers)
+	startedServers := 0
+	connectionCancels := make(map[string]context.CancelFunc, totalServers)
+
+	startConnection := func(url string) {
+		if _, alreadyStarted := connectionCancels[url]; alreadyStarted {
+			return
+		}
+		startedServers++
+		connectionCtx, connectionCancel := context.WithCancel(ctx)
+		connectionCancels[url] = connectionCancel
+		go func(url string) {
+			select {
+			case concurrentLimiter <- struct{}{}:
+				defer func() { <-concurrentLimiter }()
+				sp.startConnection(connectionCtx, parentCtx, connResultChan, url)
+			case <-connectionCtx.Done():
+				connResultChan <- connResult{Url: url, Err: connectionCtx.Err()}
+			}
+		}(url)
+	}
+
+	cancelConnectionsExcept := func(selectedURL string) {
+		for url, cancelConnection := range connectionCancels {
+			if url != selectedURL {
+				cancelConnection()
+			}
+		}
+	}
+
+	log.Infof("failover: dialing standby Relay server %s first (fallback count: %d)", standbyURL, len(availableFallbacks))
+	startConnection(standbyURL)
+
+	fallbacksStarted := len(availableFallbacks) == 0
+	var fallbackTimer *time.Timer
+	var fallbackTimerC <-chan time.Time
+	stopFallbackTimer := func() {
+		if fallbackTimer != nil {
+			fallbackTimer.Stop()
+			fallbackTimer = nil
+		}
+		fallbackTimerC = nil
+	}
+	if !fallbacksStarted {
+		fallbackTimer = time.NewTimer(standbyFailoverGrace)
+		fallbackTimerC = fallbackTimer.C
+	}
+	defer stopFallbackTimer()
+
+	startFallbacks := func() {
+		if fallbacksStarted {
+			return
+		}
+		fallbacksStarted = true
+		stopFallbackTimer()
+		log.Infof("failover: starting %d fallback Relay server(s) in parallel: %v", len(availableFallbacks), availableFallbacks)
+		for _, u := range availableFallbacks {
+			startConnection(u)
+		}
+	}
+
+	receivedResults := 0
+	for receivedResults < startedServers || !fallbacksStarted {
+		select {
+		case cr := <-connResultChan:
+			receivedResults++
+			if cr.Err == nil {
+				instanceURL, serverIP, err := cr.RelayClient.serverInstanceAddress()
+				if err != nil {
+					log.Infof("chosen failover Relay server: %s, instance address unavailable: %v", cr.Url, err)
+				} else {
+					log.Infof("chosen failover Relay server: %s, instance URL: %s, server IP: %s", cr.Url, instanceURL, serverIP)
+				}
+				sp.clearServerFailure(cr.Url)
+				cancelConnectionsExcept(cr.Url)
+				go sp.drainConnResults(connResultChan, receivedResults, startedServers)
+				return cr.RelayClient, nil
+			}
+			log.Tracef("failed to connect to Relay server during failover: %s: %v", cr.Url, cr.Err)
+			sp.markServerFailure(cr.Url, time.Now(), cr.Err)
+			if !fallbacksStarted {
+				startFallbacks()
+			}
+		case <-fallbackTimerC:
+			startFallbacks()
+		case <-ctx.Done():
+			cancelConnectionsExcept("")
+			stopFallbackTimer()
+			go sp.drainConnResults(connResultChan, receivedResults, startedServers)
+			return nil, fmt.Errorf("failed to connect to any relay server: %w", ctx.Err())
+		}
+	}
+
+	stopFallbackTimer()
+	cancelConnectionsExcept("")
+	return nil, errors.New("failed to connect to any relay server: all attempts failed")
 }
 
 func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfig) (*Client, error) {
@@ -253,16 +408,77 @@ func (sp *ServerPicker) availableServerURLs(config pickerConfig, serverURLs []st
 }
 
 // serverURLsByCooldownExpiryLocked orders fully cooled-down servers so the one
-// recovering first is retried first. Weight grouping stays authoritative: only
-// servers of equal weight are reordered against each other.
+// recovering first is retried first.
 // Caller holds cooldownMu.
-func (sp *ServerPicker) serverURLsByCooldownExpiryLocked(config pickerConfig, serverURLs []string) []string {
+func (sp *ServerPicker) serverURLsByCooldownExpiryLocked(_ pickerConfig, serverURLs []string) []string {
 	ordered := slices.Clone(serverURLs)
 	slices.SortStableFunc(ordered, func(left, right string) int {
-		if weightDiff := config.weight(right) - config.weight(left); weightDiff != 0 {
-			return weightDiff
-		}
 		return sp.cooldowns[left].Compare(sp.cooldowns[right])
+	})
+	return ordered
+}
+
+func (sp *ServerPicker) isCoolingDown(relayURL string, now time.Time) bool {
+	if sp.CooldownDuration <= 0 || relayURL == "" {
+		return false
+	}
+	sp.cooldownMu.Lock()
+	defer sp.cooldownMu.Unlock()
+	until, ok := sp.cooldowns[relayURL]
+	if !ok {
+		return false
+	}
+	if !now.Before(until) {
+		delete(sp.cooldowns, relayURL)
+		return false
+	}
+	return true
+}
+
+func (sp *ServerPicker) availableNonForcedURLs(serverURLs []string, now time.Time) []string {
+	if sp.CooldownDuration <= 0 || len(serverURLs) == 0 {
+		return slices.Clone(serverURLs)
+	}
+	sp.cooldownMu.Lock()
+	defer sp.cooldownMu.Unlock()
+	available := make([]string, 0, len(serverURLs))
+	for _, relayURL := range serverURLs {
+		until, ok := sp.cooldowns[relayURL]
+		if !ok || !now.Before(until) {
+			delete(sp.cooldowns, relayURL)
+			available = append(available, relayURL)
+		}
+	}
+	return available
+}
+
+func (sp *ServerPicker) orderByCooldownExpiry(serverURLs []string) []string {
+	sp.cooldownMu.Lock()
+	defer sp.cooldownMu.Unlock()
+	return sp.serverURLsByCooldownExpiryLocked(pickerConfig{}, serverURLs)
+}
+
+func (sp *ServerPicker) orderURLsByRTT(urls []string) []string {
+	ordered := slices.Clone(urls)
+	if sp.rttLookup == nil {
+		return ordered
+	}
+	slices.SortStableFunc(ordered, func(left, right string) int {
+		leftRTT, leftOK := sp.rttLookup(left)
+		rightRTT, rightOK := sp.rttLookup(right)
+		if leftOK != rightOK {
+			if leftOK {
+				return -1
+			}
+			return 1
+		}
+		if !leftOK {
+			return 0
+		}
+		if absDuration(leftRTT-rightRTT) <= relayRTTHysteresis {
+			return 0
+		}
+		return cmp.Compare(leftRTT, rightRTT)
 	})
 	return ordered
 }
@@ -312,44 +528,14 @@ func (sp *ServerPicker) startNextPriorityGroupWithConfig(config pickerConfig, se
 		startConnection(serverURLs[startAt])
 		return startAt + 1
 	}
-	weight := config.weight(serverURLs[startAt])
-	// Find the full same-weight group so the lowest-RTT relay of the whole
-	// group is attempted first, even when the group is larger than one
-	// attempt batch. The scan stops before the forced relay, which is
-	// dialed on its own when a batch starts on it.
+	// All non-forced candidate relays form a single flat pool and are dialed
+	// concurrently so the first handshake to complete immediately becomes the
+	// primary relay.
 	groupStart := startAt
-	for groupStart > 0 && serverURLs[groupStart-1] != config.forcedURL && config.weight(serverURLs[groupStart-1]) == weight {
+	for groupStart > 0 && serverURLs[groupStart-1] != config.forcedURL {
 		groupStart--
 	}
-	groupEnd := startAt
-	for groupEnd < len(serverURLs) && config.weight(serverURLs[groupEnd]) == weight {
-		groupEnd++
-	}
-	group := slices.Clone(serverURLs[groupStart:groupEnd])
-	// Order the group by cached dial RTT so the lowest-latency relay wins the
-	// race. Relays without a cached RTT keep their configured relative order
-	// at the back. RTTs within the hysteresis band count as equal so probe
-	// noise does not reorder the group.
-	if sp.rttLookup != nil {
-		slices.SortStableFunc(group, func(left, right string) int {
-			leftRTT, leftOK := sp.rttLookup(left)
-			rightRTT, rightOK := sp.rttLookup(right)
-			if leftOK != rightOK {
-				if leftOK {
-					return -1
-				}
-				return 1
-			}
-			if !leftOK {
-				return 0
-			}
-			if absDuration(leftRTT-rightRTT) <= relayRTTHysteresis {
-				return 0
-			}
-			return cmp.Compare(leftRTT, rightRTT)
-		})
-	}
-	// Attempt the next batch of the RTT-ordered group.
+	group := sp.orderURLsByRTT(serverURLs[groupStart:])
 	offset := startAt - groupStart
 	batch := group[offset:min(offset+maxConcurrentServers, len(group))]
 	for _, relayURL := range batch {

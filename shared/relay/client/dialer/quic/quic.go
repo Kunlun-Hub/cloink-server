@@ -16,6 +16,12 @@ import (
 	quictls "github.com/netbirdio/netbird/shared/relay/tls"
 )
 
+const (
+	quicHandshakeIdleTimeout = 8 * time.Second
+	quicKeepAlivePeriod      = 2 * time.Second
+	quicMaxIdleTimeout       = 8 * time.Second
+)
+
 type Dialer struct {
 }
 
@@ -49,11 +55,12 @@ func (d Dialer) Dial(ctx context.Context, address, serverName string) (net.Conn,
 	}
 
 	quicConfig := &quic.Config{
-		KeepAlivePeriod:   30 * time.Second,
-		MaxIdleTimeout:    4 * time.Minute,
-		EnableDatagrams:   true,
-		InitialPacketSize: nbRelay.QUICInitialPacketSize,
-		Tracer:            connectionTracer(quicURL),
+		HandshakeIdleTimeout: quicHandshakeIdleTimeout,
+		KeepAlivePeriod:      quicKeepAlivePeriod,
+		MaxIdleTimeout:       quicMaxIdleTimeout,
+		EnableDatagrams:      true,
+		InitialPacketSize:    nbRelay.QUICInitialPacketSize,
+		Tracer:               connectionTracer(quicURL),
 	}
 
 	udpConn, err := nbnet.ListenUDP("udp", &net.UDPAddr{Port: 0})

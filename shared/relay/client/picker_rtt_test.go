@@ -26,12 +26,6 @@ func TestStartNextPriorityGroupOrdersByCachedRTT(t *testing.T) {
 	}
 	config := pickerConfig{
 		serverURLs: serverURLs,
-		serverWeights: map[string]int{
-			"rels://slow.example":  100,
-			"rels://fast.example":  100,
-			"rels://cold.example":  100,
-			"rels://other.example": 10,
-		},
 	}
 
 	var started []string
@@ -39,11 +33,12 @@ func TestStartNextPriorityGroupOrdersByCachedRTT(t *testing.T) {
 		started = append(started, relayURL)
 	})
 
-	require.Equal(t, 3, next, "only the weight-100 group should start")
+	require.Equal(t, 4, next, "all candidate relays should start in one flat wave")
 	require.Equal(t, []string{
 		"rels://fast.example",
 		"rels://slow.example",
 		"rels://cold.example",
+		"rels://other.example",
 	}, started, "cached RTTs sort ascending, uncached relays keep order at the back")
 }
 
@@ -113,32 +108,30 @@ func TestRelayRTTCacheExpires(t *testing.T) {
 }
 
 func TestStartNextPriorityGroupSortsFullGroupBeyondBatchSize(t *testing.T) {
-	// Ten same-weight relays in worst-RTT-first configured order. The first
-	// attempt must start the seven lowest-RTT relays of the whole group, and
-	// the second attempt the remaining three. Spacing is wider than the
-	// hysteresis band so the intent (strict ordering) is unambiguous.
-	serverURLs := make([]string, 0, 10)
-	rtts := make(map[string]time.Duration, 10)
-	weights := make(map[string]int, 10)
-	for i := 9; i >= 0; i-- {
-		url := "rels://relay" + string(rune('0'+i)) + ".example"
+	// Twenty relays in worst-RTT-first configured order. The first attempt
+	// starts the maxConcurrentServers (16) lowest-RTT relays, and the second
+	// attempt starts the remaining four.
+	const total = 20
+	serverURLs := make([]string, 0, total)
+	rtts := make(map[string]time.Duration, total)
+	for i := total - 1; i >= 0; i-- {
+		url := "rels://relay-" + string(rune('a'+i)) + ".example"
 		serverURLs = append(serverURLs, url)
 		rtts[url] = time.Duration(i) * 30 * time.Millisecond
-		weights[url] = 100
 	}
 	picker := &ServerPicker{rttLookup: func(url string) (time.Duration, bool) {
 		rtt, ok := rtts[url]
 		return rtt, ok
 	}}
-	config := pickerConfig{serverURLs: serverURLs, serverWeights: weights}
+	config := pickerConfig{serverURLs: serverURLs}
 
 	var first []string
 	next := picker.startNextPriorityGroupWithConfig(config, serverURLs, 0, func(url string) {
 		first = append(first, url)
 	})
-	require.Equal(t, 7, next)
-	require.Len(t, first, 7)
-	for i := 0; i < 7; i++ {
+	require.Equal(t, maxConcurrentServers, next)
+	require.Len(t, first, maxConcurrentServers)
+	for i := 0; i < maxConcurrentServers; i++ {
 		require.Equal(t, rtts[first[i]], time.Duration(i)*30*time.Millisecond, "batch must follow ascending RTT of the full group")
 	}
 
@@ -146,10 +139,10 @@ func TestStartNextPriorityGroupSortsFullGroupBeyondBatchSize(t *testing.T) {
 	next = picker.startNextPriorityGroupWithConfig(config, serverURLs, next, func(url string) {
 		second = append(second, url)
 	})
-	require.Equal(t, 10, next)
-	require.Len(t, second, 3)
-	for i := 0; i < 3; i++ {
-		require.Equal(t, rtts[second[i]], time.Duration(7+i)*30*time.Millisecond)
+	require.Equal(t, total, next)
+	require.Len(t, second, total-maxConcurrentServers)
+	for i := 0; i < total-maxConcurrentServers; i++ {
+		require.Equal(t, rtts[second[i]], time.Duration(maxConcurrentServers+i)*30*time.Millisecond)
 	}
 }
 
