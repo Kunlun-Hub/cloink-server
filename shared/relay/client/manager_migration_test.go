@@ -30,7 +30,7 @@ func TestManagerPriorityMigrationConnectsBeforeRetiringOldRelay(t *testing.T) {
 	require.NotNil(t, oldClient)
 	require.True(t, oldClient.Ready())
 
-	manager.UpdateServerURLsWithWeights([]string{highURL, lowURL}, map[string]int{highURL: 80, lowURL: 20})
+	manager.UpdateServerURLs([]string{highURL})
 
 	require.Eventually(t, func() bool {
 		manager.relayClientMu.RLock()
@@ -55,7 +55,7 @@ func TestManagerPriorityMigrationKeepsOldRelayWhenCandidateFails(t *testing.T) {
 	oldClient := manager.relayClient
 	manager.relayClientMu.RUnlock()
 
-	manager.UpdateServerURLsWithWeights([]string{unavailableHighURL, lowURL}, map[string]int{unavailableHighURL: 80, lowURL: 20})
+	manager.UpdateServerURLs([]string{unavailableHighURL})
 	time.Sleep(700 * time.Millisecond)
 
 	manager.relayClientMu.RLock()
@@ -103,7 +103,7 @@ func TestManagerPriorityMigrationKeepsOldRelayUntilPeerConnLeaves(t *testing.T) 
 	oldClient := manager.relayClient
 	manager.relayClientMu.RUnlock()
 	require.True(t, oldClient.HasConns())
-	manager.UpdateServerURLsWithWeights([]string{highURL, lowURL}, map[string]int{highURL: 80, lowURL: 20})
+	manager.UpdateServerURLs([]string{highURL})
 	require.Eventually(t, func() bool {
 		manager.relayClientMu.RLock()
 		defer manager.relayClientMu.RUnlock()
@@ -159,7 +159,7 @@ func TestManagerMigrationKeepsExistingPeerStreamAlive(t *testing.T) {
 	t.Cleanup(func() { _ = aliceConn.Close() })
 	t.Cleanup(func() { _ = bobConn.Close() })
 
-	manager.UpdateServerURLsWithWeights([]string{highURL, lowURL}, map[string]int{highURL: 80, lowURL: 20})
+	manager.UpdateServerURLs([]string{highURL})
 	require.Eventually(t, func() bool {
 		manager.relayClientMu.RLock()
 		defer manager.relayClientMu.RUnlock()
@@ -213,7 +213,7 @@ func TestManagerPriorityMigrationPromotesExistingForeignRelay(t *testing.T) {
 	track.RUnlock()
 	require.NotNil(t, foreignClient)
 
-	manager.UpdateServerURLsWithWeights([]string{highURL, lowURL}, map[string]int{highURL: 80, lowURL: 20})
+	manager.UpdateServerURLs([]string{highURL})
 	require.Eventually(t, func() bool {
 		manager.relayClientMu.RLock()
 		defer manager.relayClientMu.RUnlock()

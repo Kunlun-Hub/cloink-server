@@ -32,6 +32,7 @@ type relayPeerFailure struct {
 type relayFailureState struct {
 	peers        map[string]relayPeerFailure
 	lastRecovery time.Time
+	lastSuccess  time.Time
 }
 
 // relayDataPlaneFailures detects a Relay transport that remains connected while
@@ -99,7 +100,35 @@ func (f *relayDataPlaneFailures) reportSuccess(relayAddress, peerKey string) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if state := f.states[relayAddress]; state != nil {
-		delete(state.peers, peerKey)
+	now := f.now()
+	state := f.states[relayAddress]
+	if state == nil {
+		state = &relayFailureState{peers: make(map[string]relayPeerFailure)}
+		f.states[relayAddress] = state
 	}
+	delete(state.peers, peerKey)
+	state.lastSuccess = now
+}
+
+func (f *relayDataPlaneFailures) resetCooldown(relayAddress string) {
+	if relayAddress == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if state := f.states[relayAddress]; state != nil {
+		state.lastRecovery = time.Time{}
+	}
+}
+
+func (f *relayDataPlaneFailures) hasSucceededSince(relayAddress string, since time.Time) bool {
+	if relayAddress == "" {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if state := f.states[relayAddress]; state != nil {
+		return !state.lastSuccess.IsZero() && !state.lastSuccess.Before(since)
+	}
+	return false
 }

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultHeartbeatTimeout = defaultHealthCheckInterval + 10*time.Second
+	defaultHeartbeatTimeout = defaultHealthCheckInterval + defaultHealthCheckTimeout
 )
 
 type ReceiverOptions struct {
@@ -26,7 +26,6 @@ type Receiver struct {
 	ctx              context.Context
 	ctxCancel        context.CancelFunc
 	heartbeat        chan struct{}
-	alive            bool
 	attemptThreshold int
 }
 
@@ -78,26 +77,41 @@ func (r *Receiver) Stop() {
 }
 
 func (r *Receiver) waitForHealthcheck(heartbeatTimeout time.Duration) {
-	ticker := time.NewTicker(heartbeatTimeout)
-	defer ticker.Stop()
+	timer := time.NewTimer(heartbeatTimeout)
+	defer timer.Stop()
 	defer r.ctxCancel()
 	defer close(r.OnTimeout)
+
+	resetTimeout := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(heartbeatTimeout)
+	}
 
 	failureCounter := 0
 	for {
 		select {
 		case <-r.heartbeat:
-			r.alive = true
 			failureCounter = 0
-		case <-ticker.C:
-			if r.alive {
-				r.alive = false
+			resetTimeout()
+		case <-timer.C:
+			// Drain a heartbeat that raced with the timeout before declaring
+			// the connection unhealthy.
+			select {
+			case <-r.heartbeat:
+				failureCounter = 0
+				resetTimeout()
 				continue
+			default:
 			}
-
 			failureCounter++
 			if failureCounter < r.attemptThreshold {
 				r.log.Warnf("healthcheck failed, attempt %d", failureCounter)
+				resetTimeout()
 				continue
 			}
 			r.notifyTimeout()

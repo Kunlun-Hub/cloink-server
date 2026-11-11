@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -318,6 +320,22 @@ func (h *Handler) GetAllPeers(w http.ResponseWriter, r *http.Request) {
 	nameFilter := r.URL.Query().Get("name")
 	ipFilter := r.URL.Query().Get("ip")
 	macFilter := r.URL.Query().Get("mac")
+	connectionIPFilter := strings.TrimSpace(r.URL.Query().Get("connection_ip"))
+	dnsLabelFilter := strings.TrimSpace(r.URL.Query().Get("dns_label"))
+	countryCodeFilter := strings.TrimSpace(r.URL.Query().Get("country_code"))
+	connectedFilter := strings.TrimSpace(r.URL.Query().Get("connected"))
+
+	var hasConnectedFilter bool
+	var wantConnected bool
+	if connectedFilter != "" {
+		parsedConnected, err := strconv.ParseBool(connectedFilter)
+		if err != nil {
+			util.WriteError(r.Context(), status.Errorf(status.InvalidArgument, "invalid connected filter value: %s", connectedFilter), w)
+			return
+		}
+		hasConnectedFilter = true
+		wantConnected = parsedConnected
+	}
 
 	accountID, userID := userAuth.AccountId, userAuth.UserId
 
@@ -340,6 +358,9 @@ func (h *Handler) GetAllPeers(w http.ResponseWriter, r *http.Request) {
 	respBody := make([]*api.PeerBatch, 0, len(peers))
 	for _, peer := range peers {
 		if peer.ProxyMeta.Embedded {
+			continue
+		}
+		if !matchesOpenPeerFilters(peer, dnsDomain, connectionIPFilter, dnsLabelFilter, countryCodeFilter, hasConnectedFilter, wantConnected) {
 			continue
 		}
 		respBody = append(respBody, toPeerListItemResponse(peer, grpsInfoMap[peer.ID], dnsDomain, 0))
@@ -737,4 +758,59 @@ func peerIPv6String(peer *nbpeer.Peer) *string {
 	}
 	s := peer.IPv6.String()
 	return &s
+}
+
+func matchesOpenPeerFilters(
+	peer *nbpeer.Peer,
+	dnsDomain string,
+	connectionIPFilter string,
+	dnsLabelFilter string,
+	countryCodeFilter string,
+	hasConnectedFilter bool,
+	wantConnected bool,
+) bool {
+	if connectionIPFilter != "" {
+		connIP := ""
+		if peer.Location.ConnectionIP != nil {
+			connIP = peer.Location.ConnectionIP.String()
+		}
+		if connIP != connectionIPFilter {
+			return false
+		}
+	}
+
+	if dnsLabelFilter != "" {
+		needle := strings.ToLower(dnsLabelFilter)
+		peerFQDN := strings.ToLower(fqdn(peer, dnsDomain))
+		peerLabel := strings.ToLower(peer.DNSLabel)
+		matched := peerLabel == needle || peerFQDN == needle || strings.Contains(peerFQDN, needle)
+		if !matched {
+			for _, extra := range peer.ExtraDNSLabels {
+				extraLower := strings.ToLower(extra)
+				extraFQDN := strings.ToLower(fmt.Sprintf("%s.%s", extra, dnsDomain))
+				if extraLower == needle || extraFQDN == needle || strings.Contains(extraFQDN, needle) {
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	if countryCodeFilter != "" {
+		if !strings.EqualFold(peer.Location.CountryCode, countryCodeFilter) {
+			return false
+		}
+	}
+
+	if hasConnectedFilter {
+		connected := peer.Status != nil && peer.Status.Connected
+		if connected != wantConnected {
+			return false
+		}
+	}
+
+	return true
 }

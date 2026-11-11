@@ -62,6 +62,15 @@ func (c *Conn) Protocol() string {
 	return Network
 }
 
+// PacketsReceived returns the total number of QUIC packets received on the
+// underlying session, including transport-level ACK packets.
+func (c *Conn) PacketsReceived() uint64 {
+	if c.session == nil {
+		return 0
+	}
+	return c.session.ConnectionStats().PacketsReceived
+}
+
 func (c *Conn) RemoteAddr() net.Addr {
 	return c.session.RemoteAddr()
 }

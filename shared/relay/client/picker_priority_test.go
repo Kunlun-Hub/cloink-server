@@ -91,3 +91,48 @@ func TestManagerSetForcedRelayClearsCooldown(t *testing.T) {
 		"setting a forced Relay must clear its previous failure cooldown")
 	require.Equal(t, forcedURL, manager.serverPicker.loadConfig().forcedURL)
 }
+
+func TestServerPickerPickStandbyWithFallback_FastStandby(t *testing.T) {
+	standbyURL := startMigrationRelayServer(t, "standby-fast")
+	fallbackURL := startMigrationRelayServer(t, "fallback-fast")
+
+	picker := &ServerPicker{
+		TokenStore:        &hmac.TokenStore{},
+		PeerID:            "picker-standby-fast-peer",
+		ConnectionTimeout: 3 * time.Second,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	relayClient, err := picker.PickStandbyWithFallback(ctx, standbyURL, []string{fallbackURL})
+	require.NoError(t, err)
+	defer func() { _ = relayClient.Close() }()
+	require.Equal(t, standbyURL, relayClient.connectionURL,
+		"healthy standby should be selected immediately before the 800ms fallback timer fires")
+}
+
+func TestServerPickerPickStandbyWithFallback_800msFallback(t *testing.T) {
+	blackholedStandbyURL := startBlackholeListener(t)
+	healthyFallbackURL := startMigrationRelayServer(t, "standby-fallback")
+
+	picker := &ServerPicker{
+		TokenStore:        &hmac.TokenStore{},
+		PeerID:            "picker-standby-fallback-peer",
+		ConnectionTimeout: 5 * time.Second,
+		CooldownDuration:  time.Minute,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	started := time.Now()
+	relayClient, err := picker.PickStandbyWithFallback(ctx, blackholedStandbyURL, []string{healthyFallbackURL})
+	require.NoError(t, err)
+	defer func() { _ = relayClient.Close() }()
+
+	elapsed := time.Since(started)
+	require.Equal(t, healthyFallbackURL, relayClient.connectionURL)
+	require.GreaterOrEqual(t, elapsed, standbyFailoverGrace-100*time.Millisecond,
+		"fallback should wait for standbyFailoverGrace when standby is slow/blackholed")
+	require.Less(t, elapsed, 3*time.Second,
+		"fallback should complete right after the 800ms grace period")
+}

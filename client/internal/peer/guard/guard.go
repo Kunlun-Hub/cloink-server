@@ -158,6 +158,9 @@ func (g *Guard) reconnectLoopWithRetry(ctx context.Context, callback func()) {
 			ticker = g.newReconnectTicker(ctx)
 			tickerChannel = ticker.C
 			iceState.reset()
+			if (g.netWatcher == nil || g.netWatcher.IsOnline()) && g.isConnectedOnAllWay() == ConnStatusDisconnected {
+				callback()
+			}
 
 		case <-netChanged:
 			// Re-arm for the next transition before acting on this one.

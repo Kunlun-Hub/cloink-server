@@ -74,7 +74,6 @@ func TestFetchHealthRejectsOversizedResponse(t *testing.T) {
 
 func TestValidateRelayRegistration(t *testing.T) {
 	negativeClients := -1
-	excessivePriority := maxRelayPriority + 1
 	tests := []struct {
 		name string
 		req  registerRelayRequest
@@ -91,7 +90,6 @@ func TestValidateRelayRegistration(t *testing.T) {
 		{name: "zero port", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:0"}, want: "relay address has an invalid port"},
 		{name: "invalid management URL", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", ManagementURL: "file:///tmp/relay"}, want: "relay management URL is invalid"},
 		{name: "negative clients", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", ConnectedClients: &negativeClients}, want: "connected clients cannot be negative"},
-		{name: "excessive priority", req: registerRelayRequest{ID: "relay-1", Address: "rels://relay.example.com:443", Priority: excessivePriority}, want: "relay priority must be between 0 and 1000"},
 		{name: "ID control character", req: registerRelayRequest{ID: "relay\n1", Address: "rels://relay.example.com:443"}, want: "relay ID is invalid"},
 	}
 
@@ -107,36 +105,6 @@ func TestValidateRelayRegistration(t *testing.T) {
 	}
 }
 
-func TestApplyRelayConfigPushesAccountPeers(t *testing.T) {
-	const accountID, userID = "account-id", "user-id"
-	ctrl := gomock.NewController(t)
-	permissionsManager := permissions.NewMockManager(ctrl)
-	permissionsManager.EXPECT().
-		ValidateUserPermissions(gomock.Any(), accountID, userID, modules.Settings, operations.Update).
-		Return(true, context.Background(), nil)
-	pusher := &relayConfigPusherMock{count: 2}
-	h := &Handler{
-		permissions: permissionsManager,
-		accountManager: &mock_server.MockAccountManager{
-			GetAccountByIDFunc: func(context.Context, string, string) (*types.Account, error) {
-				return &types.Account{Id: accountID}, nil
-			},
-			GetPeersFunc: func(context.Context, string, string, string, string, string) ([]*nbpeer.Peer, error) {
-				return []*nbpeer.Peer{{ID: "peer-a"}, {ID: "embedded", ProxyMeta: nbpeer.ProxyMeta{Embedded: true}}, {ID: "peer-b"}}, nil
-			},
-		},
-		configPusher: pusher,
-	}
-	req := withRelayUser(httptest.NewRequest(http.MethodPost, "/api/relays/apply", nil), accountID, userID)
-	recorder := httptest.NewRecorder()
-
-	h.applyRelayConfig(recorder, req)
-
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, accountID, pusher.accountID)
-	require.Equal(t, []string{"peer-a", "peer-b"}, pusher.peerIDs)
-}
-
 func TestRelayPermissionsFailClosed(t *testing.T) {
 	h := &Handler{}
 	req := withRelayUser(httptest.NewRequest(http.MethodGet, "/api/relays", nil), "account-id", "user-id")
@@ -147,7 +115,7 @@ func TestRelayPermissionsFailClosed(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
-func TestRegisterRelayKeepsStoredPriorityAndScopesRegistry(t *testing.T) {
+func TestRegisterRelayUsesDefaultPriorityAndScopesRegistry(t *testing.T) {
 	const accountID, secret = "account-id", "relay-secret"
 	activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)}
 	t.Cleanup(func() { activeRelayRegistry = &relayRegistry{relays: make(map[string]registeredRelay)} })
@@ -169,18 +137,19 @@ func TestRegisterRelayKeepsStoredPriorityAndScopesRegistry(t *testing.T) {
 	}
 	setupKey, err := signRelaySetupToken(secret, relaySetupTokenNeverExpires, accountID)
 	require.NoError(t, err)
-	body, err := json.Marshal(registerRelayRequest{SetupKey: setupKey, ID: "relay-new", Address: "rels://relay.example.com:443", Priority: 30})
+	body, err := json.Marshal(registerRelayRequest{SetupKey: setupKey, ID: "relay-new", Address: "rels://relay.example.com:443", Priority: 90, Groups: []string{"eng"}})
 	require.NoError(t, err)
 	recorder := httptest.NewRecorder()
 
 	h.registerRelay(recorder, httptest.NewRequest(http.MethodPost, "/api/relays/register", bytes.NewReader(body)))
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	priority, ok := activeRelayRegistry.priorityFor(accountID, "relay-new", "")
-	require.True(t, ok)
-	require.Equal(t, 80, priority)
-	_, ok = activeRelayRegistry.priorityFor("other-account", "relay-new", "")
-	require.False(t, ok)
+	relays := activeRelayRegistry.list(accountID)
+	require.Len(t, relays, 1)
+	require.Equal(t, "relay-new", relays[0].ID)
+	require.Equal(t, defaultRelayPriority, relays[0].Priority)
+	require.Empty(t, relays[0].Groups)
+	require.Empty(t, activeRelayRegistry.list("other-account"))
 }
 
 func TestRegisterRelayAcceptsExpiredTokenForStoredIdentity(t *testing.T) {
@@ -212,9 +181,9 @@ func TestRegisterRelayAcceptsExpiredTokenForStoredIdentity(t *testing.T) {
 	h.registerRelay(recorder, httptest.NewRequest(http.MethodPost, "/api/relays/register", bytes.NewReader(body)))
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	priority, ok := activeRelayRegistry.priorityFor(accountID, "relay-1", "")
-	require.True(t, ok)
-	require.Equal(t, 80, priority)
+	relays := activeRelayRegistry.list(accountID)
+	require.Len(t, relays, 1)
+	require.Equal(t, defaultRelayPriority, relays[0].Priority)
 }
 
 func TestRegisterRelayRejectsExpiredTokenForNewIdentity(t *testing.T) {
@@ -240,16 +209,9 @@ func TestRegisterRelayRejectsExpiredTokenForNewIdentity(t *testing.T) {
 
 func TestRelayRegistryIsAccountScoped(t *testing.T) {
 	registry := &relayRegistry{relays: make(map[string]registeredRelay)}
-	registry.upsert("account-a", registeredRelay{ID: "same-id", Address: "rels://a", Priority: 10})
-	registry.upsert("account-b", registeredRelay{ID: "same-id", Address: "rels://b", Priority: 20})
+	registry.upsert("account-a", registeredRelay{ID: "same-id", Address: "rels://a", Priority: defaultRelayPriority})
+	registry.upsert("account-b", registeredRelay{ID: "same-id", Address: "rels://b", Priority: defaultRelayPriority})
 
-	require.True(t, registry.updatePriority("account-a", "same-id", 50))
-	priority, ok := registry.priorityFor("account-a", "same-id", "")
-	require.True(t, ok)
-	require.Equal(t, 50, priority)
-	priority, ok = registry.priorityFor("account-b", "same-id", "")
-	require.True(t, ok)
-	require.Equal(t, 20, priority)
 	require.True(t, registry.delete("account-a", "same-id"))
 	require.Len(t, registry.list("account-a"), 0)
 	require.Len(t, registry.list("account-b"), 1)
@@ -279,9 +241,97 @@ func TestRelayServersForAccountSortsAndDeduplicates(t *testing.T) {
 	servers := RelayServersForAccount(config, settings)
 
 	require.Len(t, servers, 2)
-	require.Equal(t, "relay-dynamic", servers[0].ID)
-	require.Equal(t, 60, servers[0].Priority)
-	require.Equal(t, "relay-a", servers[1].ID)
+	require.Equal(t, "relay-a", servers[0].ID)
+	require.Equal(t, defaultRelayPriority, servers[0].Priority)
+	require.Equal(t, "relay-dynamic", servers[1].ID)
+	require.Equal(t, defaultRelayPriority, servers[1].Priority)
+}
+
+func TestRelayListSourcesMergeConfiguredAndRegisteredByAddress(t *testing.T) {
+	const (
+		jpAddress = "rels://relay-jp.example.com:12580"
+		sgAddress = "rels://relay-sg.example.com:12580"
+	)
+	now := time.Now()
+	servers := []*nbconfig.RelayServer{
+		{Address: jpAddress},
+		{Address: sgAddress},
+	}
+	stored := []registeredRelay{
+		{ID: "relay-jp", Name: "Japan Relay", Address: jpAddress, LastSeen: now.Add(-time.Minute)},
+		{ID: "relay-sg", Name: "Singapore Relay", Address: sgAddress, LastSeen: now.Add(-time.Minute)},
+	}
+	active := []registeredRelay{
+		{ID: "relay-jp", Name: "Japan Relay", Address: jpAddress, LastSeen: now},
+	}
+
+	sources := relayListSources(servers, active, stored)
+
+	require.Len(t, sources, 2)
+	require.Equal(t, jpAddress, sources[0].Server.Address)
+	require.NotNil(t, sources[0].Registration)
+	require.Equal(t, "relay-jp", sources[0].Registration.ID)
+	require.True(t, sources[0].Active)
+	require.Equal(t, sgAddress, sources[1].Server.Address)
+	require.NotNil(t, sources[1].Registration)
+	require.Equal(t, "relay-sg", sources[1].Registration.ID)
+	require.False(t, sources[1].Active)
+}
+
+func TestRelayListSourcesKeepDynamicRelayWithoutConfiguredAddress(t *testing.T) {
+	const address = "rels://relay-dynamic.example.com:443"
+
+	sources := relayListSources(nil, []registeredRelay{{ID: "relay-dynamic", Address: address, LastSeen: time.Now()}}, nil)
+
+	require.Len(t, sources, 1)
+	require.Nil(t, sources[0].Server)
+	require.NotNil(t, sources[0].Registration)
+	require.Equal(t, "relay-dynamic", sources[0].Registration.ID)
+	require.True(t, sources[0].Active)
+}
+
+func TestMergeRegisteredRelayMetadataPreservesProbeResult(t *testing.T) {
+	const address = "rels://relay-jp.example.com:12580"
+	connectedClients := 3
+	status := RelayStatus{
+		Address:     address,
+		ID:          relayKey("", address),
+		Status:      "online",
+		LastChecked: time.Now(),
+	}
+
+	mergeRegisteredRelayMetadata(&status, registeredRelay{
+		ID:               "relay-jp",
+		Name:             "Japan Relay",
+		Address:          address,
+		Priority:         70,
+		ConnectedClients: &connectedClients,
+		Groups:           []string{"group-1"},
+		LastSeen:         time.Now().Add(-time.Minute),
+	})
+
+	require.Equal(t, "relay-jp", status.ID)
+	require.Equal(t, "Japan Relay", status.Name)
+	require.Equal(t, "relay-jp", status.ObservedID)
+	require.True(t, status.Registered)
+	require.Equal(t, "online", status.Status)
+	require.Equal(t, defaultRelayPriority, status.Priority)
+	require.Equal(t, connectedClients, *status.ConnectedClients)
+	require.Equal(t, []string{"group-1"}, status.Groups)
+}
+
+func TestRelayServersForAccountPropagatesLoad(t *testing.T) {
+	clients := 85
+	settings := &types.Settings{Extra: &types.ExtraSettings{RegisteredRelays: map[string]types.RegisteredRelay{
+		"relay-1": {ID: "relay-1", Address: "rels://relay.example.com:443", Priority: 60, ConnectedClients: &clients, LastSeen: time.Now()},
+	}}}
+
+	servers := RelayServersForAccount(nil, settings)
+
+	require.Len(t, servers, 1)
+	require.Equal(t, "relay-1", servers[0].ID)
+	require.Equal(t, defaultRelayPriority, servers[0].Priority)
+	require.Equal(t, 85, servers[0].ConnectedPeers)
 }
 
 func TestDeleteRelayPushesUpdatedAccountPeers(t *testing.T) {

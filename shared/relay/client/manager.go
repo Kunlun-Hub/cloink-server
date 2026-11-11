@@ -44,29 +44,18 @@ var (
 	// influences picker ordering. A single sample is too noisy to trust.
 	relayRTTMinSamples = 2
 	// relayRTTHysteresisMs is the absolute RTT band inside which two relays
-	// are treated as equally fast, so the picker does not reorder on noise.
+	// are treated as equally fast, so the picker and standby selection do not
+	// switch on probe noise.
 	relayRTTHysteresisMs = 25
-	// relayRTTMigrationStreaks is how many consecutive probe ticks the home
-	// relay must be significantly slower than a same-priority alternative
-	// before the manager migrates to it.
-	relayRTTMigrationStreaks = 3
+	// dataPlaneRecoveryRetryInterval is the initial backoff before retrying a
+	// failed home-relay data-plane failover when all candidate relays failed.
+	dataPlaneRecoveryRetryInterval = 2 * time.Second
 
 	ErrRelayClientNotConnected = fmt.Errorf("relay client not connected")
 )
 
-// EnvAutoFailback controls the client's automatic failback to a recovered
-// higher-priority Relay server. The client enables it by default; the Manager
-// and its WithAutoFailback option remain opt-in for other embedders.
+// EnvAutoFailback is retained for backwards compatibility with callers.
 const EnvAutoFailback = "NB_RELAY_AUTO_FAILBACK"
-
-const (
-	// relayAutoFailbackInterval is how often the manager checks whether the
-	// home Relay can move back to a higher-priority server that has recovered.
-	relayAutoFailbackInterval = 60 * time.Second
-	// relayFailbackStableChecks is the number of consecutive healthy checks a
-	// higher-priority Relay server needs before the manager fails back to it.
-	relayFailbackStableChecks = 2
-)
 
 // RelayTrack hold the relay clients for the foreign relay servers.
 // With the mutex can ensure we can open new connection in case the relay connection has been established with
@@ -133,6 +122,21 @@ func (c *relayRTTCache) get(relayURL string) (time.Duration, bool) {
 	entry, ok := c.entries[relayURL]
 	c.mu.RUnlock()
 	if !ok || time.Now().After(entry.expiresAt) || entry.samples < relayRTTMinSamples {
+		return 0, false
+	}
+	return entry.rtt, true
+}
+
+// latest returns the most recent smoothed RTT even when only a single probe
+// sample has been recorded so far.
+func (c *relayRTTCache) latest(relayURL string) (time.Duration, bool) {
+	if c == nil {
+		return 0, false
+	}
+	c.mu.RLock()
+	entry, ok := c.entries[relayURL]
+	c.mu.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) || entry.samples < 1 {
 		return 0, false
 	}
 	return entry.rtt, true
@@ -242,6 +246,7 @@ type Manager struct {
 	configuredRelayURLs   []string
 	relayWeights          map[string]int
 	forcedRelayURL        string
+	standbyRelayURL       string
 	relayConfigGeneration atomic.Uint64
 	relayMigrationGrace   time.Duration
 	autoFailback          bool
@@ -253,6 +258,7 @@ type Manager struct {
 	// datagram transport failure is remembered across reconnects.
 	transportFallback *transportFallback
 	dataPlaneFailures *relayDataPlaneFailures
+	dataPlaneRetrying atomic.Bool
 }
 
 // NewManager creates a new manager instance.
@@ -284,6 +290,7 @@ func NewManager(ctx context.Context, serverURLs []string, peerID string, mtu uin
 		rttCache:                newRelayRTTCache(),
 	}
 	m.serverPicker.rttLookup = m.rttCache.get
+	m.serverPicker.standbyLookup = m.StandbyURL
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -318,10 +325,17 @@ func (m *Manager) ReportDataPlaneSuccess(relayAddress, peerKey string) {
 }
 
 func (m *Manager) recoverRelayDataPlane(relayAddress string) {
+	if m.tryRecoverRelayDataPlane(relayAddress) {
+		return
+	}
+	m.scheduleDataPlaneRecoveryRetry(relayAddress)
+}
+
+func (m *Manager) tryRecoverRelayDataPlane(relayAddress string) bool {
 	m.switchMu.Lock()
 	defer m.switchMu.Unlock()
 	if !m.running.Load() || m.ctx.Err() != nil {
-		return
+		return true
 	}
 
 	m.relayClientMu.RLock()
@@ -341,10 +355,14 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 		m.markDataPlaneTransportFailure(home)
 		m.markDataPlaneServerFailure(homeURL)
 		candidateURLs := m.recoveryCandidateURLs(homeURL)
+		standbyURL := m.StandbyURL()
+		if standbyURL == homeURL || !slices.Contains(candidateURLs, standbyURL) {
+			standbyURL = ""
+		}
 		var candidate *Client
 		var err error
 		if len(candidateURLs) > 0 {
-			candidate, err = m.serverPicker.PickServerFrom(m.ctx, candidateURLs)
+			candidate, err = m.serverPicker.PickStandbyWithFallback(m.ctx, standbyURL, candidateURLs)
 		} else {
 			// A Relay accepts one session per peer ID, so replacing the only
 			// available URL cannot overlap old and new sessions.
@@ -357,26 +375,35 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 			if len(candidateURLs) == 0 {
 				log.Errorf("failed to reconnect the only Relay %s: %v", homeURL, err)
 				go m.reconnectGuard.StartReconnectTrys(m.ctx, home)
-			} else {
-				log.Errorf("failed to prepare replacement Relay client; keeping %s active: %v", homeURL, err)
+				return true
 			}
-			return
+			log.Errorf("failed to prepare replacement Relay client; keeping %s active and scheduling retry: %v", homeURL, err)
+			if m.dataPlaneFailures != nil {
+				m.dataPlaneFailures.resetCooldown(relayAddress)
+			}
+			return false
 		}
 		if !m.swapHomeRelay(home, candidate, generation) {
 			_ = candidate.Close()
-			return
+			m.relayClientMu.RLock()
+			stillSameHome := m.relayClient == home
+			m.relayClientMu.RUnlock()
+			if stillSameHome && m.dataPlaneFailures != nil {
+				m.dataPlaneFailures.resetCooldown(relayAddress)
+			}
+			return !stillSameHome
 		}
 		log.Infof("replacement home Relay client %s is ready; migrating peer connections from %s", candidate.connectionURL, homeURL)
 		m.onServerConnected()
 		m.retireHomeRelay(home)
-		return
+		return true
 	}
 
 	m.relayClientsMutex.RLock()
 	track := m.relayClients[relayAddress]
 	m.relayClientsMutex.RUnlock()
 	if track == nil {
-		return
+		return true
 	}
 	track.RLock()
 	foreign := track.relayClient
@@ -385,6 +412,62 @@ func (m *Manager) recoverRelayDataPlane(relayAddress string) {
 		log.Warnf("Relay data plane is unresponsive on foreign server %s; rebuilding it", relayAddress)
 		_ = foreign.Close()
 	}
+	return true
+}
+
+func (m *Manager) scheduleDataPlaneRecoveryRetry(relayAddress string) {
+	if !m.dataPlaneRetrying.CompareAndSwap(false, true) {
+		return
+	}
+	m.relayClientMu.RLock()
+	failedHome := m.relayClient
+	m.relayClientMu.RUnlock()
+	if failedHome == nil {
+		m.dataPlaneRetrying.Store(false)
+		return
+	}
+	triggeredAt := time.Now()
+	if m.dataPlaneFailures != nil && m.dataPlaneFailures.now != nil {
+		triggeredAt = m.dataPlaneFailures.now()
+	}
+
+	go func() {
+		defer m.dataPlaneRetrying.Store(false)
+		delay := dataPlaneRecoveryRetryInterval
+		if delay <= 0 {
+			delay = 2 * time.Second
+		}
+		maxDelay := m.maxBackoffInterval
+		if maxDelay <= 0 {
+			maxDelay = defaultMaxBackoffInterval
+		}
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		for {
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-timer.C:
+				if !m.running.Load() || m.ctx.Err() != nil {
+					return
+				}
+				m.relayClientMu.RLock()
+				currentHome := m.relayClient
+				m.relayClientMu.RUnlock()
+				if currentHome == nil || currentHome != failedHome {
+					return
+				}
+				if m.dataPlaneFailures != nil && m.dataPlaneFailures.hasSucceededSince(relayAddress, triggeredAt) {
+					return
+				}
+				if m.tryRecoverRelayDataPlane(relayAddress) {
+					return
+				}
+				delay = min(delay*2, maxDelay)
+				timer.Reset(delay)
+			}
+		}
+	}()
 }
 
 func (m *Manager) markDataPlaneTransportFailure(relayClient *Client) {
@@ -443,14 +526,8 @@ func (m *Manager) Serve() error {
 
 	go m.listenGuardEvent(m.ctx)
 	go m.startCleanupLoop()
-	// The failback loop only runs when explicitly enabled, so a disabled
-	// manager pays no cost for it.
-	if m.autoFailback {
-		go m.startFailbackLoop()
-	}
-	// The probe loop keeps dial RTTs warm so the picker can order relays
-	// inside a priority group by latency. It is cheap: one transport
-	// handshake per relay per interval, no relay session is established.
+	// The probe loop periodically probes non-home relays via lightweight
+	// transport handshakes to maintain the lowest-latency standby relay.
 	go m.startProbeLoop()
 	return err
 }
@@ -619,32 +696,48 @@ func (m *Manager) HasRelayAddress() bool {
 	return len(m.serverPicker.loadConfig().serverURLs) > 0
 }
 
+// StandbyURL returns the currently selected standby relay URL, or empty string
+// if no standby relay has been selected or it is no longer valid in the
+// current configuration.
+func (m *Manager) StandbyURL() string {
+	currentURL := m.currentRelayURL()
+	m.relayConfigMu.RLock()
+	defer m.relayConfigMu.RUnlock()
+	if m.standbyRelayURL == "" || m.standbyRelayURL == currentURL || !slices.Contains(m.configuredRelayURLs, m.standbyRelayURL) {
+		return ""
+	}
+	return m.standbyRelayURL
+}
+
+func (m *Manager) setStandbyURL(relayURL string) {
+	m.relayConfigMu.Lock()
+	m.standbyRelayURL = relayURL
+	m.relayConfigMu.Unlock()
+}
+
 func (m *Manager) UpdateServerURLs(serverURLs []string) {
 	m.UpdateServerURLsWithWeights(serverURLs, nil)
 }
 
-func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, relayWeights map[string]int) {
+func (m *Manager) UpdateServerURLsWithWeights(serverURLs []string, _ map[string]int) {
 	log.Infof("update relay server URLs: %v", serverURLs)
 	m.relayConfigMu.Lock()
 	previousURLs := m.effectiveRelayURLsLocked()
-	previousWeights := maps.Clone(m.relayWeights)
 	previousForcedURL := m.forcedRelayURL
 	m.relayWeights = relayWeightsFromURLs(serverURLs)
-	for relayURL, weight := range relayWeights {
-		if relayURL != "" && weight > 0 {
-			m.relayWeights[relayURL] = weight
-		}
-	}
-	m.configuredRelayURLs = sortRelayURLsByWeight(serverURLs, m.relayWeights)
+	m.configuredRelayURLs = slices.Clone(serverURLs)
 	if m.forcedRelayURL != "" && !slices.Contains(m.configuredRelayURLs, m.forcedRelayURL) {
 		log.Warnf("forced Relay server %s is no longer configured, clearing override", m.forcedRelayURL)
 		m.forcedRelayURL = ""
+	}
+	if m.standbyRelayURL != "" && !slices.Contains(m.configuredRelayURLs, m.standbyRelayURL) {
+		m.standbyRelayURL = ""
 	}
 	effectiveURLs := m.effectiveRelayURLsLocked()
 	weights := maps.Clone(m.relayWeights)
 	forcedURL := m.forcedRelayURL
 	m.relayConfigMu.Unlock()
-	configChanged := !slices.Equal(previousURLs, effectiveURLs) || !maps.Equal(previousWeights, weights) || previousForcedURL != forcedURL
+	configChanged := !slices.Equal(previousURLs, effectiveURLs) || previousForcedURL != forcedURL
 
 	m.serverPicker.storeConfig(pickerConfig{
 		serverURLs:    effectiveURLs,
@@ -663,6 +756,7 @@ func (m *Manager) RelayServers() []RelayServerInfo {
 	configuredURLs := slices.Clone(m.configuredRelayURLs)
 	weights := maps.Clone(m.relayWeights)
 	forcedURL := m.forcedRelayURL
+	standbyURL := m.standbyRelayURL
 	m.relayConfigMu.RUnlock()
 	currentURL := m.currentRelayURL()
 
@@ -673,9 +767,13 @@ func (m *Manager) RelayServers() []RelayServerInfo {
 			weight = defaultRelayWeight
 		}
 		info := RelayServerInfo{
-			URL: relayURL, Weight: weight, Forced: relayURL == forcedURL, Current: relayURL == currentURL,
+			URL:       relayURL,
+			Weight:    weight,
+			Preferred: relayURL == standbyURL && relayURL != currentURL,
+			Forced:    relayURL == forcedURL,
+			Current:   relayURL == currentURL,
 		}
-		if rtt, ok := m.rttCache.get(relayURL); ok {
+		if rtt, ok := m.rttCache.latest(relayURL); ok {
 			info.RTTMs = rtt.Milliseconds()
 		}
 		result = append(result, info)
@@ -836,6 +934,7 @@ func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string, generation uint64
 	}
 
 	if len(serverURLs) == 0 {
+		m.setStandbyURL("")
 		m.relayClientMu.Lock()
 		if !m.running.Load() || m.relayClient == nil {
 			m.relayClientMu.Unlock()
@@ -856,15 +955,22 @@ func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string, generation uint64
 	}
 
 	m.relayClientMu.RLock()
-	if !m.running.Load() || m.relayClient == nil || m.currentRelayStillHighestPriorityLocked(serverURLs) {
+	if !m.running.Load() || m.relayClient == nil {
 		m.relayClientMu.RUnlock()
+		return
+	}
+	if m.currentRelayStillHighestPriorityLocked(serverURLs) {
+		m.relayClientMu.RUnlock()
+		if m.StandbyURL() == "" && len(serverURLs) > 1 {
+			go m.refreshStandbyRelay()
+		}
 		return
 	}
 	oldClient := m.relayClient
 	oldURL := oldClient.connectionURL
 	m.relayClientMu.RUnlock()
 
-	log.Infof("relay priority changed from %s to %s; preparing the new home Relay before switching", oldURL, serverURLs[0])
+	log.Infof("home Relay %s is no longer target in %v; preparing replacement home Relay before switching", oldURL, serverURLs)
 	candidateURLs := m.priorityMigrationCandidateURLs(oldClient, serverURLs)
 	if len(candidateURLs) == 0 {
 		return
@@ -873,18 +979,22 @@ func (m *Manager) switchHomeRelayIfNeeded(serverURLs []string, generation uint64
 	foreignCandidate := candidate != nil
 	if candidate == nil {
 		if foreignTrackPresent {
-			log.Infof("higher-priority Relay connection is still being prepared; keeping %s active", oldURL)
+			log.Infof("replacement Relay connection is still being prepared; keeping %s active", oldURL)
 			return
 		}
 		var err error
-		candidate, err = m.serverPicker.PickServerFrom(m.ctx, candidateURLs)
+		standbyURL := m.StandbyURL()
+		if standbyURL == oldURL || !slices.Contains(candidateURLs, standbyURL) {
+			standbyURL = ""
+		}
+		candidate, err = m.serverPicker.PickStandbyWithFallback(m.ctx, standbyURL, candidateURLs)
 		if err != nil {
-			log.Errorf("failed to prepare higher-priority Relay; keeping %s active: %v", oldURL, err)
+			log.Errorf("failed to prepare replacement Relay; keeping %s active: %v", oldURL, err)
 			return
 		}
 	}
 	if !m.isValidPriorityMigration(oldClient, candidate, serverURLs) {
-		log.Infof("no better Relay candidate became ready; keeping %s active", oldURL)
+		log.Infof("no valid Relay candidate became ready; keeping %s active", oldURL)
 		if !foreignCandidate {
 			_ = candidate.Close()
 		}
@@ -937,7 +1047,6 @@ func (m *Manager) priorityMigrationCandidateURLs(oldClient *Client, serverURLs [
 	oldURL := oldClient.connectionURL
 	m.relayConfigMu.RLock()
 	forcedURL := m.forcedRelayURL
-	oldWeight := m.relayWeights[oldURL]
 	m.relayConfigMu.RUnlock()
 	if forcedURL != "" {
 		if forcedURL == oldURL {
@@ -948,17 +1057,7 @@ func (m *Manager) priorityMigrationCandidateURLs(oldClient *Client, serverURLs [
 	if !slices.Contains(serverURLs, oldURL) {
 		return slices.Clone(serverURLs)
 	}
-	if oldWeight <= 0 {
-		oldWeight = defaultRelayWeight
-	}
-	result := make([]string, 0, len(serverURLs))
-	for _, relayURL := range serverURLs {
-		weight := m.serverPicker.relayURLWeight(relayURL)
-		if relayURL != oldURL && weight > oldWeight {
-			result = append(result, relayURL)
-		}
-	}
-	return result
+	return nil
 }
 
 func (m *Manager) isValidPriorityMigration(oldClient, candidate *Client, serverURLs []string) bool {
@@ -968,7 +1067,6 @@ func (m *Manager) isValidPriorityMigration(oldClient, candidate *Client, serverU
 	oldURL, candidateURL := oldClient.connectionURL, candidate.connectionURL
 	m.relayConfigMu.RLock()
 	forcedURL := m.forcedRelayURL
-	oldWeight, candidateWeight := m.relayWeights[oldURL], m.relayWeights[candidateURL]
 	m.relayConfigMu.RUnlock()
 	if forcedURL != "" {
 		return candidateURL == forcedURL
@@ -976,13 +1074,7 @@ func (m *Manager) isValidPriorityMigration(oldClient, candidate *Client, serverU
 	if !slices.Contains(serverURLs, oldURL) {
 		return slices.Contains(serverURLs, candidateURL)
 	}
-	if oldWeight <= 0 {
-		oldWeight = defaultRelayWeight
-	}
-	if candidateWeight <= 0 {
-		candidateWeight = defaultRelayWeight
-	}
-	return candidateURL != oldURL && candidateWeight > oldWeight
+	return false
 }
 
 func (m *Manager) swapHomeRelay(oldClient, candidate *Client, generation uint64) bool {
@@ -991,8 +1083,8 @@ func (m *Manager) swapHomeRelay(oldClient, candidate *Client, generation uint64)
 	}
 
 	m.relayClientMu.Lock()
-	defer m.relayClientMu.Unlock()
 	if !m.running.Load() || m.ctx.Err() != nil || m.relayClient != oldClient || generation != m.relayConfigGeneration.Load() {
+		m.relayClientMu.Unlock()
 		return false
 	}
 	m.relayClientsMutex.Lock()
@@ -1012,6 +1104,14 @@ func (m *Manager) swapHomeRelay(oldClient, candidate *Client, generation uint64)
 	oldClient.SetOnDisconnectListener(func(address string) { m.onServerDisconnectedClient(oldClient, address) })
 	m.relayClient = candidate
 	candidate.SetOnDisconnectListener(func(address string) { m.onServerDisconnectedClient(candidate, address) })
+	m.relayClientMu.Unlock()
+
+	m.relayConfigMu.Lock()
+	if m.standbyRelayURL == candidate.connectionURL {
+		m.standbyRelayURL = ""
+	}
+	m.relayConfigMu.Unlock()
+	go m.refreshStandbyRelay()
 	return true
 }
 
@@ -1067,18 +1167,11 @@ func (m *Manager) currentRelayStillHighestPriorityLocked(serverURLs []string) bo
 	currentURL := m.relayClient.connectionURL
 	m.relayConfigMu.RLock()
 	forcedURL := m.forcedRelayURL
-	currentWeight, topWeight := m.relayWeights[currentURL], m.relayWeights[serverURLs[0]]
 	m.relayConfigMu.RUnlock()
 	if forcedURL != "" {
 		return currentURL == forcedURL
 	}
-	if currentWeight <= 0 {
-		currentWeight = defaultRelayWeight
-	}
-	if topWeight <= 0 {
-		topWeight = defaultRelayWeight
-	}
-	return currentWeight == topWeight && slices.Contains(serverURLs, currentURL)
+	return slices.Contains(serverURLs, currentURL)
 }
 
 // UpdateToken updates the token in the token store.
@@ -1261,10 +1354,18 @@ func (m *Manager) listenGuardEvent(ctx context.Context) {
 
 func (m *Manager) storeClient(client *Client) {
 	m.relayClientMu.Lock()
-	defer m.relayClientMu.Unlock()
-
 	m.relayClient = client
 	m.relayClient.SetOnDisconnectListener(func(address string) { m.onServerDisconnectedClient(client, address) })
+	m.relayClientMu.Unlock()
+
+	if client != nil {
+		m.relayConfigMu.Lock()
+		if m.standbyRelayURL == client.connectionURL {
+			m.standbyRelayURL = ""
+		}
+		m.relayConfigMu.Unlock()
+		go m.refreshStandbyRelay()
+	}
 }
 
 func (m *Manager) isForeignServer(homeClient *Client, address string) (bool, error) {
@@ -1288,34 +1389,11 @@ func (m *Manager) startCleanupLoop() {
 	}
 }
 
-// startFailbackLoop periodically checks whether a higher-priority Relay server
-// has recovered so the home Relay can fail back to it.
-func (m *Manager) startFailbackLoop() {
-	log.Infof("Relay auto-failback enabled, checking every %s", relayAutoFailbackInterval)
-	ticker := time.NewTicker(relayAutoFailbackInterval)
-	defer ticker.Stop()
-	// healthyStreaks counts consecutive ticks in which the failback target was
-	// observed outside its failure cooldown. It is owned by this loop.
-	healthyStreaks := make(map[string]int)
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-ticker.C:
-			m.failbackTick(healthyStreaks)
-		}
-	}
-}
-
-// startProbeLoop periodically refreshes dial RTTs for the relays sharing the
-// top priority group, so the server picker can order them by latency. Like
-// DERP probing in Tailscale, each tick is jittered to keep a fleet of clients
-// from probing in lockstep.
+// startProbeLoop periodically probes non-home relays via lightweight transport
+// handshakes to maintain the lowest-latency healthy standby relay. Like DERP
+// probing in Tailscale, each tick is jittered to keep a fleet of clients from
+// probing in lockstep.
 func (m *Manager) startProbeLoop() {
-	// slowStreaks counts consecutive ticks in which the home relay was
-	// significantly slower than a same-priority alternative. It is owned by
-	// this loop.
-	slowStreaks := make(map[string]int)
 	timer := time.NewTimer(relayRTTProbeInterval + rand.N(relayRTTProbeJitter))
 	defer timer.Stop()
 	for {
@@ -1324,15 +1402,21 @@ func (m *Manager) startProbeLoop() {
 			return
 		case <-timer.C:
 			timer.Reset(relayRTTProbeInterval + rand.N(relayRTTProbeJitter))
-			m.probeTick(slowStreaks)
+			m.probeTick()
 		}
 	}
 }
 
-// probeTick probes the top priority group with the cheap transport probe and,
-// when the home relay is persistently much slower than an alternative, hands
-// the migration decision to maybeMigrateOnRTT.
-func (m *Manager) probeTick(slowStreaks map[string]int) {
+// refreshStandbyRelay immediately probes all non-home relays and selects the
+// lowest-latency healthy relay as the standby relay.
+func (m *Manager) refreshStandbyRelay() {
+	m.probeTick()
+}
+
+// probeTick probes all non-home configured relays with the lightweight
+// transport probe and updates the standby relay selection. The primary (home)
+// relay is never migrated by background probes while it remains connected.
+func (m *Manager) probeTick() {
 	if !m.running.Load() || m.ctx.Err() != nil {
 		return
 	}
@@ -1343,21 +1427,34 @@ func (m *Manager) probeTick(slowStreaks map[string]int) {
 	}
 	m.switchMu.Unlock()
 
+	generation := m.relayConfigGeneration.Load()
+	homeURL := m.currentRelayURL()
 	m.relayConfigMu.RLock()
 	urls := slices.Clone(m.configuredRelayURLs)
-	weights := maps.Clone(m.relayWeights)
 	m.relayConfigMu.RUnlock()
 
-	group := topPriorityGroup(urls, weights)
-	if len(group) < 2 {
-		clear(slowStreaks)
+	candidates := make([]string, 0, len(urls))
+	for _, u := range urls {
+		if u != "" && u != homeURL {
+			candidates = append(candidates, u)
+		}
+	}
+	if len(candidates) == 0 {
+		if generation == m.relayConfigGeneration.Load() && m.currentRelayURL() == homeURL {
+			m.setStandbyURL("")
+		}
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(m.ctx, relayProbeTimeout)
 	defer cancel()
-	var wg sync.WaitGroup
-	for _, relayURL := range group {
+
+	var (
+		wg         sync.WaitGroup
+		probedMu   sync.Mutex
+		probedRTTs = make(map[string]time.Duration, len(candidates))
+	)
+	for _, relayURL := range candidates {
 		wg.Add(1)
 		go func(url string) {
 			defer wg.Done()
@@ -1367,12 +1464,78 @@ func (m *Manager) probeTick(slowStreaks map[string]int) {
 				return
 			}
 			m.rttCache.set(url, rtt)
+			if !m.relayServerCoolingDown(url) {
+				probedMu.Lock()
+				probedRTTs[url] = rtt
+				probedMu.Unlock()
+			}
 			log.Debugf("relay RTT probe for %s: %s", url, rtt.Round(time.Millisecond))
 		}(relayURL)
 	}
 	wg.Wait()
 
-	m.maybeMigrateOnRTT(group, slowStreaks)
+	if generation != m.relayConfigGeneration.Load() || m.currentRelayURL() != homeURL {
+		return
+	}
+	m.selectStandbyFromProbes(homeURL, candidates, probedRTTs)
+}
+
+// selectStandbyFromProbes updates standbyRelayURL based on fresh non-home
+// probe results:
+//   - If the current standby relay succeeded in this probe round and no other
+//     healthy candidate is faster by more than relayRTTHysteresis, keep the
+//     current standby relay unchanged.
+//   - If the current standby relay failed the probe, is in cooldown, or became
+//     significantly slower than another healthy candidate, pick the healthy
+//     non-home candidate with the lowest RTT as the new standby relay.
+func (m *Manager) selectStandbyFromProbes(homeURL string, candidates []string, probedRTTs map[string]time.Duration) {
+	liveHomeURL := m.currentRelayURL()
+	if homeURL != "" && liveHomeURL != "" && liveHomeURL != homeURL {
+		return
+	}
+	if liveHomeURL == "" {
+		liveHomeURL = homeURL
+	}
+
+	m.relayConfigMu.Lock()
+	bestURL := ""
+	bestRTT := time.Duration(0)
+	for _, u := range candidates {
+		if u == "" || u == homeURL || u == liveHomeURL || !slices.Contains(m.configuredRelayURLs, u) {
+			continue
+		}
+		rtt, ok := probedRTTs[u]
+		if !ok {
+			continue
+		}
+		if bestURL == "" || rtt < bestRTT {
+			bestURL = u
+			bestRTT = rtt
+		}
+	}
+
+	currentStandby := m.standbyRelayURL
+	if currentStandby != "" && currentStandby != homeURL && currentStandby != liveHomeURL &&
+		slices.Contains(candidates, currentStandby) &&
+		slices.Contains(m.configuredRelayURLs, currentStandby) {
+		if standbyRTT, ok := probedRTTs[currentStandby]; ok {
+			if bestURL == "" || bestURL == currentStandby || standbyRTT-bestRTT <= relayRTTHysteresis {
+				m.relayConfigMu.Unlock()
+				return
+			}
+		}
+	}
+	changed := m.standbyRelayURL != bestURL
+	m.standbyRelayURL = bestURL
+	m.relayConfigMu.Unlock()
+
+	if changed {
+		if bestURL != "" {
+			log.Infof("selected standby Relay server: %s (RTT %s)", bestURL, bestRTT.Round(time.Millisecond))
+		} else {
+			log.Debug("no healthy standby Relay server available")
+		}
+	}
 }
 
 // lightProbe measures the transport handshake round trip to a relay without
@@ -1382,174 +1545,6 @@ func (m *Manager) lightProbe(ctx context.Context, relayURL string) (time.Duratio
 	probeClient := NewClient(relayURL, m.tokenStore, m.peerID+"-rtt-probe", m.mtu)
 	probeClient.SetTransportFallback(m.transportFallback)
 	return probeClient.ProbeTransport(ctx)
-}
-
-// topPriorityGroup returns the relay URLs sharing the highest effective
-// weight. Probing and RTT ordering only matter inside one weight group,
-// because a relay never outranks a higher-weight one.
-func topPriorityGroup(urls []string, weights map[string]int) []string {
-	best := -1
-	for _, u := range urls {
-		if w := relayWeightOrDefault(weights, u); w > best {
-			best = w
-		}
-	}
-	if best < 0 {
-		return nil
-	}
-	var group []string
-	for _, u := range urls {
-		if relayWeightOrDefault(weights, u) == best {
-			group = append(group, u)
-		}
-	}
-	return group
-}
-
-// maybeMigrateOnRTT migrates the home relay to a same-priority alternative
-// that has been significantly faster for relayRTTMigrationStreaks consecutive
-// ticks. It never overrides weight priority: both relays are in the top
-// priority group. The thresholds are deliberately conservative because a
-// migration briefly disrupts peer traffic.
-func (m *Manager) maybeMigrateOnRTT(group []string, slowStreaks map[string]int) {
-	homeURL := m.currentRelayURL()
-	if homeURL == "" || !slices.Contains(group, homeURL) {
-		clear(slowStreaks)
-		return
-	}
-	homeRTT, ok := m.rttCache.get(homeURL)
-	if !ok {
-		clear(slowStreaks)
-		return
-	}
-	bestURL, bestRTT := "", time.Duration(0)
-	for _, u := range group {
-		if u == homeURL {
-			continue
-		}
-		rtt, ok := m.rttCache.get(u)
-		if !ok {
-			continue
-		}
-		if bestURL == "" || rtt < bestRTT {
-			bestURL, bestRTT = u, rtt
-		}
-	}
-	// The alternative must be at least twice as fast and 100ms faster in
-	// absolute terms; below that the win is not worth a migration.
-	if bestURL == "" || homeRTT < 2*bestRTT || homeRTT-bestRTT < 100*time.Millisecond {
-		clear(slowStreaks)
-		return
-	}
-	slowStreaks[bestURL]++
-	if slowStreaks[bestURL] < relayRTTMigrationStreaks {
-		log.Debugf("home relay %s slower than %s (%s vs %s), streak %d/%d",
-			homeURL, bestURL, homeRTT.Round(time.Millisecond), bestRTT.Round(time.Millisecond),
-			slowStreaks[bestURL], relayRTTMigrationStreaks)
-		return
-	}
-	clear(slowStreaks)
-	log.Infof("home relay %s persistently slower than %s (%s vs %s); migrating",
-		homeURL, bestURL, homeRTT.Round(time.Millisecond), bestRTT.Round(time.Millisecond))
-	m.migrateHomeRelayTo(bestURL)
-}
-
-// migrateHomeRelayTo connects to targetURL and swaps it in as the home relay.
-// It follows the same swap-then-retire pattern as the data-plane recovery
-// path, guarded by the config generation so a concurrent reconfiguration wins.
-func (m *Manager) migrateHomeRelayTo(targetURL string) {
-	if !m.running.Load() || m.ctx.Err() != nil {
-		return
-	}
-	m.relayClientMu.RLock()
-	home := m.relayClient
-	m.relayClientMu.RUnlock()
-	if home == nil {
-		return
-	}
-	homeURL := home.connectionURL
-	if homeURL == targetURL {
-		return
-	}
-	generation := m.relayConfigGeneration.Load()
-	candidate, err := m.serverPicker.PickServerFrom(m.ctx, []string{targetURL})
-	if err != nil {
-		log.Warnf("RTT migration to %s failed to connect; keeping %s: %v", targetURL, homeURL, err)
-		return
-	}
-	if !m.swapHomeRelay(home, candidate, generation) {
-		log.Warnf("RTT migration to %s lost the race; keeping %s", targetURL, homeURL)
-		_ = candidate.Close()
-		return
-	}
-	log.Infof("RTT migration: home relay moved from %s to %s", homeURL, targetURL)
-	m.onServerConnected()
-	m.retireHomeRelay(home)
-}
-
-// failbackTick evaluates one automatic failback opportunity. It only ever
-// moves the home Relay upward to the strictly highest-weight server, and only
-// after that server has been observed healthy for relayFailbackStableChecks
-// consecutive ticks, which damps flapping around a recovering server. The
-// actual move reuses switchHomeRelayIfNeeded so the migration, its validation,
-// and the generation guard stay on the single existing path.
-func (m *Manager) failbackTick(healthyStreaks map[string]int) {
-	if !m.autoFailback || !m.running.Load() || m.ctx.Err() != nil {
-		return
-	}
-
-	m.relayConfigMu.RLock()
-	forcedURL := m.forcedRelayURL
-	weights := maps.Clone(m.relayWeights)
-	configuredURLs := slices.Clone(m.configuredRelayURLs)
-	m.relayConfigMu.RUnlock()
-
-	// A manual relay override always wins over automatic failback.
-	if forcedURL != "" {
-		clear(healthyStreaks)
-		return
-	}
-
-	homeURL := m.currentRelayURL()
-	homeWeight := relayWeightOrDefault(weights, homeURL)
-	targetURL, targetWeight := highestWeightRelay(configuredURLs, weights)
-	if homeURL == "" || targetURL == "" || targetURL == homeURL || targetWeight <= homeWeight {
-		clear(healthyStreaks)
-		return
-	}
-
-	// Drop streaks for servers that are no longer the failback target, so a
-	// stale count can never trigger a move to a different server.
-	for trackedURL := range healthyStreaks {
-		if trackedURL != targetURL {
-			delete(healthyStreaks, trackedURL)
-		}
-	}
-
-	// A server that failed recently sits in the picker's failure cooldown. It
-	// must stay out of cooldown for relayFailbackStableChecks consecutive ticks
-	// to count as stable enough to fail back to.
-	if m.relayServerCoolingDown(targetURL) {
-		if _, ok := healthyStreaks[targetURL]; ok {
-			log.Debugf("deferring Relay failback to %s: server is in failure cooldown", targetURL)
-			delete(healthyStreaks, targetURL)
-		}
-		return
-	}
-	healthyStreaks[targetURL]++
-	if healthyStreaks[targetURL] < relayFailbackStableChecks {
-		log.Debugf("Relay %s healthy for %d of %d failback checks", targetURL, healthyStreaks[targetURL], relayFailbackStableChecks)
-		return
-	}
-	clear(healthyStreaks)
-
-	log.Infof("failing back to higher-priority Relay %s (weight %d) from %s (weight %d): server is stable",
-		targetURL, targetWeight, homeURL, homeWeight)
-	// The config is unchanged, so the generation is observed, not advanced: a
-	// concurrent relay config update invalidates this attempt inside
-	// switchHomeRelayIfNeeded.
-	generation := m.relayConfigGeneration.Load()
-	go m.switchHomeRelayIfNeeded(sortRelayURLsByWeight(configuredURLs, weights), generation)
 }
 
 // relayServerCoolingDown reports whether the picker's failure cooldown
@@ -1568,26 +1563,6 @@ func (m *Manager) relayServerCoolingDown(relayURL string) bool {
 		return false
 	}
 	return true
-}
-
-// relayWeightOrDefault returns the configured weight of a Relay server,
-// falling back to the default weight for unknown or non-positive values.
-func relayWeightOrDefault(weights map[string]int, relayURL string) int {
-	if weight := weights[relayURL]; weight > 0 {
-		return weight
-	}
-	return defaultRelayWeight
-}
-
-// highestWeightRelay returns the first URL with the highest configured weight.
-func highestWeightRelay(relayURLs []string, weights map[string]int) (string, int) {
-	bestURL, bestWeight := "", 0
-	for _, relayURL := range relayURLs {
-		if weight := relayWeightOrDefault(weights, relayURL); weight > bestWeight {
-			bestURL, bestWeight = relayURL, weight
-		}
-	}
-	return bestURL, bestWeight
 }
 
 func (m *Manager) cleanUpUnusedRelays() {

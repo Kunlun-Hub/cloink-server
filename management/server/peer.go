@@ -30,6 +30,7 @@ import (
 
 	"github.com/netbirdio/netbird/management/server/activity"
 	"github.com/netbirdio/netbird/management/server/affectedpeers"
+	"github.com/netbirdio/netbird/management/server/notifications"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/telemetry"
 	"github.com/netbirdio/netbird/shared/management/status"
@@ -101,6 +102,12 @@ func (am *DefaultAccountManager) MarkPeerConnected(ctx context.Context, peerPubK
 		return err
 	}
 
+	wasConnected := peer.Status != nil && peer.Status.Connected
+	var prevSessionStartedAt int64
+	if peer.Status != nil {
+		prevSessionStartedAt = peer.Status.SessionStartedAt
+	}
+
 	updated, err := am.Store.MarkPeerConnectedIfNewerSession(ctx, accountID, peer.ID, sessionStartedAt)
 	if err != nil {
 		am.metrics.AccountManagerMetrics().CountPeerStatusUpdate(telemetry.PeerStatusConnect, telemetry.PeerStatusError)
@@ -114,6 +121,10 @@ func (am *DefaultAccountManager) MarkPeerConnected(ctx context.Context, peerPubK
 	am.metrics.AccountManagerMetrics().CountPeerStatusUpdate(telemetry.PeerStatusConnect, telemetry.PeerStatusApplied)
 
 	log.WithContext(ctx).Debugf("mark peer %s connected", peer.ID)
+
+	if !peer.ProxyMeta.Embedded && am.shouldNotifyPeerOnline(peer.ID, wasConnected, prevSessionStartedAt) {
+		am.notifyPeerWebhookAsync(ctx, accountID, types.NotificationEventPeerOnline, peer, true)
+	}
 
 	if err = am.schedulePeerExpirations(ctx, accountID, peer); err != nil {
 		return err
@@ -177,6 +188,8 @@ func (am *DefaultAccountManager) MarkPeerDisconnected(ctx context.Context, peerP
 		return err
 	}
 
+	wasConnected := peer.Status != nil && peer.Status.Connected
+
 	updated, err := am.Store.MarkPeerDisconnectedIfSameSession(ctx, accountID, peer.ID, sessionStartedAt)
 	if err != nil {
 		am.metrics.AccountManagerMetrics().CountPeerStatusUpdate(telemetry.PeerStatusDisconnect, telemetry.PeerStatusError)
@@ -189,8 +202,13 @@ func (am *DefaultAccountManager) MarkPeerDisconnected(ctx context.Context, peerP
 		return nil
 	}
 	am.metrics.AccountManagerMetrics().CountPeerStatusUpdate(telemetry.PeerStatusDisconnect, telemetry.PeerStatusApplied)
+	am.clearPeerOnlineTransition(peer.ID)
 
 	log.WithContext(ctx).Debugf("mark peer %s disconnected", peer.ID)
+
+	if !peer.ProxyMeta.Embedded && wasConnected {
+		am.notifyPeerWebhookAsync(ctx, accountID, types.NotificationEventPeerOffline, peer, false)
+	}
 
 	// Symmetric with MarkPeerConnected: when an embedded proxy peer goes
 	// offline, refresh the peers that had synthesized records pointing at
@@ -1004,6 +1022,9 @@ func (am *DefaultAccountManager) AddPeer(ctx context.Context, accountID, setupKe
 
 	if !temporary {
 		am.StoreEvent(ctx, opEvent.InitiatorID, opEvent.TargetID, opEvent.AccountID, opEvent.Activity, opEvent.Meta)
+		if !newPeer.ProxyMeta.Embedded {
+			am.notifyPeerWebhookAsync(ctx, accountID, types.NotificationEventPeerAdd, newPeer, false)
+		}
 	}
 	if requiresApproval {
 		am.notifyDevicePendingApproval(ctx, accountID, newPeer)
@@ -1906,4 +1927,148 @@ func isPeerLinkedToNetworkRouter(ctx context.Context, transaction store.Store, a
 	}
 
 	return false, nil
+}
+
+// shouldNotifyPeerOnline reports whether a successful MarkPeerConnectedIfNewerSession
+// call represents an actual offline -> online state transition rather than a
+// session refresh/stream replacement for an already-online peer or a duplicate
+// concurrent connect race from the same offline state.
+func (am *DefaultAccountManager) shouldNotifyPeerOnline(peerID string, wasConnected bool, prevSessionStartedAt int64) bool {
+	if wasConnected {
+		return false
+	}
+	now := time.Now()
+	am.peerOnlineMu.Lock()
+	defer am.peerOnlineMu.Unlock()
+	if am.peerOnlineTransitions == nil {
+		am.peerOnlineTransitions = make(map[string]peerOnlineTransition)
+	}
+	if prev, ok := am.peerOnlineTransitions[peerID]; ok {
+		if prev.fromSession == prevSessionStartedAt && now.Sub(prev.at) < 5*time.Second {
+			return false
+		}
+	}
+	am.peerOnlineTransitions[peerID] = peerOnlineTransition{
+		fromSession: prevSessionStartedAt,
+		at:          now,
+	}
+	return true
+}
+
+func (am *DefaultAccountManager) clearPeerOnlineTransition(peerID string) {
+	am.peerOnlineMu.Lock()
+	delete(am.peerOnlineTransitions, peerID)
+	am.peerOnlineMu.Unlock()
+}
+
+// notifyPeerWebhookAsync dispatches a peer lifecycle webhook (peer.add / peer.online / peer.offline)
+// via the bounded webhook worker pool so it never blocks peer registration or gRPC sync streams.
+func (am *DefaultAccountManager) notifyPeerWebhookAsync(ctx context.Context, accountID, eventType string, peer *nbpeer.Peer, forceConnected bool) {
+	if am.Store == nil || peer == nil || accountID == "" {
+		return
+	}
+
+	peerSnapshot := peer.Copy()
+	detachedCtx := context.WithoutCancel(ctx)
+
+	notifications.EnqueuePeerWebhook(func() {
+		matching, err := notifications.MatchingWebhookChannels(detachedCtx, am.Store, accountID, eventType)
+		if err != nil {
+			if !strings.Contains(err.Error(), "database is closed") {
+				log.WithContext(detachedCtx).Warnf("failed to list notification channels for account %s: %v", accountID, err)
+			}
+			return
+		}
+		if len(matching) == 0 {
+			return
+		}
+
+		var dnsDomain string
+		if am.networkMapController != nil {
+			if settings, err := am.Store.GetAccountSettings(detachedCtx, store.LockingStrengthNone, accountID); err == nil && settings != nil {
+				dnsDomain = am.networkMapController.GetDNSDomain(settings)
+			}
+		}
+
+		var groupSummaries []notifications.PeerGroupSummary
+		if peerGroups, err := am.Store.GetPeerGroups(detachedCtx, store.LockingStrengthNone, accountID, peerSnapshot.ID); err == nil {
+			groupSummaries = make([]notifications.PeerGroupSummary, 0, len(peerGroups))
+			for _, g := range peerGroups {
+				if g == nil {
+					continue
+				}
+				groupSummaries = append(groupSummaries, notifications.PeerGroupSummary{
+					ID:   g.ID,
+					Name: g.Name,
+				})
+			}
+		}
+
+		osVersion := peerSnapshot.Meta.OSVersion
+		if osVersion == "" {
+			osVersion = peerSnapshot.Meta.Core
+		}
+		osDisplay := strings.TrimSpace(fmt.Sprintf("%s %s", peerSnapshot.Meta.OS, osVersion))
+
+		var ipv6Str string
+		if peerSnapshot.IPv6.IsValid() {
+			ipv6Str = peerSnapshot.IPv6.String()
+		}
+
+		var connIPStr string
+		if peerSnapshot.Location.ConnectionIP != nil {
+			connIPStr = peerSnapshot.Location.ConnectionIP.String()
+		}
+
+		peerFQDN := peerSnapshot.FQDN(dnsDomain)
+		if peerFQDN == "" {
+			peerFQDN = peerSnapshot.DNSLabel
+		}
+
+		extraFQDNs := make([]string, 0, len(peerSnapshot.ExtraDNSLabels))
+		for _, label := range peerSnapshot.ExtraDNSLabels {
+			if dnsDomain != "" {
+				extraFQDNs = append(extraFQDNs, fmt.Sprintf("%s.%s", label, dnsDomain))
+			} else {
+				extraFQDNs = append(extraFQDNs, label)
+			}
+		}
+
+		var connected bool
+		switch eventType {
+		case types.NotificationEventPeerOnline:
+			connected = true
+		case types.NotificationEventPeerOffline:
+			connected = false
+		default:
+			connected = forceConnected || (peerSnapshot.Status != nil && peerSnapshot.Status.Connected)
+		}
+		lastSeen := time.Now().UTC()
+		if !forceConnected && eventType != types.NotificationEventPeerOffline && peerSnapshot.Status != nil && !peerSnapshot.Status.LastSeen.IsZero() {
+			lastSeen = peerSnapshot.Status.LastSeen
+		}
+
+		info := notifications.PeerWebhookInfo{
+			ID:             peerSnapshot.ID,
+			Name:           peerSnapshot.Name,
+			Hostname:       peerSnapshot.Meta.Hostname,
+			IP:             peerSnapshot.IP.String(),
+			IPv6:           ipv6Str,
+			ConnectionIP:   connIPStr,
+			DNSLabel:       peerFQDN,
+			ExtraDNSLabels: extraFQDNs,
+			CountryCode:    peerSnapshot.Location.CountryCode,
+			CityName:       peerSnapshot.Location.CityName,
+			GeonameID:      peerSnapshot.Location.GeoNameID,
+			OS:             osDisplay,
+			Version:        peerSnapshot.Meta.WtVersion,
+			Connected:      connected,
+			LastSeen:       lastSeen,
+			CreatedAt:      peerSnapshot.CreatedAt,
+			UserID:         peerSnapshot.UserID,
+			Groups:         groupSummaries,
+		}
+
+		notifications.DispatchPeerWebhookToChannels(detachedCtx, matching, accountID, eventType, info)
+	})
 }

@@ -645,3 +645,105 @@ func TestPeersHandlerUpdatePeerIP(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAllPeers_OpenQueryFilters(t *testing.T) {
+	peerCN := &nbpeer.Peer{
+		ID:       "peer-cn",
+		Key:      "key-cn",
+		IP:       netip.MustParseAddr("100.64.0.10"),
+		DNSLabel: "office-gw-01",
+		Status:   &nbpeer.PeerStatus{Connected: true},
+		Name:     "office-gw-01",
+		Location: nbpeer.Location{
+			ConnectionIP: net.ParseIP("203.0.113.10"),
+			CountryCode:  "CN",
+			CityName:     "Shanghai",
+			GeoNameID:    1796236,
+		},
+	}
+	peerSG := &nbpeer.Peer{
+		ID:       "peer-sg",
+		Key:      "key-sg",
+		IP:       netip.MustParseAddr("100.64.0.20"),
+		DNSLabel: "edge-sg-01",
+		Status:   &nbpeer.PeerStatus{Connected: false},
+		Name:     "edge-sg-01",
+		Location: nbpeer.Location{
+			ConnectionIP: net.ParseIP("198.51.100.20"),
+			CountryCode:  "SG",
+			CityName:     "Singapore",
+			GeoNameID:    1880252,
+		},
+	}
+
+	h := initTestMetaData(t, peerCN, peerSG)
+	router := mux.NewRouter()
+	router.HandleFunc("/api/peers", h.GetAllPeers).Methods(http.MethodGet)
+
+	cases := []struct {
+		name        string
+		query       string
+		expectedIDs []string
+		statusCode  int
+	}{
+		{
+			name:        "filter by connection_ip",
+			query:       "?connection_ip=203.0.113.10",
+			expectedIDs: []string{"peer-cn"},
+			statusCode:  http.StatusOK,
+		},
+		{
+			name:        "filter by dns_label",
+			query:       "?dns_label=edge-sg-01.domain",
+			expectedIDs: []string{"peer-sg"},
+			statusCode:  http.StatusOK,
+		},
+		{
+			name:        "filter by country_code case-insensitive",
+			query:       "?country_code=cn",
+			expectedIDs: []string{"peer-cn"},
+			statusCode:  http.StatusOK,
+		},
+		{
+			name:        "filter by connected=true",
+			query:       "?connected=true",
+			expectedIDs: []string{"peer-cn"},
+			statusCode:  http.StatusOK,
+		},
+		{
+			name:        "filter by connected=false",
+			query:       "?connected=false",
+			expectedIDs: []string{"peer-sg"},
+			statusCode:  http.StatusOK,
+		},
+		{
+			name:       "invalid connected filter",
+			query:      "?connected=not-a-bool",
+			statusCode: http.StatusUnprocessableEntity,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/peers"+tc.query, nil)
+			req = nbcontext.SetUserAuthInRequest(req, auth.UserAuth{
+				UserId:    adminUser,
+				Domain:    "hotmail.com",
+				AccountId: "test_id",
+			})
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+
+			require.Equal(t, tc.statusCode, rr.Code)
+			if tc.statusCode == http.StatusOK {
+				var items []api.PeerBatch
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &items))
+				gotIDs := make([]string, 0, len(items))
+				for _, item := range items {
+					gotIDs = append(gotIDs, item.Id)
+				}
+				assert.Equal(t, tc.expectedIDs, gotIDs)
+			}
+		})
+	}
+}

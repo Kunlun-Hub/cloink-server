@@ -117,6 +117,14 @@ type DefaultAccountManager struct {
 	emailService    emailmanager.Service
 	deletionHooksMu sync.RWMutex
 	deletionHooks   []account.DeletionHook
+
+	peerOnlineMu          sync.Mutex
+	peerOnlineTransitions map[string]peerOnlineTransition
+}
+
+type peerOnlineTransition struct {
+	fromSession int64
+	at          time.Time
 }
 
 var _ account.Manager = (*DefaultAccountManager)(nil)

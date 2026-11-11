@@ -41,59 +41,81 @@ func TestNewReceiverNotReceive(t *testing.T) {
 
 func TestNewReceiverAck(t *testing.T) {
 	opts := ReceiverOptions{
-		HeartbeatTimeout: 2 * time.Second,
+		HeartbeatTimeout: 150 * time.Millisecond,
 	}
 	r := NewReceiverWithOpts(log.WithContext(context.Background()), opts)
 	defer r.Stop()
 
-	r.Heartbeat()
+	deadline := time.Now().Add(450 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		r.Heartbeat()
+		time.Sleep(40 * time.Millisecond)
+		select {
+		case <-r.OnTimeout:
+			t.Fatal("unexpected timeout while heartbeats were arriving")
+		default:
+		}
+	}
 
 	select {
 	case <-r.OnTimeout:
-		t.Error("unexpected timeout")
-	case <-time.After(3 * time.Second):
+	case <-time.After(time.Second):
+		t.Fatal("timeout not received after heartbeats stopped")
 	}
 }
 
 func TestReceiverHealthCheckAttemptThreshold(t *testing.T) {
-	testsCases := []struct {
-		name             string
-		threshold        int
-		resetCounterOnce bool
-	}{
-		{"Default attempt threshold", defaultAttemptThreshold, false},
-		{"Custom attempt threshold", 3, false},
-		{"Should reset threshold once", 2, true},
-	}
-
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			healthCheckInterval := 1 * time.Second
-
-			opts := ReceiverOptions{
-				HeartbeatTimeout: healthCheckInterval + 500*time.Millisecond,
-				AttemptThreshold: tc.threshold,
-			}
-
-			receiver := NewReceiverWithOpts(log.WithField("test_name", tc.name), opts)
-
-			testTimeout := opts.HeartbeatTimeout*time.Duration(tc.threshold) + healthCheckInterval
-
-			if tc.resetCounterOnce {
-				receiver.Heartbeat()
-			}
-
-			select {
-			case <-receiver.OnTimeout:
-				if tc.resetCounterOnce {
-					t.Fatalf("should not have timed out before %s", testTimeout)
-				}
-			case <-time.After(testTimeout):
-				if tc.resetCounterOnce {
-					return
-				}
-				t.Fatalf("should have timed out before %s", testTimeout)
-			}
+	t.Run("Default attempt threshold", func(t *testing.T) {
+		receiver := NewReceiverWithOpts(log.WithField("test_name", "default"), ReceiverOptions{
+			HeartbeatTimeout: 60 * time.Millisecond,
+			AttemptThreshold: defaultAttemptThreshold,
 		})
-	}
+		defer receiver.Stop()
+
+		select {
+		case <-receiver.OnTimeout:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("timeout not received")
+		}
+	})
+
+	t.Run("Custom attempt threshold", func(t *testing.T) {
+		receiver := NewReceiverWithOpts(log.WithField("test_name", "custom"), ReceiverOptions{
+			HeartbeatTimeout: 60 * time.Millisecond,
+			AttemptThreshold: 3,
+		})
+		defer receiver.Stop()
+
+		select {
+		case <-receiver.OnTimeout:
+			t.Fatal("timed out before the attempt threshold")
+		case <-time.After(100 * time.Millisecond):
+		}
+		select {
+		case <-receiver.OnTimeout:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("timeout not received")
+		}
+	})
+
+	t.Run("Heartbeat resets the timeout", func(t *testing.T) {
+		receiver := NewReceiverWithOpts(log.WithField("test_name", "reset"), ReceiverOptions{
+			HeartbeatTimeout: 100 * time.Millisecond,
+		})
+		defer receiver.Stop()
+
+		time.Sleep(50 * time.Millisecond)
+		receiver.Heartbeat()
+
+		select {
+		case <-receiver.OnTimeout:
+			t.Fatal("heartbeat did not reset the timeout")
+		case <-time.After(60 * time.Millisecond):
+		}
+		select {
+		case <-receiver.OnTimeout:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("timeout not received after reset")
+		}
+	})
 }

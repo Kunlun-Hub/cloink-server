@@ -19,18 +19,27 @@ var NotificationChannelTypes = map[string]struct{}{
 	NotificationChannelTypeSlack:   {},
 }
 
+// Notification event type constants for peer lifecycle events.
+const (
+	NotificationEventPeerAdd     = "peer.add"
+	NotificationEventPeerOnline  = "peer.online"
+	NotificationEventPeerOffline = "peer.offline"
+)
+
 // Notification event types that can trigger a notification.
 // Keys match the dashboard's NotificationEventType enum values.
 var NotificationEventTypes = map[string]string{
-	"peer.pending.approval":  "Peer pending approval",
-	"peer.add":               "Peer added",
-	"routing.peer.disconnect": "Routing peer disconnected",
-	"routing.peer.delete":    "Routing peer deleted",
-	"user.pending.approval":  "User pending approval",
-	"user.join":              "User joined",
-	"service.user.create":    "Service user created",
-	"idp.sync.token.expire":  "IdP sync token expiring",
-	"edr.sync.token.expire":  "EDR sync token expiring",
+	"peer.pending.approval":      "Peer pending approval",
+	NotificationEventPeerAdd:     "Peer added",
+	NotificationEventPeerOnline:  "Peer connected",
+	NotificationEventPeerOffline: "Peer disconnected",
+	"routing.peer.disconnect":    "Routing peer disconnected",
+	"routing.peer.delete":        "Routing peer deleted",
+	"user.pending.approval":      "User pending approval",
+	"user.join":                  "User joined",
+	"service.user.create":        "Service user created",
+	"idp.sync.token.expire":      "IdP sync token expiring",
+	"edr.sync.token.expire":      "EDR sync token expiring",
 }
 
 // NotificationChannel is a per-account notification destination

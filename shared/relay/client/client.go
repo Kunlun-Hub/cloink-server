@@ -29,6 +29,17 @@ const (
 )
 
 var (
+	// relayLivenessProbeInterval is how often the client actively probes its
+	// connected relay session to detect silent QUIC/WebSocket blackholes.
+	relayLivenessProbeInterval = 2 * time.Second
+	// relayLivenessProbeTimeout bounds each WebSocket Ping/Pong check.
+	relayLivenessProbeTimeout = 2 * time.Second
+	// relayLivenessFailureThreshold is the number of consecutive missed
+	// liveness probes before the relay connection is declared dead and closed.
+	relayLivenessFailureThreshold = 3
+)
+
+var (
 	ErrConnAlreadyExists = fmt.Errorf("connection already exists")
 	// ErrServerDisconnected is the cancellation cause of a relayed Conn when the
 	// client lost the connection to the relay server.
@@ -154,6 +165,18 @@ type transportConn interface {
 	Protocol() string
 }
 
+// wsPingConn is implemented by WebSocket relay connections that support
+// control-frame Ping/Pong liveness checks.
+type wsPingConn interface {
+	Ping(ctx context.Context) error
+}
+
+// quicStatsConn is implemented by QUIC relay connections that report cumulative
+// incoming UDP packet counts from the QUIC transport layer.
+type quicStatsConn interface {
+	PacketsReceived() uint64
+}
+
 // NetEvents is the OS network event view the relay consumes: availability
 // gating for the reconnect guard and dial registration for the network change
 // sweep.
@@ -208,6 +231,8 @@ type Client struct {
 	// transport is the negotiated relay transport of the
 	// current connection, guarded by mu.
 	transport string
+	wsPinger  wsPingConn
+	quicStats quicStatsConn
 }
 
 // Transport returns the negotiated relay transport of the current connection,
@@ -317,10 +342,16 @@ func (c *Client) connectWithContexts(connectCtx, lifecycleCtx context.Context) e
 
 	internallyStoppedFlag := newInternalStopFlag()
 	hc := healthcheck.NewReceiver(c.log)
-	go c.listenForStopEvents(lifecycleCtx, hc, c.relayConn, internallyStoppedFlag)
+	livenessCtx, cancelLiveness := context.WithCancel(lifecycleCtx)
+	conn, wsPinger, quicStats := c.relayConn, c.wsPinger, c.quicStats
+	go c.listenForStopEvents(lifecycleCtx, hc, conn, internallyStoppedFlag)
 
-	c.wgReadLoop.Add(1)
-	go c.readLoop(hc, c.relayConn, internallyStoppedFlag)
+	c.wgReadLoop.Add(2)
+	go func(conn net.Conn, wsPinger wsPingConn, quicStats quicStatsConn) {
+		defer c.wgReadLoop.Done()
+		c.probeConnectionLiveness(livenessCtx, conn, wsPinger, quicStats, internallyStoppedFlag)
+	}(conn, wsPinger, quicStats)
+	go c.readLoop(hc, cancelLiveness, conn, internallyStoppedFlag)
 
 	return nil
 }
@@ -462,6 +493,8 @@ func (c *Client) connect(ctx context.Context) (*RelayAddr, error) {
 	if tc, ok := conn.(transportConn); ok {
 		c.transport = tc.Protocol()
 	}
+	c.wsPinger, _ = conn.(wsPingConn)
+	c.quicStats, _ = conn.(quicStatsConn)
 
 	conn, err := dial.WrapConn(conn)
 	if err != nil {
@@ -574,7 +607,7 @@ func (c *Client) handShake(ctx context.Context) (*RelayAddr, error) {
 	return &RelayAddr{addr: addr}, nil
 }
 
-func (c *Client) readLoop(hc *healthcheck.Receiver, relayConn net.Conn, internallyStoppedFlag *internalStopFlag) {
+func (c *Client) readLoop(hc *healthcheck.Receiver, cancelLiveness context.CancelFunc, relayConn net.Conn, internallyStoppedFlag *internalStopFlag) {
 	var (
 		errExit error
 		n       int
@@ -616,6 +649,9 @@ func (c *Client) readLoop(hc *healthcheck.Receiver, relayConn net.Conn, internal
 	}
 
 	hc.Stop()
+	if cancelLiveness != nil {
+		cancelLiveness()
+	}
 
 	c.stateSubscription.Cleanup()
 	c.wgReadLoop.Done()
@@ -629,12 +665,15 @@ func (c *Client) handleMsg(msgType messages.MsgType, buf []byte, bufPtr *[]byte,
 		c.handleHealthCheck(hc, internallyStoppedFlag)
 		c.bufPool.Put(bufPtr)
 	case messages.MsgTypeTransport:
+		hc.Heartbeat()
 		return c.handleTransportMsg(buf, bufPtr, internallyStoppedFlag)
 	case messages.MsgTypePeersOnline:
+		hc.Heartbeat()
 		c.handlePeersOnlineMsg(buf)
 		c.bufPool.Put(bufPtr)
 		return true
 	case messages.MsgTypePeersWentOffline:
+		hc.Heartbeat()
 		c.handlePeersWentOfflineMsg(buf)
 		c.bufPool.Put(bufPtr)
 		return true
@@ -654,6 +693,7 @@ func (c *Client) handleHealthCheck(hc *healthcheck.Receiver, internallyStoppedFl
 		if c.serviceIsRunning && !internallyStoppedFlag.isSet() {
 			c.log.Errorf("failed to send heartbeat: %s", wErr)
 		}
+		return
 	}
 	hc.Heartbeat()
 }
@@ -792,6 +832,96 @@ func (c *Client) listenForStopEvents(ctx context.Context, hc *healthcheck.Receiv
 	}
 }
 
+// probeConnectionLiveness actively probes the connected relay session so silent
+// QUIC or WebSocket blackholes (e.g., force-killed relay container without TCP
+// FIN/RST or dropped UDP path) are detected within a few seconds instead of
+// waiting for a long idle timeout.
+func (c *Client) probeConnectionLiveness(
+	ctx context.Context,
+	conn net.Conn,
+	wsPinger wsPingConn,
+	quicStats quicStatsConn,
+	internalStopFlag *internalStopFlag,
+) {
+	if quicStats == nil && wsPinger == nil {
+		return
+	}
+	interval := relayLivenessProbeInterval
+	if interval <= 0 {
+		interval = time.Second
+	}
+	threshold := relayLivenessFailureThreshold
+	if threshold <= 0 {
+		threshold = 2
+	}
+	if quicStats != nil {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		lastRecv := quicStats.PacketsReceived()
+		missed := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				currRecv := quicStats.PacketsReceived()
+				if currRecv > lastRecv {
+					lastRecv = currRecv
+					missed = 0
+					continue
+				}
+				missed++
+				if missed >= threshold {
+					c.log.Errorf("relay QUIC liveness probe timed out after %d missed probes", missed)
+					internalStopFlag.set()
+					if err := conn.Close(); err != nil {
+						c.log.Debugf("failed to close QUIC relay connection on liveness timeout: %s", err)
+					}
+					return
+				}
+			}
+		}
+	}
+
+	if wsPinger != nil {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		missed := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				timeout := relayLivenessProbeTimeout
+				if timeout <= 0 {
+					timeout = time.Second
+				}
+				pingCtx, cancel := context.WithTimeout(ctx, timeout)
+				err := wsPinger.Ping(pingCtx)
+				cancel()
+				if err == nil {
+					missed = 0
+					continue
+				}
+				if ctx.Err() != nil || internalStopFlag.isSet() {
+					return
+				}
+				missed++
+				if missed >= threshold {
+					c.log.Errorf("relay WebSocket liveness probe timed out after %d missed probes: %s", missed, err)
+					internalStopFlag.set()
+					if closeErr := conn.Close(); closeErr != nil {
+						c.log.Debugf("failed to close WebSocket relay connection on liveness timeout: %s", closeErr)
+					}
+					return
+				}
+			}
+		}
+	}
+}
+
 func (c *Client) serverInstanceAddress() (string, netip.Addr, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -871,6 +1001,8 @@ func (c *Client) close(gracefullyExit bool) error {
 	}
 	c.serviceIsRunning = false
 	c.transport = ""
+	c.wsPinger = nil
+	c.quicStats = nil
 
 	c.muInstanceURL.Lock()
 	c.instanceURL = nil

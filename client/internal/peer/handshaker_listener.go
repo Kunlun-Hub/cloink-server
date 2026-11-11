@@ -1,10 +1,11 @@
 package peer
 
 import (
+	"context"
 	"sync"
 )
 
-type callbackFunc func(remoteOfferAnswer *OfferAnswer)
+type callbackFunc func(ctx context.Context, remoteOfferAnswer *OfferAnswer)
 
 func (oa *OfferAnswer) SessionIDString() string {
 	if oa.SessionID == nil {
@@ -17,6 +18,7 @@ type AsyncOfferListener struct {
 	fn      callbackFunc
 	running bool
 	latest  *OfferAnswer
+	cancel  context.CancelFunc
 	mu      sync.Mutex
 }
 
@@ -28,35 +30,47 @@ func NewAsyncOfferListener(fn callbackFunc) *AsyncOfferListener {
 
 func (o *AsyncOfferListener) Notify(remoteOfferAnswer *OfferAnswer) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	// Store the latest offer
+	// Store the latest offer.
 	o.latest = remoteOfferAnswer
 
-	// If already running, the running goroutine will pick up this latest value
+	// A newer signal supersedes any connection attempt started for the previous
+	// one. Cancel it instead of letting it block progress until its timeout.
 	if o.running {
+		if o.cancel != nil {
+			o.cancel()
+		}
+		o.mu.Unlock()
 		return
 	}
 
-	// Start processing
+	// Start processing.
+	ctx, cancel := context.WithCancel(context.Background())
 	o.running = true
+	o.cancel = cancel
+	o.mu.Unlock()
 
-	// Process in a goroutine to avoid blocking the caller
-	go func(remoteOfferAnswer *OfferAnswer) {
-		for {
-			o.fn(remoteOfferAnswer)
+	// Process in a goroutine to avoid blocking the caller.
+	go o.run(ctx, cancel, remoteOfferAnswer)
+}
 
-			o.mu.Lock()
-			if o.latest == nil {
-				// No more work to do
-				o.running = false
-				o.mu.Unlock()
-				return
-			}
-			remoteOfferAnswer = o.latest
-			// Clear the latest to mark it as being processed
-			o.latest = nil
+func (o *AsyncOfferListener) run(ctx context.Context, cancel context.CancelFunc, remoteOfferAnswer *OfferAnswer) {
+	for {
+		o.fn(ctx, remoteOfferAnswer)
+		cancel()
+
+		o.mu.Lock()
+		remoteOfferAnswer = o.latest
+		if remoteOfferAnswer == nil {
+			// No more work to do.
+			o.running = false
+			o.cancel = nil
 			o.mu.Unlock()
+			return
 		}
-	}(remoteOfferAnswer)
+		// Clear the latest to mark it as being processed.
+		o.latest = nil
+		ctx, cancel = context.WithCancel(context.Background())
+		o.cancel = cancel
+		o.mu.Unlock()
+	}
 }

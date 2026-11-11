@@ -10,8 +10,8 @@ import (
 const (
 	defaultAttemptThreshold = 1
 
-	defaultHealthCheckInterval = 25 * time.Second
-	defaultHealthCheckTimeout  = 20 * time.Second
+	defaultHealthCheckInterval = 2 * time.Second
+	defaultHealthCheckTimeout  = 4 * time.Second
 )
 
 type SenderOptions struct {
@@ -35,7 +35,6 @@ type Sender struct {
 	timeout             time.Duration
 
 	ack              chan struct{}
-	alive            bool
 	attemptThreshold int
 }
 
@@ -84,33 +83,53 @@ func (hc *Sender) StartHealthCheck(ctx context.Context) {
 	ticker := time.NewTicker(hc.healthCheckInterval)
 	defer ticker.Stop()
 
-	timeoutTicker := time.NewTicker(hc.timeout)
-	defer timeoutTicker.Stop()
+	timeoutTimer := time.NewTimer(hc.timeout)
+	defer timeoutTimer.Stop()
 
 	defer close(hc.HealthCheck)
 	defer close(hc.Timeout)
+
+	resetTimeout := func() {
+		if !timeoutTimer.Stop() {
+			select {
+			case <-timeoutTimer.C:
+			default:
+			}
+		}
+		timeoutTimer.Reset(hc.timeout)
+	}
 
 	failureCounter := 0
 	for {
 		select {
 		case <-ticker.C:
-			hc.HealthCheck <- struct{}{}
-		case <-timeoutTicker.C:
-			if hc.alive {
-				hc.alive = false
-				continue
+			select {
+			case hc.HealthCheck <- struct{}{}:
+			default:
 			}
-
+		case <-hc.ack:
+			failureCounter = 0
+			resetTimeout()
+		case <-timeoutTimer.C:
+			// A response may have arrived at the same time as the deadline.
+			select {
+			case <-hc.ack:
+				failureCounter = 0
+				resetTimeout()
+				continue
+			default:
+			}
 			failureCounter++
 			if failureCounter < hc.attemptThreshold {
 				hc.log.Warnf("Health check failed attempt %d.", failureCounter)
+				resetTimeout()
 				continue
 			}
-			hc.Timeout <- struct{}{}
+			select {
+			case hc.Timeout <- struct{}{}:
+			default:
+			}
 			return
-		case <-hc.ack:
-			failureCounter = 0
-			hc.alive = true
 		case <-ctx.Done():
 			return
 		}

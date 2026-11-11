@@ -10,21 +10,6 @@ import (
 	"github.com/netbirdio/netbird/client/iface"
 )
 
-func TestTopPriorityGroup(t *testing.T) {
-	urls := []string{"rels://a.example", "rels://b.example", "rels://c.example"}
-	weights := map[string]int{"rels://a.example": 100, "rels://b.example": 100, "rels://c.example": 10}
-
-	group := topPriorityGroup(urls, weights)
-	require.ElementsMatch(t, []string{"rels://a.example", "rels://b.example"}, group,
-		"only the max-weight relays belong to the probe group")
-
-	// Missing weights fall back to the default weight, like the picker does.
-	group = topPriorityGroup(urls, nil)
-	require.ElementsMatch(t, urls, group, "all relays share the default weight")
-
-	require.Empty(t, topPriorityGroup(nil, weights), "no URLs means no group")
-}
-
 func TestLightProbeMeasuresTransport(t *testing.T) {
 	relayURL := startMigrationRelayServer(t, "light-probe")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -46,95 +31,115 @@ func TestLightProbeMeasuresTransport(t *testing.T) {
 	require.Nil(t, track, "light probe must not register a relay client track")
 }
 
-func feedRTT(t *testing.T, manager *Manager, relayURL string, rtt time.Duration) {
-	t.Helper()
-	for i := 0; i < relayRTTMinSamples; i++ {
-		manager.rttCache.set(relayURL, rtt)
-	}
-}
-
-// The home relay migrates only after the alternative has been significantly
-// faster for relayRTTMigrationStreaks consecutive ticks.
-func TestManagerRTTMigratesPersistentlySlowHome(t *testing.T) {
-	slowURL := startMigrationRelayServer(t, "rtt-slow")
-	fastURL := startMigrationRelayServer(t, "rtt-fast")
+// Upon initial connection, the first relay to complete the handshake becomes
+// the Primary Relay, and the remaining relays are probed via lightProbe to
+// select the Standby Relay.
+func TestManagerInitialConnectComputesStandby(t *testing.T) {
+	relayA := startMigrationRelayServer(t, "init-a")
+	relayB := startMigrationRelayServer(t, "init-b")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	manager := NewManager(ctx, []string{slowURL}, "peer-rtt", iface.DefaultMTU,
-		WithRelayMigrationGrace(300*time.Millisecond))
+	manager := NewManager(ctx, []string{relayA, relayB}, "peer-init-standby", iface.DefaultMTU)
 	require.NoError(t, manager.Serve())
-	require.Equal(t, slowURL, manager.currentRelayURL())
 
-	// Introduce the faster relay as same-weight, like a config update would.
-	manager.relayConfigMu.Lock()
-	manager.relayWeights[slowURL] = 50
-	manager.relayWeights[fastURL] = 50
-	manager.configuredRelayURLs = []string{slowURL, fastURL}
-	manager.relayConfigMu.Unlock()
+	primary := manager.currentRelayURL()
+	require.Contains(t, []string{relayA, relayB}, primary)
+	expectedStandby := relayB
+	if primary == relayB {
+		expectedStandby = relayA
+	}
 
-	group := topPriorityGroup([]string{slowURL, fastURL},
-		map[string]int{slowURL: 50, fastURL: 50})
-	require.Len(t, group, 2)
-
-	feedRTT(t, manager, slowURL, 500*time.Millisecond)
-	feedRTT(t, manager, fastURL, 100*time.Millisecond)
-
-	streaks := make(map[string]int)
-	manager.maybeMigrateOnRTT(group, streaks)
-	manager.maybeMigrateOnRTT(group, streaks)
-	require.Equal(t, slowURL, manager.currentRelayURL(),
-		"fewer than relayRTTMigrationStreaks ticks must not migrate")
-
-	manager.maybeMigrateOnRTT(group, streaks)
 	require.Eventually(t, func() bool {
-		return manager.currentRelayURL() == fastURL && manager.Ready()
-	}, 5*time.Second, 20*time.Millisecond, "home relay must migrate to the persistently faster relay")
+		return manager.StandbyURL() == expectedStandby
+	}, 3*time.Second, 20*time.Millisecond, "remaining healthy relay should be selected as standby")
 }
 
-// A small RTT advantage must never trigger a migration: the win is not worth
-// disrupting peer traffic.
-func TestManagerRTTDoesNotMigrateOnSmallDifference(t *testing.T) {
-	slowURL := startMigrationRelayServer(t, "rtt-small-slow")
-	fastURL := startMigrationRelayServer(t, "rtt-small-fast")
+// During daily operation, when Primary and Standby are both healthy (and
+// Standby has not degraded beyond hysteresis), neither Primary nor Standby moves.
+func TestManagerProbeTickKeepsHealthyPrimaryAndStandby(t *testing.T) {
+	primaryURL := startMigrationRelayServer(t, "probe-primary")
+	standbyURL := startMigrationRelayServer(t, "probe-standby")
+	otherURL := startMigrationRelayServer(t, "probe-other")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	manager := NewManager(ctx, []string{slowURL}, "peer-rtt-small", iface.DefaultMTU)
+	manager := NewManager(ctx, []string{primaryURL}, "peer-keep-standby", iface.DefaultMTU)
 	require.NoError(t, manager.Serve())
-	require.Equal(t, slowURL, manager.currentRelayURL())
+	require.Equal(t, primaryURL, manager.currentRelayURL())
 
 	manager.relayConfigMu.Lock()
-	manager.relayWeights[slowURL] = 50
-	manager.relayWeights[fastURL] = 50
-	manager.configuredRelayURLs = []string{slowURL, fastURL}
+	manager.configuredRelayURLs = []string{primaryURL, standbyURL, otherURL}
+	manager.standbyRelayURL = standbyURL
 	manager.relayConfigMu.Unlock()
 
-	group := []string{slowURL, fastURL}
-	feedRTT(t, manager, slowURL, 100*time.Millisecond)
-	feedRTT(t, manager, fastURL, 90*time.Millisecond)
-
-	streaks := make(map[string]int)
-	for i := 0; i < relayRTTMigrationStreaks+2; i++ {
-		manager.maybeMigrateOnRTT(group, streaks)
-	}
-	require.Empty(t, streaks, "a small difference must not accumulate a streak")
-	require.Equal(t, slowURL, manager.currentRelayURL(), "no migration on a small RTT difference")
+	// Both standbyURL and otherURL are healthy and within hysteresis band.
+	manager.selectStandbyFromProbes(primaryURL, []string{standbyURL, otherURL}, map[string]time.Duration{
+		standbyURL: 40 * time.Millisecond,
+		otherURL:   30 * time.Millisecond, // within 25ms hysteresis
+	})
+	require.Equal(t, primaryURL, manager.currentRelayURL(), "primary relay must never move while healthy")
+	require.Equal(t, standbyURL, manager.StandbyURL(), "healthy standby within hysteresis must stay unchanged")
 }
 
-// Under-sampled or missing RTTs must not trigger anything.
-func TestManagerRTTDoesNotMigrateWithoutSamples(t *testing.T) {
-	slowURL := startMigrationRelayServer(t, "rtt-nosample-slow")
-	fastURL := startMigrationRelayServer(t, "rtt-nosample-fast")
+// When Primary is healthy and Standby becomes unreachable or significantly
+// slower, a new Standby is selected by lowest RTT while Primary does not move.
+func TestManagerProbeTickReselectsStandbyWhenStandbyFailsOrSlowsWithoutMovingPrimary(t *testing.T) {
+	primaryURL := startMigrationRelayServer(t, "reselect-primary")
+	standbyURL := startMigrationRelayServer(t, "reselect-standby")
+	fastAltURL := startMigrationRelayServer(t, "reselect-fast")
+	slowAltURL := startMigrationRelayServer(t, "reselect-slow")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	manager := NewManager(ctx, []string{slowURL}, "peer-rtt-nosample", iface.DefaultMTU)
+	manager := NewManager(ctx, []string{primaryURL}, "peer-reselect-standby", iface.DefaultMTU)
 	require.NoError(t, manager.Serve())
+	require.Equal(t, primaryURL, manager.currentRelayURL())
 
-	group := []string{slowURL, fastURL}
-	streaks := make(map[string]int)
-	manager.maybeMigrateOnRTT(group, streaks)
-	require.Empty(t, streaks)
-	require.Equal(t, slowURL, manager.currentRelayURL())
+	candidates := []string{standbyURL, fastAltURL, slowAltURL}
+	manager.relayConfigMu.Lock()
+	manager.configuredRelayURLs = append([]string{primaryURL}, candidates...)
+	manager.standbyRelayURL = standbyURL
+	manager.relayConfigMu.Unlock()
+
+	// Case 1: Standby fails probe -> lowest-RTT healthy alternative becomes new Standby; Primary stays untouched.
+	manager.selectStandbyFromProbes(primaryURL, candidates, map[string]time.Duration{
+		fastAltURL: 25 * time.Millisecond,
+		slowAltURL: 90 * time.Millisecond,
+	})
+	require.Equal(t, primaryURL, manager.currentRelayURL(), "primary relay must not move when standby fails")
+	require.Equal(t, fastAltURL, manager.StandbyURL(), "lowest-RTT healthy candidate must become new standby")
+
+	// Case 2: Current Standby (fastAltURL) degrades significantly -> switch Standby to slowAltURL (now faster); Primary stays untouched.
+	manager.selectStandbyFromProbes(primaryURL, candidates, map[string]time.Duration{
+		fastAltURL: 250 * time.Millisecond,
+		slowAltURL: 40 * time.Millisecond,
+	})
+	require.Equal(t, primaryURL, manager.currentRelayURL(), "primary relay must not move when standby degrades")
+	require.Equal(t, slowAltURL, manager.StandbyURL(), "degraded standby should be replaced by faster healthy candidate")
+}
+
+// If an administrator removes a relay while a background probe round is in
+// flight, stale probe results must not write the removed relay back as
+// standbyRelayURL.
+func TestManagerSelectStandbyIgnoresRelayRemovedDuringProbe(t *testing.T) {
+	primaryURL := startMigrationRelayServer(t, "race-primary")
+	removedFastURL := startMigrationRelayServer(t, "race-removed")
+	keptSlowURL := startMigrationRelayServer(t, "race-kept")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	manager := NewManager(ctx, []string{primaryURL}, "peer-race-standby", iface.DefaultMTU)
+	require.NoError(t, manager.Serve())
+	require.Equal(t, primaryURL, manager.currentRelayURL())
+
+	// Simulate configuration updated mid-probe so removedFastURL is no longer in configuredRelayURLs.
+	manager.UpdateServerURLs([]string{primaryURL, keptSlowURL})
+
+	manager.selectStandbyFromProbes(primaryURL, []string{removedFastURL, keptSlowURL}, map[string]time.Duration{
+		removedFastURL: 10 * time.Millisecond,
+		keptSlowURL:    80 * time.Millisecond,
+	})
+	require.Equal(t, keptSlowURL, manager.StandbyURL(),
+		"removed relay must not be selected as standby even if it had the lowest probe RTT")
 }

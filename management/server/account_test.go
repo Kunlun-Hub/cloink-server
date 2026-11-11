@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"reflect"
@@ -54,6 +56,7 @@ import (
 	resourceTypes "github.com/netbirdio/netbird/management/server/networks/resources/types"
 	routerTypes "github.com/netbirdio/netbird/management/server/networks/routers/types"
 	networkTypes "github.com/netbirdio/netbird/management/server/networks/types"
+	"github.com/netbirdio/netbird/management/server/notifications"
 	nbpeer "github.com/netbirdio/netbird/management/server/peer"
 	"github.com/netbirdio/netbird/management/server/permissions"
 	"github.com/netbirdio/netbird/management/server/posture"
@@ -94,7 +97,6 @@ func verifyCanAddPeerToAccount(t *testing.T, manager nbAccount.Manager, account 
 		t.Error("expected to add new peer successfully after creating new account, but failed", err)
 	}
 }
-
 func verifyNewAccountHasDefaultFields(t *testing.T, account *types.Account, createdBy string, domain string, expectedUsers []string) {
 	t.Helper()
 	if len(account.Peers) != 0 {
@@ -3676,6 +3678,7 @@ func buildTestManager(t testing.TB, store store.Store, nmdataStore *networkmapdb
 		return nil, nil, err
 	}
 	manager.SetServiceManager(reverseproxymanager.NewManager(store, manager, permissionsManager, proxyController, proxyManager, nil))
+	t.Cleanup(notifications.WaitForPendingWebhooks)
 
 	return manager, updateManager, nil
 }
@@ -3772,6 +3775,8 @@ const peerUpdateSettleTime = time.Second
 // goroutine of the test, and lets the updates still in flight when f returns finish before the bubble
 // ends, since the bubble's clock stops with it.
 func runPeerUpdateTest(t *testing.T, f func(t *testing.T)) {
+	notifications.SetWebhookDispatchDisabledForTest(true)
+	defer notifications.SetWebhookDispatchDisabledForTest(false)
 	synctest.Test(t, func(t *testing.T) {
 		defer settleAffectedUpdates()
 		f(t)
@@ -4989,4 +4994,114 @@ func TestUpdateUserAuthWithSingleMode(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "query failed")
 	})
+}
+
+func TestDefaultAccountManager_ShouldNotifyPeerOnline_OnlyOnOfflineToOnlineTransition(t *testing.T) {
+	am := &DefaultAccountManager{}
+
+	// 1. Offline -> Online transition triggers peer.online once.
+	require.True(t, am.shouldNotifyPeerOnline("peer-1", false, 0))
+
+	// 2. Concurrent race from the same offline session state is suppressed.
+	require.False(t, am.shouldNotifyPeerOnline("peer-1", false, 0))
+
+	// 3. Stream replacement / session refresh while already online does not re-trigger.
+	require.False(t, am.shouldNotifyPeerOnline("peer-1", true, 100))
+
+	// 4. After disconnect clears the online state, the next offline -> online transition triggers again.
+	am.clearPeerOnlineTransition("peer-1")
+	require.True(t, am.shouldNotifyPeerOnline("peer-1", false, 0))
+}
+
+func TestDefaultAccountManager_PeerLifecycleWebhooks(t *testing.T) {
+	t.Setenv(notifications.EnvAllowPrivateWebhookTargets, "true")
+
+	manager, _, err := createManager(t)
+	require.NoError(t, err)
+
+	accountID, err := manager.GetAccountIDByUserID(context.Background(), auth.UserAuth{UserId: userID})
+	require.NoError(t, err)
+
+	var (
+		eventsMu sync.Mutex
+		events   []notifications.PeerWebhookEvent
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var evt notifications.PeerWebhookEvent
+		if err := json.NewDecoder(r.Body).Decode(&evt); err == nil {
+			eventsMu.Lock()
+			events = append(events, evt)
+			eventsMu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	defer notifications.WaitForPendingWebhooks()
+
+	targetJSON, err := json.Marshal(map[string]any{"url": srv.URL})
+	require.NoError(t, err)
+	_, err = manager.Store.CreateNotificationChannel(context.Background(), &types.NotificationChannel{
+		ID:        "ch-lifecycle",
+		AccountID: accountID,
+		Type:      types.NotificationChannelTypeWebhook,
+		Enabled:   true,
+		EventTypes: []string{
+			types.NotificationEventPeerAdd,
+			types.NotificationEventPeerOnline,
+			types.NotificationEventPeerOffline,
+		},
+		Target: string(targetJSON),
+	})
+	require.NoError(t, err)
+
+	key, err := wgtypes.GenerateKey()
+	require.NoError(t, err)
+	peerPubKey := key.PublicKey().String()
+
+	// 1. AddPeer -> triggers peer.add (connected: false)
+	_, _, _, _, err = manager.AddPeer(context.Background(), accountID, "", userID, &nbpeer.Peer{
+		Key:  peerPubKey,
+		Meta: nbpeer.PeerSystemMeta{Hostname: "webhook-node"},
+	}, false)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		return len(events) == 1 && events[0].EventType == types.NotificationEventPeerAdd && !events[0].Peer.Connected
+	}, 3*time.Second, 20*time.Millisecond)
+
+	// 2. MarkPeerConnected (offline -> online) -> triggers peer.online (connected: true)
+	session1 := time.Now().UTC().UnixNano()
+	require.NoError(t, manager.MarkPeerConnected(context.Background(), peerPubKey, accountID, session1, nil))
+
+	require.Eventually(t, func() bool {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		return len(events) == 2 && events[1].EventType == types.NotificationEventPeerOnline && events[1].Peer.Connected
+	}, 3*time.Second, 20*time.Millisecond)
+
+	// 3. MarkPeerConnected again while already online (stream replacement) -> must NOT trigger peer.online
+	session2 := session1 + int64(time.Second)
+	require.NoError(t, manager.MarkPeerConnected(context.Background(), peerPubKey, accountID, session2, nil))
+	time.Sleep(150 * time.Millisecond)
+	eventsMu.Lock()
+	require.Len(t, events, 2, "stream replacement while already online must not re-trigger peer.online")
+	eventsMu.Unlock()
+
+	// 4. MarkPeerDisconnected with stale session1 -> must NOT trigger peer.offline
+	require.NoError(t, manager.MarkPeerDisconnected(context.Background(), peerPubKey, accountID, session1))
+	time.Sleep(150 * time.Millisecond)
+	eventsMu.Lock()
+	require.Len(t, events, 2, "stale session disconnect must not trigger peer.offline")
+	eventsMu.Unlock()
+
+	// 5. MarkPeerDisconnected with active session2 (online -> offline) -> triggers peer.offline (connected: false)
+	require.NoError(t, manager.MarkPeerDisconnected(context.Background(), peerPubKey, accountID, session2))
+
+	require.Eventually(t, func() bool {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		return len(events) == 3 && events[2].EventType == types.NotificationEventPeerOffline && !events[2].Peer.Connected
+	}, 3*time.Second, 20*time.Millisecond)
 }

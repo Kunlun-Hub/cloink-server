@@ -166,7 +166,7 @@ func (m *TimeBasedAuthSecretsManager) pushRelayList(ctx context.Context, account
 	return true
 }
 
-func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID, peerID string, token *Token) *proto.RelayConfig {
+func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID, _ string, token *Token) *proto.RelayConfig {
 	settings, err := m.settingsManager.GetExtraSettings(ctx, accountID)
 	if err != nil {
 		log.WithContext(ctx).WithError(err).Warn("failed to load registered relays")
@@ -174,14 +174,6 @@ func (m *TimeBasedAuthSecretsManager) relayConfig(ctx context.Context, accountID
 	servers := relayhandler.ActiveRelayServers(m.relayCfg)
 	if err == nil {
 		servers = relayhandler.RelayServersForAccount(m.relayCfg, &types.Settings{Extra: settings})
-	}
-	// Per-peer group distribution, mirroring the sync path. On lookup failure
-	// we send the unfiltered list (the pre-feature behavior); the next sync
-	// delivers the correctly filtered config.
-	if groupIDs, err := m.groupsManager.GetPeerGroupIDs(ctx, accountID, peerID); err != nil {
-		log.WithContext(ctx).WithError(err).Warn("failed to get peer groups for relay list push, sending unfiltered list")
-	} else {
-		servers = relayhandler.FilterRelayDescriptorsForGroups(servers, groupIDs)
 	}
 	config := relayConfigFromDescriptors(servers)
 	config.TokenPayload = token.Payload

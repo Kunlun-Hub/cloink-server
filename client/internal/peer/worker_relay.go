@@ -48,7 +48,7 @@ func NewWorkerRelay(ctx context.Context, log *log.Entry, ctrl bool, config ConnC
 	return r
 }
 
-func (w *WorkerRelay) OnNewOffer(remoteOfferAnswer *OfferAnswer) {
+func (w *WorkerRelay) OnNewOffer(ctx context.Context, remoteOfferAnswer *OfferAnswer) {
 	if !w.isRelaySupported(remoteOfferAnswer) {
 		w.log.Infof("Relay is not supported by remote peer")
 		w.relaySupportedOnRemotePeer.Store(false)
@@ -69,13 +69,31 @@ func (w *WorkerRelay) OnNewOffer(remoteOfferAnswer *OfferAnswer) {
 		serverIP = remoteOfferAnswer.RelaySrvIP
 	}
 
-	relayedConn, err := w.relayManager.OpenConn(w.peerCtx, srv, w.config.Key, serverIP)
+	openCtx, cancel := context.WithCancel(w.peerCtx)
+	stop := context.AfterFunc(ctx, cancel)
+	defer func() {
+		stop()
+		cancel()
+	}()
+
+	relayedConn, err := w.relayManager.OpenConn(openCtx, srv, w.config.Key, serverIP)
 	if err != nil {
 		if errors.Is(err, relayClient.ErrConnAlreadyExists) {
 			w.log.Debugf("handled offer by reusing existing relay connection")
 			return
 		}
+		if openCtx.Err() != nil {
+			w.log.Debugf("relay connection attempt superseded by a newer signal")
+			return
+		}
 		w.log.Errorf("failed to open connection via Relay: %s", err)
+		return
+	}
+	if openCtx.Err() != nil {
+		if err := relayedConn.Close(); err != nil {
+			w.log.Debugf("failed to close superseded relay connection: %v", err)
+		}
+		w.log.Debugf("relay connection attempt superseded by a newer signal")
 		return
 	}
 

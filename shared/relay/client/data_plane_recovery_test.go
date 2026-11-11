@@ -180,3 +180,55 @@ func TestManagerDataPlaneFailuresRebuildHomeRelayClient(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond, "home Relay client was not rebuilt after data-plane failures")
 	require.True(t, manager.transportFallback.avoidDatagramSized(oldClient.connectionURL), "QUIC failure should persist a WebSocket fallback across client recreation")
 }
+
+func TestManagerDataPlaneRecoveryRetriesAfterAllCandidatesInitiallyFail(t *testing.T) {
+	prevRetryInterval := dataPlaneRecoveryRetryInterval
+	dataPlaneRecoveryRetryInterval = 40 * time.Millisecond
+	t.Cleanup(func() { dataPlaneRecoveryRetryInterval = prevRetryInterval })
+
+	homeURL := startMigrationRelayServer(t, "dp-retry-home")
+	backupAddr, _ := freeAddr(t)
+	backupURL := "rel://" + backupAddr
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	manager := NewManager(ctx, []string{homeURL}, "peer-dp-retry", iface.DefaultMTU,
+		WithRelayServerCooldown(10*time.Millisecond),
+		WithMaxBackoffInterval(200*time.Millisecond))
+	manager.serverPicker.ConnectionTimeout = 200 * time.Millisecond
+	require.NoError(t, manager.Serve())
+	require.Equal(t, homeURL, manager.currentRelayURL())
+
+	// Add backupURL before its server is started so the first data-plane
+	// failover attempt fails to dial backupURL.
+	manager.UpdateServerURLs([]string{homeURL, backupURL})
+
+	relayAddress, _, err := manager.RelayInstanceAddress()
+	require.NoError(t, err)
+	manager.ReportDataPlaneFailure(relayAddress, "peer-a")
+	manager.ReportDataPlaneFailure(relayAddress, "peer-b")
+
+	// Wait until the initial recovery attempt fails and schedules the retry loop.
+	require.Eventually(t, func() bool {
+		return manager.dataPlaneRetrying.Load()
+	}, 2*time.Second, 10*time.Millisecond, "failed data-plane recovery should schedule an active retry")
+
+	// Start the backup relay server; without any new ReportDataPlaneFailure calls,
+	// the background retry loop must switch the home relay to backupURL.
+	backupSrv, err := server.NewServer(server.Config{
+		Meter:          otel.Meter("relay-dp-retry-backup"),
+		ExposedAddress: backupAddr,
+		TLSSupport:     false,
+		AuthValidator:  &allow.Auth{},
+	})
+	require.NoError(t, err)
+	errCh := make(chan error, 1)
+	go func() { errCh <- backupSrv.Listen(server.ListenerConfig{Address: backupAddr}) }()
+	require.NoError(t, waitForServerToStart(errCh))
+	t.Cleanup(func() { _ = backupSrv.Shutdown(context.Background()) })
+
+	require.Eventually(t, func() bool {
+		return manager.currentRelayURL() == backupURL && manager.Ready()
+	}, 5*time.Second, 20*time.Millisecond, "background data-plane recovery retry should migrate to backup relay once available")
+}

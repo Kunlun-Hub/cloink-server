@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/quic-go/quic-go"
 	log "github.com/sirupsen/logrus"
@@ -14,7 +15,12 @@ import (
 	nbRelay "github.com/netbirdio/netbird/shared/relay"
 )
 
-const Proto protocol.Protocol = "quic"
+const (
+	Proto                    protocol.Protocol = "quic"
+	quicHandshakeIdleTimeout                   = 8 * time.Second
+	quicKeepAlivePeriod                        = 2 * time.Second
+	quicMaxIdleTimeout                         = 8 * time.Second
+)
 
 type Listener struct {
 	// Address is the address to listen on
@@ -27,8 +33,11 @@ type Listener struct {
 
 func (l *Listener) Bind() error {
 	quicCfg := &quic.Config{
-		EnableDatagrams:   true,
-		InitialPacketSize: nbRelay.QUICInitialPacketSize,
+		HandshakeIdleTimeout: quicHandshakeIdleTimeout,
+		KeepAlivePeriod:      quicKeepAlivePeriod,
+		MaxIdleTimeout:       quicMaxIdleTimeout,
+		EnableDatagrams:      true,
+		InitialPacketSize:    nbRelay.QUICInitialPacketSize,
 	}
 	listener, err := quic.ListenAddr(l.Address, l.TLSConfig, quicCfg)
 	if err != nil {
