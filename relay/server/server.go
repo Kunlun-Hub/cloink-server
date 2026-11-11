@@ -27,6 +27,9 @@ type ListenerConfig struct {
 	Address        string
 	TLSConfig      *tls.Config
 	TrustedProxies *trustedproxy.List
+	// DisableQUIC keeps the WebSocket listener while leaving the QUIC listener
+	// implementation available for later re-enablement.
+	DisableQUIC bool
 }
 
 // Server is the main entry point for the relay server.
@@ -152,6 +155,10 @@ func newListeners(cfg ListenerConfig) []Listener {
 			TLSConfig:      cfg.TLSConfig,
 			TrustedProxies: cfg.TrustedProxies,
 		},
+	}
+	if cfg.DisableQUIC {
+		log.Infof("QUIC relay listener disabled; using WebSocket only")
+		return listeners
 	}
 
 	tlsConfigQUIC, err := quictls.ServerQUICTLSConfig(cfg.TLSConfig)

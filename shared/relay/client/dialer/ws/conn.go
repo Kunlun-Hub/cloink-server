@@ -43,6 +43,25 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return c.Conn.Ping(ctx)
 }
 
+// PingRTT sends a Ping control frame and returns the Pong round-trip time.
+// coder/websocket requires a concurrent Reader to process the Pong, so start one
+// for the probe connection; closing the connection unblocks it.
+func (c *Conn) PingRTT(ctx context.Context) (time.Duration, error) {
+	readerStarted := make(chan struct{})
+	go func() {
+		close(readerStarted)
+		buf := make([]byte, 1)
+		_, _ = c.Read(buf)
+	}()
+	<-readerStarted
+
+	start := time.Now()
+	if err := c.Ping(ctx); err != nil {
+		return 0, err
+	}
+	return time.Since(start), nil
+}
+
 func (c *Conn) Read(b []byte) (n int, err error) {
 	t, ioReader, err := c.Conn.Reader(c.ctx)
 	if err != nil {

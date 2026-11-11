@@ -255,6 +255,7 @@ func execute(cmd *cobra.Command, args []string) error {
 	srvListenerCfg := server.ListenerConfig{
 		Address:        cobraConfig.ListenAddress,
 		TrustedProxies: trustedProxies,
+		DisableQUIC:    true,
 	}
 
 	tlsConfig, tlsSupport, err := handleTLSConfig(cobraConfig)

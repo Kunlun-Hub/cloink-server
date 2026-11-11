@@ -14,7 +14,7 @@ import (
 var relayCmd = &cobra.Command{
 	Use:     "relay",
 	Short:   "List received relays",
-	Long:    "List relay servers received by this client and show their current selection weight.",
+	Long:    "List relay servers received by this client and show their current status.",
 	Example: "  cloink relay",
 	RunE:    listRelays,
 }
@@ -51,14 +51,12 @@ func listRelays(cmd *cobra.Command, _ []string) error {
 	cmd.Println("Received relays:")
 	for _, relay := range relays {
 		labels := relayLabels(relay)
-		labelText := ""
-		if len(labels) > 0 {
-			labelText = "  [" + strings.Join(labels, ", ") + "]"
-		}
 
 		cmd.Printf("  - %s\n", relayDisplayID(relay.GetUri()))
 		cmd.Printf("    URI: %s\n", relay.GetUri())
-		cmd.Printf("    Weight: %d%s\n", relay.GetWeight(), labelText)
+		if len(labels) > 0 {
+			cmd.Printf("    State: %s\n", strings.Join(labels, ", "))
+		}
 		cmd.Printf("    Status: %s\n", relayProbeStatus(relay))
 		cmd.Printf("    RTT: %s\n", relayRTTDisplay(relay))
 	}
@@ -94,7 +92,7 @@ func relayLabels(relay *proto.RelayServer) []string {
 		labels = append(labels, "current")
 	}
 	if relay.GetPreferred() {
-		labels = append(labels, "preferred")
+		labels = append(labels, "standby")
 	}
 	if relay.GetForced() {
 		labels = append(labels, "forced")

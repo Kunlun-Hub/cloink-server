@@ -17,8 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/netbirdio/netbird/relay/server/listener/quic"
+	"github.com/netbirdio/netbird/relay/server/listener/ws"
 	"github.com/netbirdio/netbird/shared/relay/auth/allow"
 )
+
+func TestNewListenersCanDisableQUIC(t *testing.T) {
+	listeners := newListeners(ListenerConfig{
+		Address:     "127.0.0.1:0",
+		TLSConfig:   testTLSConfig(t),
+		DisableQUIC: true,
+	})
+
+	require.Len(t, listeners, 1)
+	assert.Equal(t, ws.Proto, listeners[0].Protocol())
+}
 
 func TestServer_ShutdownBeforeListen(t *testing.T) {
 	addr := freeAddress(t)
