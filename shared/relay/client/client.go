@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -177,6 +178,17 @@ type quicStatsConn interface {
 	PacketsReceived() uint64
 }
 
+// rttConn is implemented by transports that expose a live network RTT sample.
+type rttConn interface {
+	RTT() time.Duration
+}
+
+// rttPingConn is implemented by transports that measure one application-level
+// round trip. WebSocket implements it via Ping/Pong.
+type rttPingConn interface {
+	PingRTT(ctx context.Context) (time.Duration, error)
+}
+
 // NetEvents is the OS network event view the relay consumes: availability
 // gating for the reconnect guard and dial registration for the network change
 // sweep.
@@ -288,11 +300,12 @@ func (c *Client) Connect(ctx context.Context) error {
 	return c.connectWithContexts(ctx, ctx)
 }
 
-// ProbeTransport measures the transport handshake (QUIC or WebSocket) round
-// trip to the relay server without establishing a relay session. It is the
-// cheap counterpart to Connect for latency probing: no peer ID is registered
-// server-side, no handshake messages are exchanged, and no read loop starts.
-// The returned duration covers the winning dialer's handshake only.
+// ProbeTransport measures the transport round trip to the relay server without
+// establishing a relay session. It is the cheap counterpart to Connect for
+// latency probing: no peer ID is registered server-side, no relay handshake
+// messages are exchanged, and no read loop starts. QUIC returns a live packet
+// RTT sample and WebSocket performs one Ping/Pong; the handshake duration is
+// only used when the transport exposes neither.
 func (c *Client) ProbeTransport(ctx context.Context) (time.Duration, error) {
 	mode := transportModeFromEnv()
 	dialers := c.getDialers(mode)
@@ -303,14 +316,35 @@ func (c *Client) ProbeTransport(ctx context.Context) (time.Duration, error) {
 	}
 	start := time.Now()
 	conn, err := rd.Dial(ctx)
-	rtt := time.Since(start)
+	handshakeDuration := time.Since(start)
 	if err != nil {
 		return 0, err
 	}
+
+	rtt, rttErr := measureTransportRTT(ctx, conn, handshakeDuration)
 	if cerr := conn.Close(); cerr != nil {
 		c.log.Debugf("probe transport close: %v", cerr)
 	}
+	if rttErr != nil {
+		return 0, rttErr
+	}
 	return rtt, nil
+}
+
+func measureTransportRTT(ctx context.Context, conn net.Conn, fallback time.Duration) (time.Duration, error) {
+	if measured, ok := conn.(rttConn); ok {
+		if rtt := measured.RTT(); rtt > 0 {
+			return rtt, nil
+		}
+	}
+	if runtime.GOOS == "js" {
+		// The coder/websocket Ping implementation is a no-op in WASM.
+		return fallback, nil
+	}
+	if pinger, ok := conn.(rttPingConn); ok {
+		return pinger.PingRTT(ctx)
+	}
+	return fallback, nil
 }
 
 func (c *Client) connectWithContexts(connectCtx, lifecycleCtx context.Context) error {

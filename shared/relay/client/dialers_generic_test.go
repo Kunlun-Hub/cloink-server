@@ -41,6 +41,7 @@ func TestGetDialers(t *testing.T) {
 		preferWS bool
 		want     []string
 	}{
+		{name: "default is forced to ws", mode: "", mtu: iface.DefaultMTU, want: []string{"ws"}},
 		{name: "auto races quic and ws", mode: "auto", mtu: iface.DefaultMTU, want: []string{"quic", "ws"}},
 		{name: "ws pinned", mode: "ws", mtu: iface.DefaultMTU, want: []string{"ws"}},
 		{name: "quic pinned", mode: "quic", mtu: iface.DefaultMTU, want: []string{"quic"}},

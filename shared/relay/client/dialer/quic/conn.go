@@ -71,6 +71,18 @@ func (c *Conn) PacketsReceived() uint64 {
 	return c.session.ConnectionStats().PacketsReceived
 }
 
+// RTT returns QUIC's smoothed network RTT estimate for the active path.
+func (c *Conn) RTT() time.Duration {
+	if c.session == nil {
+		return 0
+	}
+	stats := c.session.ConnectionStats()
+	if stats.SmoothedRTT > 0 {
+		return stats.SmoothedRTT
+	}
+	return stats.LatestRTT
+}
+
 func (c *Conn) RemoteAddr() net.Addr {
 	return c.session.RemoteAddr()
 }

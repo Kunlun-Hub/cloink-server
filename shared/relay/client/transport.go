@@ -11,13 +11,16 @@ import (
 	"github.com/netbirdio/netbird/shared/relay/client/dialer"
 )
 
-// EnvRelayTransport pins the relay transport. Valid values: "auto" (default,
-// race QUIC and WebSocket), "quic" (QUIC only), "ws" (WebSocket only),
+// EnvRelayTransport pins the relay transport. Valid values: "ws" (default,
+// WebSocket only), "auto" (race QUIC and WebSocket), "quic" (QUIC only),
 // "prefer-quic" / "prefer-ws" (try the preferred transport first, fall back to
-// the other only if it fails to connect; no race). The prefer modes trade a
-// slower connect when the preferred transport is blackholed for deterministic
-// transport selection.
+// the other only if it fails to connect; no race). QUIC remains opt-in while
+// its relay behavior is being stabilized.
 const EnvRelayTransport = "NB_RELAY_TRANSPORT"
+
+// defaultRelayTransportMode keeps production on WebSocket while QUIC is still
+// being validated. QUIC code remains available through an explicit env override.
+const defaultRelayTransportMode = TransportModeWS
 
 const (
 	// transportFallbackBase is the initial window a relay server avoids
@@ -38,11 +41,13 @@ const (
 	TransportModePreferWS   TransportMode = "prefer-ws"
 )
 
-// transportModeFromEnv reads EnvRelayTransport, defaulting to auto for an empty
-// or unrecognized value.
+// transportModeFromEnv reads EnvRelayTransport, defaulting to WebSocket for an
+// empty or unrecognized value.
 func transportModeFromEnv() TransportMode {
 	switch TransportMode(strings.ToLower(strings.TrimSpace(os.Getenv(EnvRelayTransport)))) {
-	case "", TransportModeAuto:
+	case "":
+		return defaultRelayTransportMode
+	case TransportModeAuto:
 		return TransportModeAuto
 	case TransportModeQUIC:
 		return TransportModeQUIC
@@ -53,8 +58,8 @@ func transportModeFromEnv() TransportMode {
 	case TransportModePreferWS:
 		return TransportModePreferWS
 	default:
-		log.Warnf("invalid %s value %q, using %q", EnvRelayTransport, os.Getenv(EnvRelayTransport), TransportModeAuto)
-		return TransportModeAuto
+		log.Warnf("invalid %s value %q, using %q", EnvRelayTransport, os.Getenv(EnvRelayTransport), defaultRelayTransportMode)
+		return defaultRelayTransportMode
 	}
 }
 

@@ -29,7 +29,7 @@ func TestTransportModeFromEnv(t *testing.T) {
 		value string
 		want  TransportMode
 	}{
-		{"", TransportModeAuto},
+		{"", TransportModeWS},
 		{"auto", TransportModeAuto},
 		{"quic", TransportModeQUIC},
 		{"QUIC", TransportModeQUIC},
@@ -37,7 +37,7 @@ func TestTransportModeFromEnv(t *testing.T) {
 		{" Ws ", TransportModeWS},
 		{"prefer-quic", TransportModePreferQUIC},
 		{"prefer-ws", TransportModePreferWS},
-		{"garbage", TransportModeAuto},
+		{"garbage", TransportModeWS},
 	}
 
 	for _, tc := range tests {

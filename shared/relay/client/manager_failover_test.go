@@ -196,6 +196,9 @@ func (f *fakeSilentQUICConn) Close() error {
 }
 
 func (f *fakeSilentQUICConn) PacketsReceived() uint64 {
+	if !f.blackholed.Load() {
+		return f.recvPackets.Add(1)
+	}
 	return f.recvPackets.Load()
 }
 
@@ -246,12 +249,10 @@ func TestClientProbeConnectionLivenessClosesSilentQUICAndWebSocket(t *testing.T)
 		defer cancel()
 
 		client := NewClient("rels://quic-relay:443", hmacTokenStore, "alice", iface.DefaultMTU)
-		hc := healthcheck.NewReceiver(client.log)
-		defer hc.Stop()
 		stopFlag := newInternalStopFlag()
 		qConn := &fakeSilentQUICConn{}
 
-		go client.probeConnectionLiveness(ctx, hc, qConn, nil, qConn, stopFlag)
+		go client.probeConnectionLiveness(ctx, qConn, nil, qConn, stopFlag)
 
 		// Healthy while ACKs arrive.
 		time.Sleep(80 * time.Millisecond)
@@ -269,12 +270,10 @@ func TestClientProbeConnectionLivenessClosesSilentQUICAndWebSocket(t *testing.T)
 		defer cancel()
 
 		client := NewClient("rels://ws-relay:443", hmacTokenStore, "bob", iface.DefaultMTU)
-		hc := healthcheck.NewReceiver(client.log)
-		defer hc.Stop()
 		stopFlag := newInternalStopFlag()
 		wsConn := &fakeSilentWSConn{}
 
-		go client.probeConnectionLiveness(ctx, hc, wsConn, wsConn, nil, stopFlag)
+		go client.probeConnectionLiveness(ctx, wsConn, wsConn, nil, stopFlag)
 
 		time.Sleep(80 * time.Millisecond)
 		require.False(t, wsConn.closed.Load(), "healthy WebSocket connection must stay open")
@@ -283,5 +282,26 @@ func TestClientProbeConnectionLivenessClosesSilentQUICAndWebSocket(t *testing.T)
 		require.Eventually(t, func() bool {
 			return wsConn.closed.Load() && stopFlag.isSet()
 		}, 500*time.Millisecond, 10*time.Millisecond, "silent WebSocket blackhole must close connection promptly")
+	})
+
+	t.Run("transport liveness does not mask application health", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		client := NewClient("rels://quic-relay:443", hmacTokenStore, "carol", iface.DefaultMTU)
+		hc := healthcheck.NewReceiverWithOpts(client.log, healthcheck.ReceiverOptions{
+			HeartbeatTimeout: 100 * time.Millisecond,
+		})
+		defer hc.Stop()
+		stopFlag := newInternalStopFlag()
+		qConn := &fakeSilentQUICConn{}
+
+		go client.probeConnectionLiveness(ctx, qConn, nil, qConn, stopFlag)
+
+		select {
+		case <-hc.OnTimeout:
+		case <-time.After(time.Second):
+			t.Fatal("transport liveness probe incorrectly refreshed application health")
+		}
 	})
 }

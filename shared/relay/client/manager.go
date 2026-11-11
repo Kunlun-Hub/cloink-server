@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
 	relayAuth "github.com/netbirdio/netbird/shared/relay/auth/hmac"
@@ -774,7 +773,7 @@ func (m *Manager) RelayServers() []RelayServerInfo {
 			Current:   relayURL == currentURL,
 		}
 		if rtt, ok := m.rttCache.latest(relayURL); ok {
-			info.RTTMs = rtt.Milliseconds()
+			info.RTTMs = relayRTTMilliseconds(rtt)
 		}
 		result = append(result, info)
 	}
@@ -790,29 +789,27 @@ func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
 			defer wg.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, relayProbeTimeout)
 			defer cancel()
-			// Relay servers allow one session per peer ID. A probe must use an
-			// independent identity or it can evict a live home/foreign session.
-			probeID := m.peerID + "-relay-probe-" + uuid.NewString()
-			probeClient := NewClient(relays[idx].URL, m.tokenStore, probeID, m.mtu)
-			probeClient.SetTransportFallback(m.transportFallback)
-			probeStarted := time.Now()
-			if err := probeClient.Connect(probeCtx); err != nil {
+			rtt, err := m.lightProbe(probeCtx, relays[idx].URL)
+			if err != nil {
 				relays[idx].Error = err.Error()
 				return
 			}
-			rtt := time.Since(probeStarted)
 			m.rttCache.set(relays[idx].URL, rtt)
 			relays[idx].Available = true
-			relays[idx].RTTMs = rtt.Milliseconds()
-			if err := probeClient.Close(); err != nil {
-				// The probe itself succeeded; a close failure must not
-				// overturn the result and mark the relay unavailable.
-				log.Debugf("relay probe for %s: close failed after successful probe: %v", relays[idx].URL, err)
-			}
+			relays[idx].RTTMs = relayRTTMilliseconds(rtt)
 		}(i)
 	}
 	wg.Wait()
 	return relays
+}
+
+// relayRTTMilliseconds rounds a positive RTT up so a healthy sub-millisecond
+// relay is not reported as 0, which is reserved for "no measurement".
+func relayRTTMilliseconds(rtt time.Duration) int64 {
+	if rtt <= 0 {
+		return 0
+	}
+	return int64((rtt + time.Millisecond - 1) / time.Millisecond)
 }
 
 func (m *Manager) SetForcedRelay(identifier string) (string, error) {
