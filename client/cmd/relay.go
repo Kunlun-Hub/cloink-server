@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/status"
@@ -59,6 +60,18 @@ func listRelays(cmd *cobra.Command, _ []string) error {
 		}
 		cmd.Printf("    Status: %s\n", relayProbeStatus(relay))
 		cmd.Printf("    RTT: %s\n", relayRTTDisplay(relay))
+		if live := relayLiveQualityDisplay(relay); live != "" {
+			cmd.Printf("    Live: %s\n", live)
+		}
+		if relay.GetTransport() != "" {
+			cmd.Printf("    Transport: %s\n", relay.GetTransport())
+		}
+		if cooldown := relayCooldownDisplay(relay); cooldown != "" {
+			cmd.Printf("    Cooldown: %s\n", cooldown)
+		}
+		if lastSwitch := relaySwitchDisplay(relay); lastSwitch != "" {
+			cmd.Printf("    Last switch: %s\n", lastSwitch)
+		}
 	}
 
 	return nil
@@ -117,6 +130,35 @@ func relayRTTDisplay(relay *proto.RelayServer) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%dms", relay.GetRttMs())
+}
+
+func relayLiveQualityDisplay(relay *proto.RelayServer) string {
+	if relay.GetLiveRttMs() <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("RTT %dms, p95 %dms, jitter %dms, loss %d%%", relay.GetLiveRttMs(), relay.GetP95RttMs(), relay.GetJitterMs(), relay.GetLossPercent())
+}
+
+func relayCooldownDisplay(relay *proto.RelayServer) string {
+	if relay.GetCooldownRemainingMs() <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s remaining", time.Duration(relay.GetCooldownRemainingMs())*time.Millisecond)
+}
+
+func relaySwitchDisplay(relay *proto.RelayServer) string {
+	if relay.GetLastSwitchReason() == "" && relay.GetLastSwitchAtUnixMs() <= 0 {
+		return ""
+	}
+	when := "unknown time"
+	if timestamp := relay.GetLastSwitchAtUnixMs(); timestamp > 0 {
+		when = time.UnixMilli(timestamp).Format(time.RFC3339)
+	}
+	reason := relay.GetLastSwitchReason()
+	if reason == "" {
+		reason = "unknown reason"
+	}
+	return fmt.Sprintf("%s (%s), total %d", when, reason, relay.GetSwitchCount())
 }
 
 func relayDisplayID(relayURL string) string {

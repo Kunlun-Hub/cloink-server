@@ -121,6 +121,24 @@ func (f *relayDataPlaneFailures) resetCooldown(relayAddress string) {
 	}
 }
 
+func (f *relayDataPlaneFailures) resetRelay(relayAddress string) {
+	if relayAddress == "" {
+		return
+	}
+	f.mu.Lock()
+	delete(f.states, relayAddress)
+	f.mu.Unlock()
+}
+
+func (f *relayDataPlaneFailures) resetAll() {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	clear(f.states)
+	f.mu.Unlock()
+}
+
 func (f *relayDataPlaneFailures) hasSucceededSince(relayAddress string, since time.Time) bool {
 	if relayAddress == "" {
 		return false

@@ -34,6 +34,7 @@ type Manager struct {
 	netState *netstate.State
 	sweeper  *sweep.Sweeper
 	recorder Recorder
+	changed  chan struct{}
 }
 
 // NewManager creates a Manager reporting into recorder, starting online.
@@ -42,6 +43,7 @@ func NewManager(recorder Recorder) *Manager {
 		netState: netstate.New(),
 		sweeper:  sweep.New(),
 		recorder: recorder,
+		changed:  make(chan struct{}, 1),
 	}
 }
 
@@ -60,11 +62,15 @@ func (m *Manager) SetNetworkAvailable(available bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	wasOnline := m.netState.IsOnline()
 	if !available && m.netState.IsOnline() {
 		m.sweeper.MarkNetworkChange()
 	}
 	m.netState.Set(available)
 	m.recorder.SetNetworkAvailable(available)
+	if wasOnline != available {
+		m.notifyNetworkChanged()
+	}
 }
 
 // NotifyNetworkChange marks the management, signal and relay connections
@@ -76,7 +82,27 @@ func (m *Manager) SetNetworkAvailable(available bool) {
 // report network changes.
 func (m *Manager) NotifyNetworkChange() {
 	m.sweeper.MarkNetworkChange()
+	m.notifyNetworkChanged()
 	log.Infof("network change: connections marked stale")
+}
+
+// NetworkChanged emits once per network transition. Consumers that own a
+// socket (for example the Relay manager) can close it immediately instead of
+// waiting for a transport liveness timeout. The channel is intentionally
+// best-effort and coalesces bursts.
+func (m *Manager) NetworkChanged() <-chan struct{} {
+	if m == nil {
+		return nil
+	}
+	return m.changed
+}
+
+// Caller holds m.mu.
+func (m *Manager) notifyNetworkChanged() {
+	select {
+	case m.changed <- struct{}{}:
+	default:
+	}
 }
 
 // IsOnline reports whether the OS reports at least one usable network.

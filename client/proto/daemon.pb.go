@@ -7054,9 +7054,24 @@ type RelayServer struct {
 	Available bool                   `protobuf:"varint,6,opt,name=available,proto3" json:"available,omitempty"`
 	Error     string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
 	// Last probed dial round-trip time in milliseconds. Zero means no measurement.
-	RttMs         int64 `protobuf:"varint,8,opt,name=rtt_ms,json=rttMs,proto3" json:"rtt_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RttMs int64 `protobuf:"varint,8,opt,name=rtt_ms,json=rttMs,proto3" json:"rtt_ms,omitempty"`
+	// Smoothed RTT measured by liveness probes on the established session.
+	LiveRttMs int64 `protobuf:"varint,9,opt,name=live_rtt_ms,json=liveRttMs,proto3" json:"live_rtt_ms,omitempty"`
+	// 95th percentile and jitter over the recent live samples.
+	P95RttMs int64 `protobuf:"varint,10,opt,name=p95_rtt_ms,json=p95RttMs,proto3" json:"p95_rtt_ms,omitempty"`
+	JitterMs int64 `protobuf:"varint,11,opt,name=jitter_ms,json=jitterMs,proto3" json:"jitter_ms,omitempty"`
+	// Recent packet loss percentage from liveness probes (0-100).
+	LossPercent int32 `protobuf:"varint,12,opt,name=loss_percent,json=lossPercent,proto3" json:"loss_percent,omitempty"`
+	// Negotiated transport for the current session (for example "ws").
+	Transport string `protobuf:"bytes,13,opt,name=transport,proto3" json:"transport,omitempty"`
+	// Remaining failure cooldown. Zero means the relay is eligible.
+	CooldownRemainingMs int64 `protobuf:"varint,14,opt,name=cooldown_remaining_ms,json=cooldownRemainingMs,proto3" json:"cooldown_remaining_ms,omitempty"`
+	// Most recent home-relay switch and its cause.
+	LastSwitchReason   string `protobuf:"bytes,15,opt,name=last_switch_reason,json=lastSwitchReason,proto3" json:"last_switch_reason,omitempty"`
+	LastSwitchAtUnixMs int64  `protobuf:"varint,16,opt,name=last_switch_at_unix_ms,json=lastSwitchAtUnixMs,proto3" json:"last_switch_at_unix_ms,omitempty"`
+	SwitchCount        int32  `protobuf:"varint,17,opt,name=switch_count,json=switchCount,proto3" json:"switch_count,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RelayServer) Reset() {
@@ -7141,6 +7156,69 @@ func (x *RelayServer) GetError() string {
 func (x *RelayServer) GetRttMs() int64 {
 	if x != nil {
 		return x.RttMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetLiveRttMs() int64 {
+	if x != nil {
+		return x.LiveRttMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetP95RttMs() int64 {
+	if x != nil {
+		return x.P95RttMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetJitterMs() int64 {
+	if x != nil {
+		return x.JitterMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetLossPercent() int32 {
+	if x != nil {
+		return x.LossPercent
+	}
+	return 0
+}
+
+func (x *RelayServer) GetTransport() string {
+	if x != nil {
+		return x.Transport
+	}
+	return ""
+}
+
+func (x *RelayServer) GetCooldownRemainingMs() int64 {
+	if x != nil {
+		return x.CooldownRemainingMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetLastSwitchReason() string {
+	if x != nil {
+		return x.LastSwitchReason
+	}
+	return ""
+}
+
+func (x *RelayServer) GetLastSwitchAtUnixMs() int64 {
+	if x != nil {
+		return x.LastSwitchAtUnixMs
+	}
+	return 0
+}
+
+func (x *RelayServer) GetSwitchCount() int32 {
+	if x != nil {
+		return x.SwitchCount
 	}
 	return 0
 }
@@ -7929,7 +8007,7 @@ const file_daemon_proto_rawDesc = "" +
 	"\atimeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\x1c\n" +
 	"\x1aStartBundleCaptureResponse\"\x1a\n" +
 	"\x18StopBundleCaptureRequest\"\x1b\n" +
-	"\x19StopBundleCaptureResponse\"\xd2\x01\n" +
+	"\x19StopBundleCaptureResponse\"\xa7\x04\n" +
 	"\vRelayServer\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\x12\x16\n" +
 	"\x06weight\x18\x02 \x01(\x05R\x06weight\x12\x1c\n" +
@@ -7938,7 +8016,18 @@ const file_daemon_proto_rawDesc = "" +
 	"\acurrent\x18\x05 \x01(\bR\acurrent\x12\x1c\n" +
 	"\tavailable\x18\x06 \x01(\bR\tavailable\x12\x14\n" +
 	"\x05error\x18\a \x01(\tR\x05error\x12\x15\n" +
-	"\x06rtt_ms\x18\b \x01(\x03R\x05rttMs\"A\n" +
+	"\x06rtt_ms\x18\b \x01(\x03R\x05rttMs\x12\x1e\n" +
+	"\vlive_rtt_ms\x18\t \x01(\x03R\tliveRttMs\x12\x1c\n" +
+	"\n" +
+	"p95_rtt_ms\x18\n" +
+	" \x01(\x03R\bp95RttMs\x12\x1b\n" +
+	"\tjitter_ms\x18\v \x01(\x03R\bjitterMs\x12!\n" +
+	"\floss_percent\x18\f \x01(\x05R\vlossPercent\x12\x1c\n" +
+	"\ttransport\x18\r \x01(\tR\ttransport\x122\n" +
+	"\x15cooldown_remaining_ms\x18\x0e \x01(\x03R\x13cooldownRemainingMs\x12,\n" +
+	"\x12last_switch_reason\x18\x0f \x01(\tR\x10lastSwitchReason\x122\n" +
+	"\x16last_switch_at_unix_ms\x18\x10 \x01(\x03R\x12lastSwitchAtUnixMs\x12!\n" +
+	"\fswitch_count\x18\x11 \x01(\x05R\vswitchCount\"A\n" +
 	"\x12ListRelaysResponse\x12+\n" +
 	"\x06relays\x18\x01 \x03(\v2\x13.daemon.RelayServerR\x06relays\"'\n" +
 	"\x0fSetRelayRequest\x12\x14\n" +

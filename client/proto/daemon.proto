@@ -1102,6 +1102,21 @@ message RelayServer {
   string error = 7;
   // Last probed dial round-trip time in milliseconds. Zero means no measurement.
   int64 rtt_ms = 8;
+  // Smoothed RTT measured by liveness probes on the established session.
+  int64 live_rtt_ms = 9;
+  // 95th percentile and jitter over the recent live samples.
+  int64 p95_rtt_ms = 10;
+  int64 jitter_ms = 11;
+  // Recent packet loss percentage from liveness probes (0-100).
+  int32 loss_percent = 12;
+  // Negotiated transport for the current session (for example "ws").
+  string transport = 13;
+  // Remaining failure cooldown. Zero means the relay is eligible.
+  int64 cooldown_remaining_ms = 14;
+  // Most recent home-relay switch and its cause.
+  string last_switch_reason = 15;
+  int64 last_switch_at_unix_ms = 16;
+  int32 switch_count = 17;
 }
 
 message ListRelaysResponse {

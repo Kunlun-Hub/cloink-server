@@ -26,14 +26,23 @@ func (s *Server) ListRelays(ctx context.Context, _ *proto.EmptyRequest) (*proto.
 	}
 	for _, relay := range relays {
 		response.Relays = append(response.Relays, &proto.RelayServer{
-			Uri:       relay.URL,
-			Weight:    int32(relay.Weight),
-			Preferred: relay.Preferred,
-			Forced:    relay.Forced,
-			Current:   relay.Current,
-			Available: relay.Available,
-			Error:     relay.Error,
-			RttMs:     relay.RTTMs,
+			Uri:                 relay.URL,
+			Weight:              int32(relay.Weight),
+			Preferred:           relay.Preferred,
+			Forced:              relay.Forced,
+			Current:             relay.Current,
+			Available:           relay.Available,
+			Error:               relay.Error,
+			RttMs:               relay.RTTMs,
+			LiveRttMs:           relay.LiveRTTMs,
+			P95RttMs:            relay.P95RTTMs,
+			JitterMs:            relay.JitterMs,
+			LossPercent:         int32(relay.LossPercent),
+			Transport:           relay.Transport,
+			CooldownRemainingMs: relay.CooldownRemaining.Milliseconds(),
+			LastSwitchReason:    relay.LastSwitchReason,
+			LastSwitchAtUnixMs:  relay.LastSwitchAt.UnixMilli(),
+			SwitchCount:         int32(relay.SwitchCount),
 		})
 	}
 

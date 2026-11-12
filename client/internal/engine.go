@@ -2556,6 +2556,9 @@ func (e *Engine) startNetworkMonitor() {
 		}
 
 		log.Infof("Network monitor: detected network change, triggering client restart")
+		if e.relayManager != nil {
+			e.relayManager.HandleNetworkChange("os-default-route-change")
+		}
 		e.triggerClientRestart()
 	}()
 }
