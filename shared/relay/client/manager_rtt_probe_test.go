@@ -101,6 +101,9 @@ func TestManagerProbeTickReselectsStandbyWhenStandbyFailsOrSlowsWithoutMovingPri
 	manager.configuredRelayURLs = append([]string{primaryURL}, candidates...)
 	manager.standbyRelayURL = standbyURL
 	manager.relayConfigMu.Unlock()
+	// Invalidate the refreshStandbyRelay spawned by Serve so a probe round that
+	// captured the old single-relay config cannot clear the standby we set here.
+	manager.relayConfigGeneration.Add(1)
 
 	// Case 1: Standby fails probe -> lowest-RTT healthy alternative becomes new Standby; Primary stays untouched.
 	manager.selectStandbyFromProbes(primaryURL, candidates, map[string]time.Duration{

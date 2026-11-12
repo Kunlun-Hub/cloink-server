@@ -245,6 +245,11 @@ type Client struct {
 	transport string
 	wsPinger  wsPingConn
 	quicStats quicStatsConn
+
+	// liveQuality records liveness round trips and losses on the established
+	// session, so failover decisions can distinguish a healthy probe from a
+	// data plane that is already degraded.
+	liveQuality relayLiveQualityTracker
 }
 
 // Transport returns the negotiated relay transport of the current connection,
@@ -373,6 +378,7 @@ func (c *Client) connectWithContexts(connectCtx, lifecycleCtx context.Context) e
 	c.log.Infof("relay connection established, server IP: %s", connectedIP(c.relayConn))
 
 	c.serviceIsRunning = true
+	c.liveQuality.reset()
 
 	internallyStoppedFlag := newInternalStopFlag()
 	hc := healthcheck.NewReceiver(c.log)
@@ -894,6 +900,7 @@ func (c *Client) probeConnectionLiveness(
 
 		lastRecv := quicStats.PacketsReceived()
 		missed := 0
+		measured, hasMeasuredRTT := conn.(rttConn)
 		for {
 			select {
 			case <-ctx.Done():
@@ -903,9 +910,15 @@ func (c *Client) probeConnectionLiveness(
 				if currRecv > lastRecv {
 					lastRecv = currRecv
 					missed = 0
+					if hasMeasuredRTT {
+						c.liveQuality.recordSuccess(measured.RTT())
+					} else {
+						c.liveQuality.recordSuccess(0)
+					}
 					continue
 				}
 				missed++
+				c.liveQuality.recordFailure()
 				if missed >= threshold {
 					c.log.Errorf("relay QUIC liveness probe timed out after %d missed probes", missed)
 					internalStopFlag.set()
@@ -933,16 +946,27 @@ func (c *Client) probeConnectionLiveness(
 					timeout = time.Second
 				}
 				pingCtx, cancel := context.WithTimeout(ctx, timeout)
+				start := time.Now()
 				err := wsPinger.Ping(pingCtx)
+				rtt := time.Since(start)
 				cancel()
 				if err == nil {
 					missed = 0
+					// coder/websocket answers Ping without reading from the
+					// socket; the established session's readLoop consumes the
+					// Pong. Do not use PingRTT here: its helper reader would
+					// violate coder/websocket's single-Reader contract.
+					if runtime.GOOS == "js" {
+						rtt = 0
+					}
+					c.liveQuality.recordSuccess(rtt)
 					continue
 				}
 				if ctx.Err() != nil || internalStopFlag.isSet() {
 					return
 				}
 				missed++
+				c.liveQuality.recordFailure()
 				if missed >= threshold {
 					c.log.Errorf("relay WebSocket liveness probe timed out after %d missed probes: %s", missed, err)
 					internalStopFlag.set()

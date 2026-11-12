@@ -51,6 +51,11 @@ type Guard struct {
 	// reconnecting prevents overlapping reconnect rounds when several
 	// disconnect events arrive for the same home relay.
 	reconnecting atomic.Bool
+
+	// backoffReset is bumped when a connection has been stable long enough to
+	// forget the previous failure streak. A running retry loop checks it before
+	// using the next ticker interval.
+	backoffReset atomic.Uint64
 }
 
 // NewGuard creates a new guard for the relay client. A non-positive
@@ -94,6 +99,16 @@ func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
 	}
 	defer g.reconnecting.Store(false)
 
+	if g.serverPicker != nil && g.serverPicker.takeHotStandby != nil {
+		if hot := g.serverPicker.takeHotStandby(); hot != nil {
+			log.Infof("promoting preconnected standby Relay %s immediately", hot.connectionURL)
+			g.setLastError(nil)
+			g.drainRelayClientChan()
+			g.OnNewRelayClient <- hot
+			return
+		}
+	}
+
 	if relayClient != nil && g.hasAlternativeRelay(relayClient.connectionURL) {
 		if g.serverPicker.loadConfig().forcedURL != relayClient.connectionURL {
 			g.serverPicker.markServerFailure(relayClient.connectionURL, time.Now(), ErrServerDisconnected)
@@ -122,6 +137,7 @@ func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
 
 	// start a ticker to pick a new server
 	ticker := g.exponentTicker(ctx)
+	backoffGeneration := g.backoffReset.Load()
 	defer func() {
 		ticker.Stop()
 	}()
@@ -129,6 +145,13 @@ func (g *Guard) StartReconnectTrys(ctx context.Context, relayClient *Client) {
 	for {
 		select {
 		case <-ticker.C:
+			if generation := g.backoffReset.Load(); generation != backoffGeneration {
+				backoffGeneration = generation
+				ticker.Stop()
+				ticker = g.exponentTicker(ctx)
+				log.Infof("relay reconnect backoff reset after a stable connection")
+				continue
+			}
 			// suspend reconnect attempts while the OS reports no usable network
 			if g.netWatcher != nil {
 				if waited, err := g.netWatcher.Wait(ctx); err != nil {
@@ -278,6 +301,13 @@ func (g *Guard) exponentTicker(ctx context.Context) *backoff.Ticker {
 	}, ctx)
 
 	return backoff.NewTicker(bo)
+}
+
+// ResetBackoff tells an in-flight reconnect loop to discard its accumulated
+// exponential delay. It is called after the home relay has stayed connected for
+// a full stability window, so the next failure starts from the short interval.
+func (g *Guard) ResetBackoff() {
+	g.backoffReset.Add(1)
 }
 
 func waitBeforeRetry(ctx context.Context) bool {

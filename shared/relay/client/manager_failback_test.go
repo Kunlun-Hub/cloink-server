@@ -11,10 +11,9 @@ import (
 	"github.com/netbirdio/netbird/client/iface"
 )
 
-// Under the 1-Primary + 1-Standby architecture, while the Primary Relay is
-// healthy, it must never migrate to another relay during background probes or
-// server list refreshes that still contain the Primary Relay.
-func TestManagerDoesNotMigrateHealthyPrimaryOnProbeOrRefresh(t *testing.T) {
+// A server-list refresh that still contains the healthy Primary Relay must not
+// move it immediately. RTT migration requires several sustained probe rounds.
+func TestManagerDoesNotMigrateHealthyPrimaryOnConfigRefreshAlone(t *testing.T) {
 	primaryURL := startMigrationRelayServer(t, "primary")
 	standbyURL := startMigrationRelayServer(t, "standby")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,6 +37,6 @@ func TestManagerDoesNotMigrateHealthyPrimaryOnProbeOrRefresh(t *testing.T) {
 	require.Equal(t, standbyURL, manager.StandbyURL(), "new healthy relay should become standby")
 	manager.relayClientMu.RLock()
 	defer manager.relayClientMu.RUnlock()
-	assert.Same(t, oldClient, manager.relayClient, "healthy primary relay must not move")
+	assert.Same(t, oldClient, manager.relayClient, "a config refresh alone must not move the healthy primary relay")
 	assert.Equal(t, primaryURL, manager.relayClient.connectionURL)
 }

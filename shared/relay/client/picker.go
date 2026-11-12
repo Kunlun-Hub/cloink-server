@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math/rand/v2"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -73,14 +72,18 @@ type ServerPicker struct {
 
 	// standbyLookup returns the current standby relay URL, set by the Manager.
 	standbyLookup func() string
+	// takeHotStandby promotes a preconnected standby session when one is
+	// ready, avoiding a cold dial during failover.
+	takeHotStandby func() *Client
 
-	cooldownMu sync.Mutex
-	cooldowns  map[string]time.Time
-	failures   map[string]int
+	cooldownMu   sync.Mutex
+	cooldowns    map[string]time.Time
+	failures     map[string]int
+	failureKinds map[string]relayFailureKind
 }
 
 func (sp *ServerPicker) PickServer(parentCtx context.Context) (*Client, error) {
-	return sp.pickServer(parentCtx, sp.loadConfig())
+	return sp.pickServer(parentCtx, sp.loadConfig(), false)
 }
 
 // PickServerFrom limits a selection attempt to the supplied Relay URLs while
@@ -91,7 +94,19 @@ func (sp *ServerPicker) PickServerFrom(parentCtx context.Context, serverURLs []s
 	if config.forcedURL != "" && !slices.Contains(config.serverURLs, config.forcedURL) {
 		config.forcedURL = ""
 	}
-	return sp.pickServer(parentCtx, config)
+	return sp.pickServer(parentCtx, config, false)
+}
+
+// PickServerFromWithCooldownBypass is used by a preflight or a probe-confirmed
+// migration. The caller already observed the relay as healthy, so a stale
+// transient cooldown must not prevent the candidate from being dialed.
+func (sp *ServerPicker) PickServerFromWithCooldownBypass(parentCtx context.Context, serverURLs []string) (*Client, error) {
+	config := sp.loadConfig()
+	config.serverURLs = slices.Clone(serverURLs)
+	if config.forcedURL != "" && !slices.Contains(config.serverURLs, config.forcedURL) {
+		config.forcedURL = ""
+	}
+	return sp.pickServer(parentCtx, config, true)
 }
 
 // PickStandbyWithFallback dials standbyURL immediately and, if it fails or does
@@ -245,7 +260,7 @@ func (sp *ServerPicker) PickStandbyWithFallback(parentCtx context.Context, stand
 	return nil, errors.New("failed to connect to any relay server: all attempts failed")
 }
 
-func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfig) (*Client, error) {
+func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfig, bypassCooldown bool) (*Client, error) {
 	connectionTimeout := sp.ConnectionTimeout
 	if connectionTimeout <= 0 {
 		connectionTimeout = defaultConnectionTimeout
@@ -254,7 +269,10 @@ func (sp *ServerPicker) pickServer(parentCtx context.Context, config pickerConfi
 	ctx, cancel := context.WithTimeout(parentCtx, connectionTimeout)
 	defer cancel()
 
-	serverURLs := sp.availableServerURLs(config, config.serverURLs, time.Now())
+	serverURLs := config.serverURLs
+	if !bypassCooldown {
+		serverURLs = sp.availableServerURLs(config, config.serverURLs, time.Now())
+	}
 	totalServers := len(serverURLs)
 	if totalServers == 0 {
 		return nil, errors.New("failed to connect to any relay server: all attempts failed")
@@ -499,12 +517,13 @@ func (sp *ServerPicker) markServerFailure(relayURL string, now time.Time, err er
 	if sp.failures == nil {
 		sp.failures = make(map[string]int)
 	}
-	sp.failures[relayURL]++
-	duration := sp.CooldownDuration
-	for range min(sp.failures[relayURL]-1, 6) {
-		duration = min(duration*2, 5*time.Minute)
+	if sp.failureKinds == nil {
+		sp.failureKinds = make(map[string]relayFailureKind)
 	}
-	duration += time.Duration(rand.Int64N(max(1, int64(duration/5))))
+	sp.failures[relayURL]++
+	kind := classifyRelayFailure(err)
+	sp.failureKinds[relayURL] = kind
+	duration := sp.cooldownDuration(relayURL, kind)
 	sp.cooldowns[relayURL] = now.Add(duration)
 	sp.cooldownMu.Unlock()
 }
@@ -513,6 +532,7 @@ func (sp *ServerPicker) clearServerFailure(relayURL string) {
 	sp.cooldownMu.Lock()
 	delete(sp.cooldowns, relayURL)
 	delete(sp.failures, relayURL)
+	delete(sp.failureKinds, relayURL)
 	sp.cooldownMu.Unlock()
 }
 
