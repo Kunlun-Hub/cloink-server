@@ -32,6 +32,21 @@ type channelRequest struct {
 	Target     map[string]interface{} `json:"target"`
 }
 
+// encodeTarget keeps an omitted target empty instead of persisting the JSON
+// literal "null". Notification channels are created before they are configured
+// (for example when the dashboard opens the Webhook settings page), and a
+// null/empty target must remain valid until a URL is supplied.
+func encodeTarget(target map[string]interface{}) (string, error) {
+	if len(target) == 0 {
+		return "", nil
+	}
+	targetJSON, err := json.Marshal(target)
+	if err != nil {
+		return "", err
+	}
+	return string(targetJSON), nil
+}
+
 // AddEndpoints registers the notification channel endpoints.
 // The path prefix matches what the dashboard calls: /api/integrations/notifications.
 func AddEndpoints(manager Manager, router *mux.Router) {
@@ -77,7 +92,7 @@ func (h *handler) createChannel(w http.ResponseWriter, r *http.Request) {
 		util.WriteErrorResponse("couldn't parse JSON request", http.StatusBadRequest, w)
 		return
 	}
-	targetJSON, err := json.Marshal(req.Target)
+	targetJSON, err := encodeTarget(req.Target)
 	if err != nil {
 		util.WriteErrorResponse("couldn't parse target", http.StatusBadRequest, w)
 		return
@@ -86,7 +101,7 @@ func (h *handler) createChannel(w http.ResponseWriter, r *http.Request) {
 		Type:       req.Type,
 		Enabled:    req.Enabled,
 		EventTypes: req.EventTypes,
-		Target:     string(targetJSON),
+		Target:     targetJSON,
 	}
 	created, err := h.manager.CreateChannel(r.Context(), userAuth.AccountId, userAuth.UserId, channel)
 	if err != nil {
@@ -108,7 +123,7 @@ func (h *handler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		util.WriteErrorResponse("couldn't parse JSON request", http.StatusBadRequest, w)
 		return
 	}
-	targetJSON, err := json.Marshal(req.Target)
+	targetJSON, err := encodeTarget(req.Target)
 	if err != nil {
 		util.WriteErrorResponse("couldn't parse target", http.StatusBadRequest, w)
 		return
@@ -117,7 +132,7 @@ func (h *handler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		Type:       req.Type,
 		Enabled:    req.Enabled,
 		EventTypes: req.EventTypes,
-		Target:     string(targetJSON),
+		Target:     targetJSON,
 	}
 	updated, err := h.manager.UpdateChannel(r.Context(), userAuth.AccountId, userAuth.UserId, id, update)
 	if err != nil {

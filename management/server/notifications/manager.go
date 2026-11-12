@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -55,9 +56,10 @@ func validateChannel(channel *types.NotificationChannel) error {
 			return status.Errorf(status.InvalidArgument, "invalid event type: %s", et)
 		}
 	}
-	if channel.Type == types.NotificationChannelTypeWebhook && channel.Target != "" {
+	targetJSON := strings.TrimSpace(channel.Target)
+	if channel.Type == types.NotificationChannelTypeWebhook && targetJSON != "" && targetJSON != "null" {
 		var target webhookTargetConfig
-		if err := json.Unmarshal([]byte(channel.Target), &target); err != nil {
+		if err := json.Unmarshal([]byte(targetJSON), &target); err != nil {
 			return status.Errorf(status.InvalidArgument, "invalid webhook target: %v", err)
 		}
 		if err := ValidateWebhookURL(target.URL); err != nil {
