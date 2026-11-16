@@ -16,10 +16,11 @@ type IPeer interface {
 	ID() messages.PeerID
 }
 
-// shard holds a slice of the peer map guarded by its own lock.
+// shard holds the published and handshake-staged peer maps guarded by its own lock.
 type shard struct {
-	mu    sync.RWMutex
-	peers map[messages.PeerID]IPeer
+	mu     sync.RWMutex
+	peers  map[messages.PeerID]IPeer
+	staged map[messages.PeerID]IPeer
 }
 
 // Store is a thread-safe store of peers
@@ -35,6 +36,7 @@ func NewStore() *Store {
 	s := &Store{}
 	for i := range s.shards {
 		s.shards[i].peers = make(map[messages.PeerID]IPeer)
+		s.shards[i].staged = make(map[messages.PeerID]IPeer)
 	}
 	return s
 }
@@ -53,6 +55,12 @@ func (s *Store) AddPeer(peer IPeer) bool {
 	sh := s.shardFor(peer.ID())
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+
+	if stagedPeer, ok := sh.staged[peer.ID()]; ok && stagedPeer != peer {
+		stagedPeer.Close()
+		delete(sh.staged, peer.ID())
+	}
+
 	odlPeer, ok := sh.peers[peer.ID()]
 	if ok {
 		odlPeer.Close()
@@ -62,22 +70,61 @@ func (s *Store) AddPeer(peer IPeer) bool {
 	return ok
 }
 
+// StagePeer records an authenticated peer without publishing it as online. Staged
+// peers can receive forwarded transport, but they are hidden from Peer, Peers,
+// and online-peer notifications until PublishPeer is called after the auth
+// response has been written.
+func (s *Store) StagePeer(peer IPeer) {
+	sh := s.shardFor(peer.ID())
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	if old, ok := sh.staged[peer.ID()]; ok && old != peer {
+		old.Close()
+	}
+	sh.staged[peer.ID()] = peer
+}
+
+// PublishPeer moves a staged peer into the published set after authentication.
+// The second return value is false when another handshake staged the same peer ID
+// after this peer, in which case the caller must close this connection instead of
+// starting it. The first return value reports whether an online peer was replaced.
+func (s *Store) PublishPeer(peer IPeer) (replaced bool, published bool) {
+	sh := s.shardFor(peer.ID())
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	if stagedPeer, ok := sh.staged[peer.ID()]; ok {
+		if stagedPeer != peer {
+			return false, false
+		}
+		delete(sh.staged, peer.ID())
+	}
+
+	oldPeer, ok := sh.peers[peer.ID()]
+	if ok && oldPeer != peer {
+		oldPeer.Close()
+	}
+	sh.peers[peer.ID()] = peer
+	return ok, true
+}
+
 // DeletePeer deletes a peer from the store
 func (s *Store) DeletePeer(peer IPeer) bool {
 	sh := s.shardFor(peer.ID())
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 
-	dp, ok := sh.peers[peer.ID()]
-	if !ok {
-		return false
+	deleted := false
+	if dp, ok := sh.peers[peer.ID()]; ok && dp == peer {
+		delete(sh.peers, peer.ID())
+		deleted = true
 	}
-	if dp != peer {
-		return false
+	if sp, ok := sh.staged[peer.ID()]; ok && sp == peer {
+		delete(sh.staged, peer.ID())
+		deleted = true
 	}
-
-	delete(sh.peers, peer.ID())
-	return true
+	return deleted
 }
 
 // Peer returns a peer by its ID
@@ -87,6 +134,20 @@ func (s *Store) Peer(id messages.PeerID) (IPeer, bool) {
 	defer sh.mu.RUnlock()
 
 	p, ok := sh.peers[id]
+	return p, ok
+}
+
+// PeerForRouting returns a published peer or a staged peer whose auth response
+// is still being written. Only the transport forwarding path should use it.
+func (s *Store) PeerForRouting(id messages.PeerID) (IPeer, bool) {
+	sh := s.shardFor(id)
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+
+	if p, ok := sh.peers[id]; ok {
+		return p, true
+	}
+	p, ok := sh.staged[id]
 	return p, ok
 }
 

@@ -325,7 +325,7 @@ func (p *Peer) handleTransportMsg(msg []byte) {
 		return
 	}
 
-	item, ok := p.store.Peer(*peerID)
+	item, ok := p.store.PeerForRouting(*peerID)
 	if !ok {
 		p.log.Debugf("peer not found: %s", peerID)
 		return

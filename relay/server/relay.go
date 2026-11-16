@@ -163,21 +163,28 @@ func (r *Relay) Accept(conn listener.Conn) {
 		return
 	}
 
+	peer := NewPeer(r.metrics, *peerID, h.selectedVersion, conn, r.store, r.notifier, r.sendQueueSize)
+	peer.log.Infof("peer connected from: %s, advertised protocol version: %d, selected: %d", conn.RemoteAddr(), h.advertisedVersion, h.selectedVersion)
+	storeTime := time.Now()
+	r.store.StagePeer(peer)
+
 	if err := h.handshakeResponse(hsCtx); err != nil {
 		log.Errorf("failed to send handshake response, close connection: %s", err)
-		if cErr := conn.Close(); cErr != nil {
-			log.Errorf("failed to close connection, %s: %s", conn.RemoteAddr(), cErr)
-		}
+		r.store.DeletePeer(peer)
+		peer.Close()
 		return
 	}
 	r.metrics.RecordAuthenticationTime(time.Since(acceptTime))
 
-	peer := NewPeer(r.metrics, *peerID, h.selectedVersion, conn, r.store, r.notifier, r.sendQueueSize)
-	peer.log.Infof("peer connected from: %s, advertised protocol version: %d, selected: %d", conn.RemoteAddr(), h.advertisedVersion, h.selectedVersion)
-	storeTime := time.Now()
-	if isReconnection := r.store.AddPeer(peer); isReconnection {
+	isReconnection, published := r.store.PublishPeer(peer)
+	if !published {
+		peer.Close()
+		return
+	}
+	if isReconnection {
 		r.metrics.RecordPeerReconnection()
 	}
+
 	r.notifier.PeerCameOnline(peer.ID())
 
 	transport := conn.Protocol()

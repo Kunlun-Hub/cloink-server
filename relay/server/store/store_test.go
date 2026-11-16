@@ -53,6 +53,47 @@ func TestStore_DeleteDeprecatedPeer(t *testing.T) {
 	}
 }
 
+func TestStore_StagedPeerIsRoutableButNotPublished(t *testing.T) {
+	s := NewStore()
+	notifier := NewPeerNotifier()
+	listener := notifier.NewListener(func([]messages.PeerID) {}, func([]messages.PeerID) {})
+	defer notifier.RemoveListener(listener)
+
+	id := messages.HashID("staged-peer")
+	peer := &MocPeer{id: id}
+	s.StagePeer(peer)
+
+	_, published := s.Peer(id)
+	assert.False(t, published, "a staged peer must not appear online")
+	assert.Empty(t, s.Peers(), "a staged peer must not be returned as published")
+	assert.Empty(t, s.GetOnlinePeersAndRegisterInterest([]messages.PeerID{id}, listener), "a staged peer must not be reported online")
+
+	routable, ok := s.PeerForRouting(id)
+	require.True(t, ok, "a staged peer must still be routable")
+	assert.Same(t, peer, routable)
+
+	replaced, ok := s.PublishPeer(peer)
+	assert.False(t, replaced, "the first publication must not report a replacement")
+	require.True(t, ok, "the staged peer must be publishable")
+
+	publishedPeer, ok := s.Peer(id)
+	require.True(t, ok, "a published peer must appear online")
+	assert.Same(t, peer, publishedPeer)
+	assert.Equal(t, []messages.PeerID{id}, s.GetOnlinePeersAndRegisterInterest([]messages.PeerID{id}, listener))
+}
+
+func TestStore_DeleteStagedPeer(t *testing.T) {
+	s := NewStore()
+	id := messages.HashID("staged-peer")
+	peer := &MocPeer{id: id}
+
+	s.StagePeer(peer)
+	require.True(t, s.DeletePeer(peer))
+	_, ok := s.PeerForRouting(id)
+	assert.False(t, ok, "deleting a staged peer must remove it from routing")
+	assert.False(t, s.DeletePeer(peer), "deleting an absent peer must report false")
+}
+
 func TestStore_ShardedAddAndGet(t *testing.T) {
 	s := NewStore()
 
