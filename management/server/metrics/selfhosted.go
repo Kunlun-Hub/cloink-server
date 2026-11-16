@@ -65,6 +65,14 @@ type ConnManager interface {
 	GetAllConnectedPeers() map[string]struct{}
 }
 
+// MCPMetrics is the state of the MCP endpoint and its use over the last day.
+type MCPMetrics struct {
+	Enabled          bool
+	OAuthEnabled     bool
+	ToolCallsLastDay int
+	UsersLastDay     int
+}
+
 // Worker metrics collector and pusher
 type Worker struct {
 	ctx         context.Context
@@ -72,13 +80,14 @@ type Worker struct {
 	idpManager  string
 	dataSource  DataSource
 	connManager ConnManager
+	mcp         func() MCPMetrics
 	startupTime time.Time
 	lastRun     time.Time
 	endpoint    string
 }
 
-// NewWorker returns a metrics worker
-func NewWorker(ctx context.Context, id string, dataSource DataSource, connManager ConnManager, idpManager string) *Worker {
+// NewWorker returns a metrics worker. mcp reports the MCP endpoint; nil reports it off.
+func NewWorker(ctx context.Context, id string, dataSource DataSource, connManager ConnManager, idpManager string, mcp func() MCPMetrics) *Worker {
 	currentTime := time.Now()
 	return &Worker{
 		ctx:         ctx,
@@ -86,6 +95,7 @@ func NewWorker(ctx context.Context, id string, dataSource DataSource, connManage
 		idpManager:  idpManager,
 		dataSource:  dataSource,
 		connManager: connManager,
+		mcp:         mcp,
 		startupTime: currentTime,
 		lastRun:     currentTime,
 		endpoint:    strings.TrimRight(strings.TrimSpace(os.Getenv(EnvAnonymousMetricsEndpoint)), "/"),
@@ -495,6 +505,15 @@ func (w *Worker) generateProperties(ctx context.Context) properties {
 	metricsProperties["agent_network_input_tokens"] = agentNetworkMetrics.InputTokens
 	metricsProperties["agent_network_output_tokens"] = agentNetworkMetrics.OutputTokens
 	metricsProperties["agent_network_cost_usd"] = agentNetworkMetrics.CostUSD
+
+	var mcp MCPMetrics
+	if w.mcp != nil {
+		mcp = w.mcp()
+	}
+	metricsProperties["mcp_enabled"] = mcp.Enabled
+	metricsProperties["mcp_oauth_enabled"] = mcp.OAuthEnabled
+	metricsProperties["mcp_tool_calls_last_day"] = mcp.ToolCallsLastDay
+	metricsProperties["mcp_active_users_last_day"] = mcp.UsersLastDay
 
 	for targetType, count := range servicesTargetType {
 		metricsProperties["services_target_type_"+string(targetType)] = count

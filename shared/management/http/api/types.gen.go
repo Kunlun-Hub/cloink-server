@@ -59,6 +59,30 @@ func (e AccountSettingsLoginMethod) Valid() bool {
 	}
 }
 
+// Defines values for AgentNetworkAccessLogErrorSource.
+const (
+	AgentNetworkAccessLogErrorSourceAuth     AgentNetworkAccessLogErrorSource = "auth"
+	AgentNetworkAccessLogErrorSourcePolicy   AgentNetworkAccessLogErrorSource = "policy"
+	AgentNetworkAccessLogErrorSourceProvider AgentNetworkAccessLogErrorSource = "provider"
+	AgentNetworkAccessLogErrorSourceProxy    AgentNetworkAccessLogErrorSource = "proxy"
+)
+
+// Valid indicates whether the value is a known member of the AgentNetworkAccessLogErrorSource enum.
+func (e AgentNetworkAccessLogErrorSource) Valid() bool {
+	switch e {
+	case AgentNetworkAccessLogErrorSourceAuth:
+		return true
+	case AgentNetworkAccessLogErrorSourcePolicy:
+		return true
+	case AgentNetworkAccessLogErrorSourceProvider:
+		return true
+	case AgentNetworkAccessLogErrorSourceProxy:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentNetworkCatalogProviderKind.
 const (
 	AgentNetworkCatalogProviderKindCustom   AgentNetworkCatalogProviderKind = "custom"
@@ -1888,6 +1912,9 @@ type AccountSettingsLoginMethod string
 
 // AgentNetworkAccessLog One per-request agent-network (LLM) access log entry with flattened, queryable LLM dimensions.
 type AgentNetworkAccessLog struct {
+	// BlockedBy ID of the policy (llm_policy.* deny reasons) or account budget rule (llm_account.* deny reasons) whose cap blocked the request.
+	BlockedBy *string `json:"blocked_by,omitempty"`
+
 	// CacheCostUsd Portion of cost_usd billed for prompt-cache usage.
 	CacheCostUsd float64 `json:"cache_cost_usd"`
 
@@ -1914,6 +1941,12 @@ type AgentNetworkAccessLog struct {
 
 	// DurationMs Duration of the request in milliseconds.
 	DurationMs int `json:"duration_ms"`
+
+	// ErrorDetail Admin-facing explanation of the failure, such as the proxy's transport error or which cap was exhausted and by how much. Returned only to callers with the account-wide agent network logs permission; callers limited to their own requests never receive it.
+	ErrorDetail *string `json:"error_detail,omitempty"`
+
+	// ErrorSource Who produced a failed (status >= 400) response. provider is the upstream LLM API, proxy is the NetBird reverse proxy failing to reach it, policy is a NetBird policy or guardrail denial, auth is a proxy authentication rejection. Empty for successful requests.
+	ErrorSource *AgentNetworkAccessLogErrorSource `json:"error_source,omitempty"`
 
 	// GroupIds NetBird group ids that authorised the request (the caller's groups intersected with the policy's source groups).
 	GroupIds *[]string `json:"group_ids,omitempty"`
@@ -1984,6 +2017,9 @@ type AgentNetworkAccessLog struct {
 	// UserId NetBird user id of the authenticated caller, if applicable.
 	UserId *string `json:"user_id,omitempty"`
 }
+
+// AgentNetworkAccessLogErrorSource Who produced a failed (status >= 400) response. provider is the upstream LLM API, proxy is the NetBird reverse proxy failing to reach it, policy is a NetBird policy or guardrail denial, auth is a proxy authentication rejection. Empty for successful requests.
+type AgentNetworkAccessLogErrorSource string
 
 // AgentNetworkAccessLogSession A session-grouped view of agent-network access logs — all requests sharing a session id (or a single session-less request) folded into one summary plus its ordered entries.
 type AgentNetworkAccessLogSession struct {
@@ -3089,6 +3125,9 @@ type EDRFalconRequest struct {
 	// Secret CrowdStrike API client secret
 	Secret string `json:"secret"`
 
+	// SyncInterval How often devices are synced from the integration, in minutes. Minimum value is 1 minute, maximum is 1440 minutes.
+	SyncInterval *int `json:"sync_interval,omitempty"`
+
 	// ZtaScoreThreshold The minimum Zero Trust Assessment score required for agent approval (0-100)
 	ZtaScoreThreshold int `json:"zta_score_threshold"`
 }
@@ -3119,6 +3158,9 @@ type EDRFalconResponse struct {
 	// LastSyncedAt Timestamp of when the integration was last synced.
 	LastSyncedAt time.Time `json:"last_synced_at"`
 
+	// SyncInterval How often devices are synced from the integration, in minutes.
+	SyncInterval int `json:"sync_interval"`
+
 	// UpdatedAt Timestamp of when the integration was last updated.
 	UpdatedAt time.Time `json:"updated_at"`
 
@@ -3145,6 +3187,9 @@ type EDRFleetDMRequest struct {
 
 	// MatchAttributes Attribute conditions to match when approving FleetDM hosts. Most attributes work with FleetDM's free/open source version. Premium-only attributes are marked accordingly
 	MatchAttributes FleetDMMatchAttributes `json:"match_attributes"`
+
+	// SyncInterval How often devices are synced from the integration, in minutes. Minimum value is 1 minute, maximum is 1440 minutes.
+	SyncInterval *int `json:"sync_interval,omitempty"`
 }
 
 // EDRFleetDMResponse Represents a FleetDM EDR integration configuration
@@ -3179,6 +3224,9 @@ type EDRFleetDMResponse struct {
 	// MatchAttributes Attribute conditions to match when approving FleetDM hosts. Most attributes work with FleetDM's free/open source version. Premium-only attributes are marked accordingly
 	MatchAttributes FleetDMMatchAttributes `json:"match_attributes"`
 
+	// SyncInterval How often devices are synced from the integration, in minutes.
+	SyncInterval int `json:"sync_interval"`
+
 	// UpdatedAt Timestamp of when the integration was last updated.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -3202,6 +3250,9 @@ type EDRHuntressRequest struct {
 
 	// MatchAttributes Attribute conditions to match when approving agents
 	MatchAttributes HuntressMatchAttributes `json:"match_attributes"`
+
+	// SyncInterval How often devices are synced from the integration, in minutes. Minimum value is 1 minute, maximum is 1440 minutes.
+	SyncInterval *int `json:"sync_interval,omitempty"`
 }
 
 // EDRHuntressResponse Represents a Huntress EDR integration configuration
@@ -3233,6 +3284,9 @@ type EDRHuntressResponse struct {
 	// MatchAttributes Attribute conditions to match when approving agents
 	MatchAttributes HuntressMatchAttributes `json:"match_attributes"`
 
+	// SyncInterval How often devices are synced from the integration, in minutes.
+	SyncInterval int `json:"sync_interval"`
+
 	// UpdatedAt Timestamp of when the integration was last updated.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -3253,6 +3307,9 @@ type EDRIntuneRequest struct {
 
 	// Secret The Azure application client secret
 	Secret string `json:"secret"`
+
+	// SyncInterval How often devices are synced from the integration, in minutes. Minimum value is 1 minute, maximum is 1440 minutes.
+	SyncInterval *int `json:"sync_interval,omitempty"`
 
 	// TenantId The Azure tenant id
 	TenantId string `json:"tenant_id"`
@@ -3287,6 +3344,9 @@ type EDRIntuneResponse struct {
 	// LastSyncedInterval The devices last sync requirement interval in hours.
 	LastSyncedInterval int `json:"last_synced_interval"`
 
+	// SyncInterval How often devices are synced from the integration, in minutes.
+	SyncInterval int `json:"sync_interval"`
+
 	// TenantId The Azure tenant id
 	TenantId string `json:"tenant_id"`
 
@@ -3313,6 +3373,9 @@ type EDRSentinelOneRequest struct {
 
 	// MatchAttributes Attribute conditions to match when approving agents
 	MatchAttributes SentinelOneMatchAttributes `json:"match_attributes"`
+
+	// SyncInterval How often devices are synced from the integration, in minutes. Minimum value is 1 minute, maximum is 1440 minutes.
+	SyncInterval *int `json:"sync_interval,omitempty"`
 }
 
 // EDRSentinelOneResponse Represents a SentinelOne EDR integration configuration
@@ -3346,6 +3409,9 @@ type EDRSentinelOneResponse struct {
 
 	// MatchAttributes Attribute conditions to match when approving agents
 	MatchAttributes SentinelOneMatchAttributes `json:"match_attributes"`
+
+	// SyncInterval How often devices are synced from the integration, in minutes.
+	SyncInterval int `json:"sync_interval"`
 
 	// UpdatedAt Timestamp of when the integration was last updated.
 	UpdatedAt time.Time `json:"updated_at"`
@@ -6404,7 +6470,7 @@ type GetApiEventsProxyParams struct {
 	// SortOrder Sort order (ascending or descending)
 	SortOrder *GetApiEventsProxyParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty"`
 
-	// Search General search across request ID, host, path, source IP, user email, and user name
+	// Search General search across request ID, host, path, and source IP
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 
 	// SourceIp Filter by source IP address

@@ -333,7 +333,7 @@ func runLoadMesh(t *testing.T, cfg loadConfig, queueSize int) loadResult {
 	for i := 0; i < cfg.peers; i++ {
 		id := messages.HashID(fmt.Sprintf("load-peer-%d", i))
 		conn := newLoadConn(cfg.msgs, cfg.writeDelay, stats)
-		p := NewPeer(m, id, conn, st, notifier, queueSize)
+		p := NewPeer(m, id, messages.ProtocolV1, conn, st, notifier, queueSize)
 		st.AddPeer(p)
 		peers[i] = &loadPeer{peer: p, conn: conn, id: id}
 		ids[i] = id

@@ -163,17 +163,34 @@ func (r *Relay) Accept(conn listener.Conn) {
 		return
 	}
 
-	peer := NewPeer(r.metrics, *peerID, conn, r.store, r.notifier, r.sendQueueSize)
-	peer.log.Infof("peer connected from: %s", conn.RemoteAddr())
+	peer := NewPeer(r.metrics, *peerID, h.selectedVersion, conn, r.store, r.notifier, r.sendQueueSize)
+	peer.log.Infof("peer connected from: %s, advertised protocol version: %d, selected: %d", conn.RemoteAddr(), h.advertisedVersion, h.selectedVersion)
 	storeTime := time.Now()
-	if isReconnection := r.store.AddPeer(peer); isReconnection {
+	r.store.StagePeer(peer)
+
+	if err := h.handshakeResponse(hsCtx); err != nil {
+		log.Errorf("failed to send handshake response, close connection: %s", err)
+		r.store.DeletePeer(peer)
+		peer.Close()
+		return
+	}
+	r.metrics.RecordAuthenticationTime(time.Since(acceptTime))
+
+	isReconnection, published := r.store.PublishPeer(peer)
+	if !published {
+		peer.Close()
+		return
+	}
+	if isReconnection {
 		r.metrics.RecordPeerReconnection()
 	}
+
 	r.notifier.PeerCameOnline(peer.ID())
 
 	transport := conn.Protocol()
 	r.metrics.RecordPeerStoreTime(time.Since(storeTime))
 	r.metrics.PeerConnected(peer.String(), transport)
+	r.metrics.RecordProtocolVersion(h.advertisedVersion, h.selectedVersion)
 	go func() {
 		peer.Work()
 		if deleted := r.store.DeletePeer(peer); deleted {
@@ -182,12 +199,6 @@ func (r *Relay) Accept(conn listener.Conn) {
 		peer.log.Debugf("relay connection closed")
 		r.metrics.PeerDisconnected(peer.String(), transport)
 	}()
-
-	if err := h.handshakeResponse(hsCtx); err != nil {
-		log.Errorf("failed to send handshake response, close peer: %s", err)
-		peer.Close()
-	}
-	r.metrics.RecordAuthenticationTime(time.Since(acceptTime))
 }
 
 // Shutdown closes the relay server

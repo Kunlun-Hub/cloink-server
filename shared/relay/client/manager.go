@@ -991,6 +991,7 @@ func (m *Manager) ProbeRelayServers(ctx context.Context) []RelayServerInfo {
 					relays[idx].Available = true
 					relays[idx].Error = ""
 					relays[idx].Transport = home.Transport()
+					m.serverPicker.clearTransientFailure(relays[idx].URL)
 					live := home.LiveQuality()
 					relays[idx].LiveRTTMs = relayRTTMilliseconds(live.RTT)
 					relays[idx].P95RTTMs = relayRTTMilliseconds(live.P95)
