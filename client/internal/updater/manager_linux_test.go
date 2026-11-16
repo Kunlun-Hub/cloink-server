@@ -52,7 +52,7 @@ func Test_LatestVersion_Linux(t *testing.T) {
 		sub := recorder.SubscribeToEvents()
 		defer recorder.UnsubscribeFromEvents(sub)
 
-		m := NewManager(recorder, statemanager.New(tmpFile))
+		m := NewManager(context.Background(), recorder, statemanager.New(tmpFile))
 		m.update = mockUpdate
 		m.currentVersion = c.daemonVersion
 		m.Start(context.Background())
@@ -95,7 +95,7 @@ func Test_SetVersion_FallsBackToDownloadOnly_Linux(t *testing.T) {
 	sub := recorder.SubscribeToEvents()
 	defer recorder.UnsubscribeFromEvents(sub)
 
-	m := NewManager(recorder, statemanager.New(tmpFile))
+	m := NewManager(context.Background(), recorder, statemanager.New(tmpFile))
 	m.update = &versionUpdateMock{latestVersion: v.Must(v.NewSemver("1.0.5"))}
 	m.currentVersion = "1.0.0"
 	m.Start(context.Background())
@@ -110,4 +110,26 @@ func Test_SetVersion_FallsBackToDownloadOnly_Linux(t *testing.T) {
 	}
 
 	m.Stop()
+}
+
+// Cloink intentionally turns management-directed forced updates into prompts,
+// so a force flag must not install without user action.
+func Test_SetVersion_ForcePromptsWithoutSubscriber_Linux(t *testing.T) {
+	recorder := peer.NewRecorder("")
+	sub := recorder.SubscribeToEvents()
+	defer recorder.UnsubscribeFromEvents(sub)
+
+	m := NewManager(context.Background(), recorder, statemanager.New(path.Join(t.TempDir(), "update-test-force-install.json")))
+	m.update = &versionUpdateMock{}
+	m.currentVersion = "1.0.0"
+	m.autoUpdateSupported = func() bool { return true }
+	defer m.Stop()
+
+	// No UI has subscribed to daemon events, and the test never calls Start.
+	m.SetVersion("1.0.1", true)
+
+	ver, enforced := waitForUpdateEvent(sub, 2*time.Second)
+	if ver != "1.0.1" || !enforced {
+		t.Fatalf("a forced directive must prompt for 1.0.1 without a UI subscriber, got version %q enforced=%v", ver, enforced)
+	}
 }

@@ -34,7 +34,7 @@ func newBenchPeer(b *testing.B, conn listener.Conn, queueSize int) *Peer {
 	if err != nil {
 		b.Fatal(err)
 	}
-	return NewPeer(m, messages.HashID("bench-peer"), conn, store.NewStore(), store.NewPeerNotifier(), queueSize)
+	return NewPeer(m, messages.HashID("bench-peer"), messages.ProtocolV1, conn, store.NewStore(), store.NewPeerNotifier(), queueSize)
 }
 
 // startBenchWriter runs the peer's writer goroutine for the benchmark and

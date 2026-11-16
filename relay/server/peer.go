@@ -36,6 +36,8 @@ type Peer struct {
 	metrics  *metrics.Metrics
 	log      *log.Entry
 	id       messages.PeerID
+	version  messages.ProtocolVersion
+	enc      messages.Encoder
 	conn     listener.Conn
 	connMu   sync.RWMutex
 	store    *store.Store
@@ -65,7 +67,7 @@ type Peer struct {
 
 // NewPeer creates a new Peer instance and prepare custom logging.
 // sendQueueSize bounds the async transport send queue; values <= 0 select defaultSendQueueSize.
-func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, store *store.Store, notifier *store.PeerNotifier, sendQueueSize int) *Peer {
+func NewPeer(metrics *metrics.Metrics, id messages.PeerID, version messages.ProtocolVersion, conn listener.Conn, store *store.Store, notifier *store.PeerNotifier, sendQueueSize int) *Peer {
 	if sendQueueSize <= 0 {
 		sendQueueSize = defaultSendQueueSize
 	}
@@ -74,6 +76,8 @@ func NewPeer(metrics *metrics.Metrics, id messages.PeerID, conn listener.Conn, s
 		metrics:   metrics,
 		log:       log.WithField("peer_id", id.String()),
 		id:        id,
+		version:   version,
+		enc:       messages.NewEncoder(version),
 		conn:      conn,
 		store:     store,
 		notifier:  notifier,
@@ -130,16 +134,15 @@ func (p *Peer) Work() {
 
 		msg := buf[:n]
 
-		_, err = messages.ValidateVersion(msg)
-		if err != nil {
-			p.log.Warnf("failed to validate protocol version: %s", err)
-			return
+		if err := messages.ValidateConnectionVersion(msg, p.version); err != nil {
+			p.log.Tracef("drop message: %s", err)
+			continue
 		}
 
 		msgType, err := messages.DetermineClientMessageType(msg)
 		if err != nil {
-			p.log.Errorf("failed to determine message type: %s", err)
-			return
+			p.log.Tracef("drop message: %s", err)
+			continue
 		}
 
 		p.handleMsgType(ctx, msgType, hc, n, msg)
@@ -148,6 +151,11 @@ func (p *Peer) Work() {
 
 func (p *Peer) ID() messages.PeerID {
 	return p.id
+}
+
+// Version returns the protocol version selected for this connection
+func (p *Peer) Version() messages.ProtocolVersion {
+	return p.version
 }
 
 func (p *Peer) handleMsgType(ctx context.Context, msgType messages.MsgType, hc *healthcheck.Sender, n int, msg []byte) {
@@ -168,7 +176,7 @@ func (p *Peer) handleMsgType(ctx context.Context, msgType messages.MsgType, hc *
 	case messages.MsgTypeUnsubscribePeerState:
 		p.handleUnsubscribePeerState(msg)
 	default:
-		p.log.Warnf("received unexpected message type: %s", msgType)
+		p.log.Tracef("drop %s message: not allowed after authentication", msgType)
 	}
 }
 
@@ -253,7 +261,7 @@ func (p *Peer) SendQueueCap() int {
 func (p *Peer) CloseGracefully(ctx context.Context) {
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
-	err := p.writeWithTimeout(ctx, messages.MarshalCloseMsg())
+	err := p.writeWithTimeout(ctx, p.enc.CloseMsg())
 	if err != nil {
 		p.log.Errorf("failed to send close message to peer: %s", p.String())
 	}
@@ -291,7 +299,7 @@ func (p *Peer) handleHealthcheckEvents(ctx context.Context, hc *healthcheck.Send
 	for {
 		select {
 		case <-hc.HealthCheck:
-			_, err := p.Write(ctx, messages.MarshalHealthcheck())
+			_, err := p.Write(ctx, p.enc.Healthcheck())
 			if err != nil {
 				p.log.Errorf("failed to send healthcheck message: %s", err)
 				return
@@ -324,7 +332,7 @@ func (p *Peer) handleTransportMsg(msg []byte) {
 	}
 	dp := item.(*Peer)
 
-	err = messages.UpdateTransportMsg(msg, p.id)
+	err = messages.UpdateTransportMsg(msg, dp.version, p.id)
 	if err != nil {
 		p.log.Errorf("failed to update transport message: %s", err)
 		return
@@ -368,7 +376,7 @@ func (p *Peer) handleUnsubscribePeerState(msg []byte) {
 }
 
 func (p *Peer) sendPeersOnline(peers []messages.PeerID) {
-	msgs, err := messages.MarshalPeersOnline(peers)
+	msgs, err := p.enc.PeersOnline(peers)
 	if err != nil {
 		p.log.Errorf("failed to marshal peer location message: %s", err)
 		return
@@ -385,7 +393,7 @@ func (p *Peer) sendPeersWentOffline(peers []messages.PeerID) {
 	p.notificationMutex.Lock()
 	defer p.notificationMutex.Unlock()
 
-	msgs, err := messages.MarshalPeersWentOffline(peers)
+	msgs, err := p.enc.PeersWentOffline(peers)
 	if err != nil {
 		p.log.Errorf("failed to marshal peer location message: %s", err)
 		return

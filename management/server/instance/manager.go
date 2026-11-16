@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dexidp/dex/storage"
 	goversion "github.com/hashicorp/go-version"
+	"github.com/netbirdio/dex/storage"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/netbirdio/netbird/management/server/idp"

@@ -351,8 +351,8 @@ func TestDeleteRelayPushesUpdatedAccountPeers(t *testing.T) {
 		configPusher: pusher,
 		accountManager: &mock_server.MockAccountManager{
 			GetStoreFunc: func() store.Store { return nil },
-			GetPeersFunc: func(context.Context, string, string, string, string, string) ([]*nbpeer.Peer, error) {
-				return []*nbpeer.Peer{{ID: "peer-1"}}, nil
+			GetPeersFunc: func(context.Context, string, string, string, string, string) ([]*nbpeer.Peer, int, error) {
+				return []*nbpeer.Peer{{ID: "peer-1"}}, 1, nil
 			},
 		},
 	}

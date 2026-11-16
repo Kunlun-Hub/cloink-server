@@ -8,7 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	dexstorage "github.com/dexidp/dex/storage"
+	dexstorage "github.com/netbirdio/dex/storage"
 
 	dex "github.com/netbirdio/netbird/idp/dex"
 	"github.com/netbirdio/netbird/management/server/activity"

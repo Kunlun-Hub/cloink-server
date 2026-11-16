@@ -1,6 +1,7 @@
 version: 2
 env:
   - SKIP_PUBLISH={{ if index .Env "SKIP_PUBLISH" }}{{ .Env.SKIP_PUBLISH }}{{ else }}true{{ end }}
+  - SKIP_LATEST={{ if index .Env "SKIP_LATEST" }}{{ .Env.SKIP_LATEST }}{{ else }}true{{ end }}
   - SKIP_DOCKER_PUSH={{ if index .Env "SKIP_DOCKER_PUSH" }}{{ .Env.SKIP_DOCKER_PUSH }}{{ else }}false{{ end }}
 project_name: cloink
 builds:
@@ -272,7 +273,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: client/Dockerfile
      extra_files:
        - client/netbird-entrypoint.sh
@@ -295,7 +296,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink
      tags:
        - "{{ .Version }}-rootless"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}rootless-latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}rootless-latest{{ end }}"
      dockerfile: client/Dockerfile-rootless
      extra_files:
        - client/netbird-entrypoint.sh
@@ -318,7 +319,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-relay
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: relay/Dockerfile
      platforms:
        - linux/amd64
@@ -339,7 +340,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-signal
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: signal/Dockerfile
      platforms:
        - linux/amd64
@@ -360,7 +361,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-management
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: management/Dockerfile
      platforms:
        - linux/amd64
@@ -381,8 +382,8 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-upload
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
-     dockerfile: upload-server/Dockerfile
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
+     dockerfile: upload-server/Dockerfile.release
      platforms:
        - linux/amd64
        - linux/arm64
@@ -402,7 +403,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-server
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: combined/Dockerfile
      platforms:
        - linux/amd64
@@ -423,7 +424,7 @@ dockers_v2:
        - ghcr.io/kunlun-hub/cloink-reverse-proxy
      tags:
        - "{{ .Version }}"
-       - "{{ if eq .Env.SKIP_PUBLISH \"false\" }}latest{{ end }}"
+       - "{{ if eq .Env.SKIP_LATEST \"false\" }}latest{{ end }}"
      dockerfile: proxy/Dockerfile
      platforms:
        - linux/amd64
