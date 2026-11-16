@@ -65,14 +65,18 @@ func TestWGWatcher_CheckSuccessCallback(t *testing.T) {
 
 	firstHandshake := make(chan struct{}, 1)
 	checkSuccess := make(chan struct{}, 1)
-	go watcher.EnableWgWatcher(ctx, time.Now(), func() {}, func(when time.Time) {
-		firstHandshake <- struct{}{}
-	}, func() {
-		select {
-		case checkSuccess <- struct{}{}:
-		default:
-		}
-	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watcher.EnableWgWatcher(ctx, time.Now(), func() {}, func(when time.Time) {
+			firstHandshake <- struct{}{}
+		}, func() {
+			select {
+			case checkSuccess <- struct{}{}:
+			default:
+			}
+		})
+	}()
 
 	stats.advance()
 
@@ -86,6 +90,13 @@ func TestWGWatcher_CheckSuccessCallback(t *testing.T) {
 	case <-firstHandshake:
 		t.Errorf("first-handshake callback must not fire for a non-zero baseline")
 	default:
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watcher to stop")
 	}
 }
 
@@ -103,12 +114,16 @@ func TestWGWatcher_EnableWgWatcher(t *testing.T) {
 	watcher.PrepareInitialHandshake()
 
 	onDisconnected := make(chan struct{}, 1)
-	go watcher.EnableWgWatcher(ctx, time.Now(), func() {
-		mlog.Infof("onDisconnectedFn")
-		onDisconnected <- struct{}{}
-	}, func(when time.Time) {
-		mlog.Infof("onHandshakeSuccess: %v", when)
-	}, nil)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watcher.EnableWgWatcher(ctx, time.Now(), func() {
+			mlog.Infof("onDisconnectedFn")
+			onDisconnected <- struct{}{}
+		}, func(when time.Time) {
+			mlog.Infof("onHandshakeSuccess: %v", when)
+		}, nil)
+	}()
 
 	// wait for initial reading
 	time.Sleep(2 * time.Second)
@@ -118,6 +133,133 @@ func TestWGWatcher_EnableWgWatcher(t *testing.T) {
 	case <-onDisconnected:
 	case <-time.After(10 * time.Second):
 		t.Errorf("timeout")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watcher to stop")
+	}
+}
+
+// TestWGWatcher_ResetRequiresFreshHandshake verifies that an endpoint reset
+// does not treat a handshake from before the switch as proof that the new
+// path is healthy. The old behavior zeroed the baseline, so the first check
+// accepted any non-expired handshake and delayed failure detection until the
+// handshake aged out.
+func TestWGWatcher_ResetRequiresFreshHandshake(t *testing.T) {
+	prevCheckPeriod := checkPeriod
+	prevOvertime := wgHandshakeOvertime
+	t.Cleanup(func() {
+		checkPeriod = prevCheckPeriod
+		wgHandshakeOvertime = prevOvertime
+	})
+
+	checkPeriod = time.Minute
+	wgHandshakeOvertime = 100 * time.Millisecond
+
+	mlog := log.WithField("peer", "reset")
+	stats := &mockHandshakeStats{handshake: time.Now().Add(-time.Minute)}
+	watcher := NewWGWatcher(mlog, stats, "", newStateDump("peer", mlog, &Status{}))
+	watcher.PrepareInitialHandshake()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	disconnected := make(chan struct{}, 1)
+	checkSuccess := make(chan struct{}, 1)
+	done := make(chan struct{})
+	watcher.Reset()
+	go func() {
+		defer close(done)
+		watcher.EnableWgWatcher(ctx, time.Now(), func() {
+			disconnected <- struct{}{}
+		}, func(time.Time) {}, func() {
+			select {
+			case checkSuccess <- struct{}{}:
+			default:
+			}
+		})
+	}()
+
+	select {
+	case <-disconnected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher accepted a pre-reset handshake as fresh")
+	}
+
+	select {
+	case <-checkSuccess:
+		t.Fatal("check-success callback fired for a pre-reset handshake")
+	default:
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watcher to stop")
+	}
+}
+
+// TestWGWatcher_ResetAcceptsImmediateFreshHandshake verifies that a handshake
+// arriving immediately after reset is accepted even if it races with processing
+// the reset signal. The pre-reset handshake remains the baseline.
+func TestWGWatcher_ResetAcceptsImmediateFreshHandshake(t *testing.T) {
+	prevCheckPeriod := checkPeriod
+	prevOvertime := wgHandshakeOvertime
+	t.Cleanup(func() {
+		checkPeriod = prevCheckPeriod
+		wgHandshakeOvertime = prevOvertime
+	})
+
+	checkPeriod = time.Minute
+	wgHandshakeOvertime = 100 * time.Millisecond
+
+	mlog := log.WithField("peer", "reset-fresh")
+	stats := &mockHandshakeStats{handshake: time.Now().Add(-time.Minute)}
+	watcher := NewWGWatcher(mlog, stats, "", newStateDump("peer", mlog, &Status{}))
+	watcher.PrepareInitialHandshake()
+
+	// Queue the reset before starting the watcher, then publish the new-path
+	// handshake before the watcher can process it. Re-reading the current
+	// handshake in the reset branch would incorrectly install this fresh value
+	// as the baseline.
+	watcher.Reset()
+	stats.advance()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	disconnected := make(chan struct{}, 1)
+	checkSuccess := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watcher.EnableWgWatcher(ctx, time.Now(), func() {
+			disconnected <- struct{}{}
+		}, func(time.Time) {}, func() {
+			select {
+			case checkSuccess <- struct{}{}:
+			default:
+			}
+		})
+	}()
+
+	select {
+	case <-checkSuccess:
+	case <-disconnected:
+		t.Fatal("fresh handshake after reset was mistaken for the old baseline")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fresh handshake after reset")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watcher to stop")
 	}
 }
 
@@ -149,9 +291,13 @@ func TestWGWatcher_ReEnable(t *testing.T) {
 	watcher.PrepareInitialHandshake()
 
 	onDisconnected := make(chan struct{}, 1)
-	go watcher.EnableWgWatcher(ctx, time.Now(), func() {
-		onDisconnected <- struct{}{}
-	}, func(when time.Time) {}, nil)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		watcher.EnableWgWatcher(ctx, time.Now(), func() {
+			onDisconnected <- struct{}{}
+		}, func(when time.Time) {}, nil)
+	}()
 
 	time.Sleep(2 * time.Second)
 	mocWgIface.disconnect()
@@ -160,5 +306,12 @@ func TestWGWatcher_ReEnable(t *testing.T) {
 	case <-onDisconnected:
 	case <-time.After(10 * time.Second):
 		t.Errorf("timeout")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watcher to stop")
 	}
 }

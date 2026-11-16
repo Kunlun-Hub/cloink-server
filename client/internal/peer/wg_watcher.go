@@ -117,7 +117,11 @@ func (w *WGWatcher) periodicHandshakeCheck(ctx context.Context, onDisconnectedFn
 			w.log.Debugf("WireGuard watcher reset timer: %v", resetTime)
 		case <-w.resetCh:
 			w.log.Infof("WireGuard watcher received peer reset, restarting handshake timeout")
-			lastHandshake = time.Time{}
+			// Keep the pre-reset handshake as the baseline. Re-reading it here
+			// races with the first handshake on the new path: if that handshake
+			// arrives before this branch runs, it would be mistaken for the old
+			// baseline and the next check would fail despite the new path being
+			// healthy. Only a handshake newer than the old baseline is accepted.
 			enabledTime = time.Now()
 			timer.Stop()
 			timer.Reset(wgHandshakeOvertime)
