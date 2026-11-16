@@ -1716,13 +1716,15 @@ func (m *Manager) probeTick() {
 	}
 	wg.Wait()
 
-	// The current home relay's established session is a better signal than a
-	// fresh probe. Use its liveness RTT when available, including when the
-	// lightweight probe itself failed on a transient path.
+	// Keep the live data-plane quality visible in debug logs, but never use it
+	// as a substitute for the current round's probe RTT. The established
+	// session's EWMA includes older samples and can be noisy at low latency;
+	// comparing it with a candidate's one-shot probe can move the home relay
+	// during a short spike. Actual data-plane failure is handled separately by
+	// the WireGuard handshake monitor.
 	if homeURL != "" {
 		if live := m.homeDataPlaneQuality(homeURL); live.Samples > 0 && live.RTT > 0 {
-			probedRTTs[homeURL] = live.RTT
-			log.Debugf("relay probe decision: using live data-plane RTT %s for home %s (p95=%s jitter=%s loss=%d%%)", live.RTT.Round(time.Millisecond), homeURL, live.P95.Round(time.Millisecond), live.Jitter.Round(time.Millisecond), live.LossPercent)
+			log.Debugf("relay probe decision: home %s live data-plane RTT %s (p95=%s jitter=%s loss=%d%%; advisory only)", homeURL, live.RTT.Round(time.Millisecond), live.P95.Round(time.Millisecond), live.Jitter.Round(time.Millisecond), live.LossPercent)
 		}
 	}
 
@@ -1774,7 +1776,7 @@ type relayMigrationChoice struct {
 func (m *Manager) migrationChoice(homeURL string, candidates []string, probedRTTs map[string]time.Duration) relayMigrationChoice {
 	homeRTT, ok := probedRTTs[homeURL]
 	if homeURL == "" || !ok || homeRTT <= 0 {
-		return relayMigrationChoice{Reason: "home relay has no fresh or live RTT measurement"}
+		return relayMigrationChoice{Reason: "home relay has no fresh probe RTT measurement"}
 	}
 
 	m.relayConfigMu.RLock()
@@ -1842,8 +1844,8 @@ func (m *Manager) homeDataPlaneQuality(homeURL string) relayDataPlaneQuality {
 
 func (m *Manager) requiredMigrationStreaks(homeURL string, homeRTT, candidateRTT time.Duration) int {
 	quality := m.homeDataPlaneQuality(homeURL)
-	if quality.ConsecutiveFailures > 0 || quality.LossPercent >= 25 || quality.Jitter >= max(time.Millisecond, quality.RTT/2) {
-		return 1
+	if quality.ConsecutiveFailures > 0 || quality.LossPercent >= 25 {
+		return 2
 	}
 	if candidateRTT > 0 && homeRTT >= candidateRTT*3 {
 		return 2

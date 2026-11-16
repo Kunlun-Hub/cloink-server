@@ -125,7 +125,8 @@ func TestRequiredMigrationStreaksShortensForDataPlaneFailureAndLargeGap(t *testi
 	require.Equal(t, 2, manager.requiredMigrationStreaks("rel://home", 320*time.Millisecond, 60*time.Millisecond))
 
 	home.liveQuality.recordFailure()
-	require.Equal(t, 1, manager.requiredMigrationStreaks("rel://home", 80*time.Millisecond, 65*time.Millisecond))
+	require.Equal(t, 2, manager.requiredMigrationStreaks("rel://home", 80*time.Millisecond, 65*time.Millisecond),
+		"data-plane degradation must not weaken the multi-round requirement")
 }
 
 func TestProactiveSwitchRespectsMinimumResidence(t *testing.T) {
