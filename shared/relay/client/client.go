@@ -99,10 +99,11 @@ func newConnContainer(log *log.Entry, c *Client, peerID messages.PeerID, instanc
 	ctx, cancel := context.WithCancelCause(context.Background())
 	msgChan := make(chan Msg, connChannelSize)
 	cn := &Conn{
-		dstID:       peerID,
-		messageChan: msgChan,
-		instanceURL: instanceURL,
-		ctx:         ctx,
+		dstID:        peerID,
+		messageChan:  msgChan,
+		reregistered: make(chan struct{}, 1),
+		instanceURL:  instanceURL,
+		ctx:          ctx,
 	}
 	cc := &connContainer{
 		log:      log,
@@ -140,6 +141,13 @@ func (cc *connContainer) writeMsg(msg Msg) {
 		msg.Free()
 	default:
 		msg.Free()
+	}
+}
+
+func (cc *connContainer) notifyPeerReregistered() {
+	select {
+	case cc.conn.reregistered <- struct{}{}:
+	default:
 	}
 }
 
@@ -372,7 +380,7 @@ func (c *Client) connectWithContexts(connectCtx, lifecycleCtx context.Context) e
 	c.instanceURL = instanceURL
 	c.muInstanceURL.Unlock()
 
-	c.stateSubscription = NewPeersStateSubscription(c.log, c.relayConn, c.closeConnsByPeerID)
+	c.stateSubscription = NewPeersStateSubscription(c.log, c.relayConn, c.closeConnsByPeerID, c.notifyPeersReregistered)
 
 	c.log = c.log.WithField("relay", instanceURL.String())
 	c.log.Infof("relay connection established, server IP: %s", connectedIP(c.relayConn))
@@ -1019,6 +1027,20 @@ func (c *Client) closeConnsByPeerID(peerIDs []messages.PeerID) {
 
 	if err := c.stateSubscription.UnsubscribeStateChange(peerIDs); err != nil {
 		c.log.Errorf("failed to unsubscribe from peer state change: %s, %s", peerIDs, err)
+	}
+}
+
+func (c *Client) notifyPeersReregistered(peerIDs []messages.PeerID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, peerID := range peerIDs {
+		container, ok := c.conns[peerID]
+		if !ok {
+			continue
+		}
+		container.log.Infof("remote peer registered again on the relay: %s", peerID)
+		container.notifyPeerReregistered()
 	}
 }
 

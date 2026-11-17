@@ -18,11 +18,13 @@ var ErrDeadlineNotSupported = errors.New("relay conn: deadlines not supported")
 type Conn struct {
 	dstID       messages.PeerID
 	messageChan chan Msg
-	instanceURL *RelayAddr
-	ctx         context.Context
-	writeFn     func(messages.PeerID, []byte) (int, error)
-	closeFn     func(messages.PeerID) error
-	localAddrFn func() net.Addr
+	// reregistered holds at most one pending signal, see PeerReregistered.
+	reregistered chan struct{}
+	instanceURL  *RelayAddr
+	ctx          context.Context
+	writeFn      func(messages.PeerID, []byte) (int, error)
+	closeFn      func(messages.PeerID) error
+	localAddrFn  func() net.Addr
 }
 
 // Context returns a context that is cancelled when the connection is torn down,
@@ -31,6 +33,13 @@ type Conn struct {
 // ErrPeerDisconnected.
 func (c *Conn) Context() context.Context {
 	return c.ctx
+}
+
+// PeerReregistered reports that the remote peer registered on the relay again
+// while this connection was open. Signals that arrive before the previous one
+// is consumed are merged into it. The channel is never closed.
+func (c *Conn) PeerReregistered() <-chan struct{} {
+	return c.reregistered
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {

@@ -127,6 +127,8 @@ var methodPolicies = map[string]MethodPolicy{
 	servicePath + "DeleteState":                {Level: AuthzLevelSessionHolder, Audit: true, Action: "deleting stored state"},
 	servicePath + "TracePacket":                {Level: AuthzLevelSessionHolder, Action: "tracing a packet"},
 	servicePath + "TriggerUpdate":              {Level: AuthzLevelSessionHolder, Audit: true, Action: "starting an update"},
+	servicePath + "ListRelays":                 {Level: AuthzLevelSessionHolder, Action: "listing relays"},
+	servicePath + "SetRelay":                   {Level: AuthzLevelSessionHolder, Audit: true, Action: "selecting a relay"},
 
 	// Root or administrator only.
 	servicePath + "ClaimProfile": {

@@ -61,7 +61,7 @@ func (t *TunDevice) Create() (WGConfigurer, error) {
 	}
 	log.Info("create tun interface")
 	// Wintun derives the adapter description as "<type> Tunnel".
-	tun.WintunTunnelType = windowsTunnelType
+	wgbackend.SetWintunTunnelType(windowsTunnelType)
 	tunDevice, err := wgbackend.CreateTUNWithRequestedGUID(t.name, &guid, int(t.mtu))
 	if err != nil {
 		return nil, fmt.Errorf("error creating tun device: %s", err)
