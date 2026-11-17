@@ -61,6 +61,16 @@ func TestMethodPolicyKeysAreFullMethodNames(t *testing.T) {
 	}
 }
 
+// The local relay command operates on the live engine, so the current session
+// holder must be able to list and select relays without elevation.
+func TestRelayPoliciesAllowSessionHolder(t *testing.T) {
+	for _, method := range []string{"ListRelays", "SetRelay"} {
+		policy := methodPolicies[servicePath+method]
+		assert.Equal(t, AuthzLevelSessionHolder, policy.Level,
+			"%s must remain available to the current session holder", method)
+	}
+}
+
 // TargetsProfile promises the request names a profile.
 func TestTargetScopedRequestsExposeATarget(t *testing.T) {
 	prototypes := requestPrototypes(t)

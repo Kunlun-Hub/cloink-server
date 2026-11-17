@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	goversion "github.com/hashicorp/go-version"
 )
 
 const httpAgent = "pkg/test"
@@ -109,6 +111,20 @@ func TestDaemonUpdate(t *testing.T) {
 	waitTimeout(wg)
 	if onUpdate != true {
 		t.Errorf("invalid daemon version check")
+	}
+}
+
+func TestParseLatestVersionFourPartRelease(t *testing.T) {
+	latest, err := parseLatestVersion([]byte(`[{"version":"0.83.1.1","platform":"windows","architecture":"amd64","isLatest":true}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := goversion.NewVersion("0.83.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !latest.GreaterThan(current) {
+		t.Fatalf("four-part release %s was not considered newer than %s", latest, current)
 	}
 }
 

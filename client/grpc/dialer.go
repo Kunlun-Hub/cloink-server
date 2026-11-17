@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -29,6 +31,7 @@ func Backoff(ctx context.Context) backoff.BackOff {
 // CreateConnection creates a gRPC client connection with the appropriate transport options.
 // The component parameter specifies the WebSocket proxy component path (e.g., "/management", "/signal").
 func CreateConnection(ctx context.Context, addr string, tlsEnabled bool, component string, extraOpts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	addr = normalizeTarget(addr, tlsEnabled)
 	transportOption := grpc.WithTransportCredentials(insecure.NewCredentials())
 	// for js, the outer websocket layer takes care of tls
 	if tlsEnabled && runtime.GOOS != "js" {
@@ -63,4 +66,31 @@ func CreateConnection(ctx context.Context, addr string, tlsEnabled bool, compone
 	}
 
 	return conn, nil
+}
+
+// normalizeTarget fills in the scheme's default port when callers provide a
+// bare hostname, as server-provided Signal URIs may omit :443. The custom
+// dialer below passes the target to net.Dial, which requires an explicit port.
+func normalizeTarget(addr string, tlsEnabled bool) string {
+	if addr == "" || strings.Contains(addr, "://") || strings.HasPrefix(addr, "unix:") {
+		return addr
+	}
+
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil && port != "" {
+		return addr
+	}
+
+	if err != nil {
+		host = strings.TrimSuffix(strings.TrimPrefix(addr, "["), "]")
+	}
+	if host == "" {
+		return addr
+	}
+
+	defaultPort := "80"
+	if tlsEnabled {
+		defaultPort = "443"
+	}
+	return net.JoinHostPort(host, defaultPort)
 }
