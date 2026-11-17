@@ -180,6 +180,7 @@ var notExposed = []struct {
 			"POST /api/users/invites",
 			"DELETE /api/users/invites/{inviteId}",
 			"POST /api/users/invites/{inviteId}/regenerate",
+			"POST /api/users/invites/{inviteId}/resend",
 			"GET /api/users/invites/{token}",
 			"POST /api/users/invites/{token}/accept",
 			"POST /api/users/{userId}/invite",
@@ -201,7 +202,30 @@ var notExposed = []struct {
 		operations: []string{
 			"GET /api/instance",
 			"GET /api/instance/version",
+			"GET /api/instance/branding",
 			"POST /api/setup",
+		},
+	},
+	{
+		reason: "Email settings and delivery test operations are operational configuration, not account management.",
+		operations: []string{
+			"GET /api/settings/email",
+			"PUT /api/settings/email",
+			"POST /api/settings/email/templates/{kind}/preview",
+			"POST /api/settings/email/test",
+		},
+	},
+	{
+		reason: "Version release publishing and artifact downloads are operational release plumbing, not account management.",
+		operations: []string{
+			"GET /api/version-releases",
+			"POST /api/version-releases",
+			"POST /api/version-releases/upload",
+			"GET /api/version-releases/public",
+			"GET /api/version-releases/files/{artifactId}",
+			"GET /api/version-releases/{releaseId}",
+			"PUT /api/version-releases/{releaseId}",
+			"DELETE /api/version-releases/{releaseId}",
 		},
 	},
 	{
@@ -214,9 +238,10 @@ var notExposed = []struct {
 		},
 	},
 	{
-		reason: "Reverse proxy access logs are not exposed yet.",
+		reason: "Reverse proxy access logs and network traffic events are not exposed yet.",
 		operations: []string{
 			"GET /api/events/proxy",
+			"GET /api/events/network-traffic",
 		},
 	},
 }

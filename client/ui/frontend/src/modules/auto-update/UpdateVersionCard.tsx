@@ -32,9 +32,7 @@ export function UpdateVersionCard() {
             <Card className={"max-w-lg"}>
                 <div>
                     <Title>{t(titleKey, { version: updateVersion })}</Title>
-                    <Link url={STABLE_RELEASES_URL}>
-                        {t("update.card.whatsNew")}
-                    </Link>
+                    <Link url={STABLE_RELEASES_URL}>{t("update.card.whatsNew")}</Link>
                 </div>
                 {enforced ? (
                     <Button variant={"primary"} size={"xs"} onClick={triggerUpdate}>
