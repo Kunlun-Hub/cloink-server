@@ -54,7 +54,10 @@ jobs:
 
       - name: Resolve build metadata
         id: build
-        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(.github/scripts/resolve-version.sh \
+            "https://github.com/netbirdio/netbird.git")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'

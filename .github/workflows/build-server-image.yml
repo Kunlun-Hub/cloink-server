@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to embed (for example v0.79.0); defaults to git describe"
+        description: "Version to embed (for example 0.83.1); defaults to the nearest release tag"
         required: false
         default: ""
 
@@ -58,15 +58,8 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="$INPUT_VERSION"
-          # main tracks upstream v0.79.0: keep the embedded version pinned to
-          # the official release number instead of a git-describe suffix.
-          if [ -z "$version" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            version="v0.79.0"
-          fi
-          if [ -z "$version" ]; then
-            version=$(git describe --tags --always)
-          fi
+          version=$(.github/scripts/resolve-version.sh \
+            "https://github.com/netbirdio/netbird.git" "$INPUT_VERSION")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 

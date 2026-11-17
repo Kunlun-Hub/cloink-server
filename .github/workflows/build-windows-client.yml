@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to embed (e.g. 0.77.1); defaults to git describe"
+        description: "Version to embed (e.g. 0.83.1); defaults to the nearest release tag"
         required: false
         default: ""
   push:
@@ -30,11 +30,11 @@ jobs:
 
       - name: Resolve version
         id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          RAW="${{ github.event.inputs.version }}"
-          if [ -z "$RAW" ]; then
-            RAW=$(git describe --tags --always | sed 's/^v//')
-          fi
+          RAW=$(.github/scripts/resolve-version.sh \
+            "https://github.com/netbirdio/netbird.git" "$INPUT_VERSION")
           BASE=$(echo "$RAW" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.1")
           echo "version=$RAW" >> "$GITHUB_OUTPUT"
           echo "appver=$BASE.0" >> "$GITHUB_OUTPUT"

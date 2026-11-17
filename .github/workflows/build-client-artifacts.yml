@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to embed (for example 0.77.1); defaults to git describe"
+        description: "Version to embed (for example 0.83.1); defaults to the nearest release tag"
         required: false
         default: ""
   push:
@@ -37,11 +37,8 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="$INPUT_VERSION"
-          if [ -z "$version" ]; then
-            version=$(git describe --tags --always)
-          fi
-          version=${version#v}
+          version=$(.github/scripts/resolve-version.sh \
+            "https://github.com/netbirdio/netbird.git" "$INPUT_VERSION")
           if ! [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
             echo "Invalid version: $version" >&2
             exit 1

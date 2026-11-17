@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Client version stamped into the binary (default: git describe)"
+        description: "Client version stamped into the binary (default: nearest release tag)"
         required: false
         type: string
 
@@ -60,11 +60,9 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="$INPUT_VERSION"
-          if [ -z "$version" ]; then
-            version=$(git describe --tags --always)
-          fi
-          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+          version=$(.github/scripts/resolve-version.sh \
+            "https://github.com/netbirdio/netbird.git" "$INPUT_VERSION")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "date=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
