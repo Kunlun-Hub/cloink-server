@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -u
+
+LOG_DIR=/var/log/cloink
+LOG_FILE=$LOG_DIR/client_post_install.log
+APP=/Applications/Cloink.app
+AGENT=/usr/local/bin/cloink
+
+mkdir -p "$LOG_DIR" /usr/local/bin
+
+{
+    echo "Starting Cloink postinstall at $(date -u '+%Y-%m-%dT%H:%M:%SZ')."
+
+    if [ ! -x "$APP/Contents/MacOS/cloink-ui" ]; then
+        echo "Cloink UI executable is missing from $APP."
+        exit 1
+    fi
+    if [ ! -x "$APP/Contents/MacOS/cloink" ]; then
+        echo "Cloink daemon executable is missing from $APP."
+        exit 1
+    fi
+
+    ln -sfn "$APP/Contents/MacOS/cloink" "$AGENT"
+    echo "Installed the cloink command at $AGENT."
+
+    if ! "$AGENT" service install; then
+        echo "Service install did not complete cleanly; attempting to reconfigure the existing service."
+        "$AGENT" service reconfigure || true
+    fi
+    "$AGENT" service start || true
+
+    console_user=$(stat -f%Su /dev/console 2>/dev/null)
+    case "$console_user" in
+        ""|root|loginwindow|_mbsetupuser)
+            echo "No active GUI user session (console user: '${console_user:-none}'); skipping UI launch."
+            ;;
+        *)
+            uid=$(id -u "$console_user" 2>/dev/null)
+            if [ -z "$uid" ]; then
+                echo "Could not resolve uid for console user '$console_user'; skipping UI launch."
+            else
+                echo "Launching Cloink as console user $console_user (uid $uid)."
+                launchctl asuser "$uid" sudo -u "$console_user" -H open "$APP" || true
+            fi
+            ;;
+    esac
+
+    echo "Cloink postinstall complete."
+    exit 0
+} >>"$LOG_FILE" 2>&1

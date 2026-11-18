@@ -1,0 +1,245 @@
+name: Build unsigned macOS PKG
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed (for example 0.83.1.1)"
+        required: true
+        default: "0.83.1.1"
+        type: string
+      source_ref:
+        description: "Git ref or commit to build"
+        required: true
+        default: "28b6d540aed6f67253c38b7e9d1e95cb21ee1c75"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-pkg-${{ inputs.version }}-${{ inputs.source_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-pkg:
+    name: Build universal unsigned PKG
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE_REF: ${{ inputs.source_ref }}
+      MANAGEMENT_URL: "https://cloink.4w.ink"
+      RELEASE_API_URL: "https://cloink.4w.ink/api/version-releases/public"
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "Invalid numeric version: $VERSION" >&2
+            exit 1
+          fi
+          if [ -z "$SOURCE_REF" ]; then
+            echo "source_ref cannot be empty" >&2
+            exit 1
+          fi
+
+      - name: Stage PKG installer scripts
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: packaging
+          sparse-checkout: release_files/darwin_pkg/cloink
+          persist-credentials: false
+
+      - name: Save PKG installer scripts
+        run: |
+          set -euo pipefail
+          cp -R packaging/release_files/darwin_pkg/cloink "$RUNNER_TEMP/cloink-pkg-scripts"
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install --global pnpm@11.4.0
+
+      - name: Install Wails CLI
+        run: |
+          set -euo pipefail
+          wails_version=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${wails_version}"
+
+      - name: Build frontend
+        working-directory: client/ui
+        run: |
+          set -euo pipefail
+          wails3 generate bindings -clean=true -ts
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build universal binaries
+        run: |
+          set -euo pipefail
+          commit=$(git rev-parse HEAD)
+          build_date=$(git log -1 --format=%cI)
+          ldflags="-s -w"
+          ldflags="$ldflags -X github.com/netbirdio/netbird/version.version=$VERSION"
+          ldflags="$ldflags -X github.com/netbirdio/netbird/version.DefaultReleaseAPIURL=$RELEASE_API_URL"
+          ldflags="$ldflags -X github.com/netbirdio/netbird/client/internal/profilemanager.DefaultManagementURL=$MANAGEMENT_URL"
+          ldflags="$ldflags -X github.com/netbirdio/netbird/client/internal/profilemanager.DefaultAdminURL=$MANAGEMENT_URL"
+          ldflags="$ldflags -X main.commit=$commit -X main.date=$build_date -X main.builtBy=github-actions"
+
+          sdkroot=$(xcrun --sdk macosx --show-sdk-path)
+          mkdir -p dist/bin
+
+          for arch in amd64 arm64; do
+            if [ "$arch" = "amd64" ]; then
+              clang_arch=x86_64
+            else
+              clang_arch=arm64
+            fi
+
+            echo "Building cloink for darwin/$arch"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" \
+              go build -trimpath -tags load_wgnt_from_rsrc \
+              -ldflags "$ldflags" \
+              -o "dist/bin/cloink-darwin-$arch" ./client
+
+            echo "Building cloink-ui for darwin/$arch"
+            CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" \
+              CC="clang -arch $clang_arch" \
+              CGO_CFLAGS="-mmacosx-version-min=12.0" \
+              CGO_LDFLAGS="-mmacosx-version-min=12.0" \
+              SDKROOT="$sdkroot" MACOSX_DEPLOYMENT_TARGET=12.0 \
+              go build -trimpath -tags production \
+              -ldflags "$ldflags" \
+              -o "dist/bin/cloink-ui-darwin-$arch" ./client/ui
+          done
+
+          lipo -create \
+            -output dist/bin/cloink-darwin-universal \
+            dist/bin/cloink-darwin-amd64 dist/bin/cloink-darwin-arm64
+          lipo -create \
+            -output dist/bin/cloink-ui-darwin-universal \
+            dist/bin/cloink-ui-darwin-amd64 dist/bin/cloink-ui-darwin-arm64
+
+          test "$(lipo -archs dist/bin/cloink-darwin-universal)" = "x86_64 arm64" || \
+            test "$(lipo -archs dist/bin/cloink-darwin-universal)" = "arm64 x86_64"
+          test "$(lipo -archs dist/bin/cloink-ui-darwin-universal)" = "x86_64 arm64" || \
+            test "$(lipo -archs dist/bin/cloink-ui-darwin-universal)" = "arm64 x86_64"
+
+          echo "commit=$commit" >> "$GITHUB_ENV"
+          echo "build_date=$build_date" >> "$GITHUB_ENV"
+
+      - name: Assemble app bundle
+        run: |
+          set -euo pipefail
+          app="dist/payload/Applications/Cloink.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" dist/payload/usr/local/bin dist/scripts
+
+          cp dist/bin/cloink-ui-darwin-universal "$app/Contents/MacOS/cloink-ui"
+          cp dist/bin/cloink-darwin-universal "$app/Contents/MacOS/cloink"
+          cp client/ui/build/darwin/icons.icns "$app/Contents/Resources/icons.icns"
+          cp client/ui/build/darwin/Info.plist "$app/Contents/Info.plist"
+
+          bundle_version=$(printf '%s' "$VERSION" | awk -F. '{print $1"."$2"."$3}')
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $bundle_version" "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleGetInfoString Cloink $VERSION" "$app/Contents/Info.plist"
+
+          chmod 0755 "$app/Contents/MacOS/cloink" "$app/Contents/MacOS/cloink-ui"
+          ln -s /Applications/Cloink.app/Contents/MacOS/cloink dist/payload/usr/local/bin/cloink
+
+          cp "$RUNNER_TEMP/cloink-pkg-scripts/preinstall" dist/scripts/preinstall
+          cp "$RUNNER_TEMP/cloink-pkg-scripts/postinstall" dist/scripts/postinstall
+          chmod 0755 dist/scripts/preinstall dist/scripts/postinstall
+          sh -n dist/scripts/preinstall
+          sh -n dist/scripts/postinstall
+
+          codesign --force --sign - --timestamp=none "$app/Contents/MacOS/cloink"
+          codesign --force --sign - --timestamp=none "$app/Contents/MacOS/cloink-ui"
+          codesign --force --sign - --timestamp=none "$app"
+          codesign --verify --strict --verbose=2 "$app/Contents/MacOS/cloink"
+          codesign --verify --strict --verbose=2 "$app/Contents/MacOS/cloink-ui"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Build PKG
+        run: |
+          set -euo pipefail
+          pkg="dist/Cloink_${VERSION}_darwin_universal_unsigned.pkg"
+          pkgbuild \
+            --root dist/payload \
+            --scripts dist/scripts \
+            --identifier io.cloink.client \
+            --version "$VERSION" \
+            --install-location / \
+            --ownership recommended \
+            "$pkg"
+
+          shasum -a 256 "$pkg" > "$pkg.sha256"
+          {
+            echo "version=$VERSION"
+            echo "source_ref=$SOURCE_REF"
+            echo "source_commit=$commit"
+            echo "source_date=$build_date"
+            echo "management_url=$MANAGEMENT_URL"
+            echo "release_api_url=$RELEASE_API_URL"
+            echo "signing=ad-hoc app, unsigned pkg"
+          } > dist/build-info.txt
+
+      - name: Verify PKG contents
+        run: |
+          set -euo pipefail
+          pkg="dist/Cloink_${VERSION}_darwin_universal_unsigned.pkg"
+
+          pkgutil --payload-files "$pkg" > dist/payload-files.txt
+          grep -F "Applications/Cloink.app/Contents/MacOS/cloink-ui" dist/payload-files.txt
+          grep -F "Applications/Cloink.app/Contents/MacOS/cloink" dist/payload-files.txt
+
+          test "$(lipo -archs dist/payload/Applications/Cloink.app/Contents/MacOS/cloink-ui)" = "x86_64 arm64" || \
+            test "$(lipo -archs dist/payload/Applications/Cloink.app/Contents/MacOS/cloink-ui)" = "arm64 x86_64"
+          test "$(lipo -archs dist/payload/Applications/Cloink.app/Contents/MacOS/cloink)" = "x86_64 arm64" || \
+            test "$(lipo -archs dist/payload/Applications/Cloink.app/Contents/MacOS/cloink)" = "arm64 x86_64"
+
+          dist/payload/Applications/Cloink.app/Contents/MacOS/cloink version
+          strings dist/payload/Applications/Cloink.app/Contents/MacOS/cloink | grep -F "$MANAGEMENT_URL"
+          strings dist/payload/Applications/Cloink.app/Contents/MacOS/cloink | grep -F "$RELEASE_API_URL"
+
+          set +e
+          pkgutil --check-signature "$pkg"
+          signature_status=$?
+          spctl --assess --type install --verbose=2 "$pkg"
+          gatekeeper_status=$?
+          set -e
+          echo "pkgutil check-signature exit code: $signature_status"
+          echo "spctl install assessment exit code: $gatekeeper_status (unsigned packages are expected to be rejected)"
+
+          cd dist
+          shasum -a 256 -c "$(basename "$pkg").sha256"
+
+      - name: Upload unsigned PKG
+        uses: actions/upload-artifact@v7
+        with:
+          name: Cloink-${{ inputs.version }}-macos-universal-unsigned-pkg
+          path: |
+            dist/Cloink_*_darwin_universal_unsigned.pkg
+            dist/Cloink_*_darwin_universal_unsigned.pkg.sha256
+            dist/build-info.txt
+            dist/payload-files.txt
+          if-no-files-found: error
+          retention-days: 30

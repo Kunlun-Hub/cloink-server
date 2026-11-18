@@ -1,0 +1,69 @@
+#!/bin/sh
+
+set -u
+
+LOG_DIR=/var/log/cloink
+LOG_FILE=$LOG_DIR/client_pre_install.log
+APP=/Applications/Cloink.app
+AGENT=/usr/local/bin/cloink
+UI_PROCESS=cloink-ui
+
+mkdir -p "$LOG_DIR"
+
+wait_for_ui_exit() {
+    waited=0
+    while [ "$waited" -lt "$1" ]; do
+        pgrep -x "$UI_PROCESS" >/dev/null 2>&1 || return 0
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 1
+}
+
+quit_ui() {
+    console_user=$(stat -f%Su /dev/console 2>/dev/null)
+    case "$console_user" in
+        ""|root|loginwindow|_mbsetupuser)
+            echo "No active GUI user session (console user: '${console_user:-none}')."
+            ;;
+        *)
+            uid=$(id -u "$console_user" 2>/dev/null)
+            if [ -n "$uid" ]; then
+                echo "Asking Cloink to quit as console user $console_user (uid $uid)."
+                launchctl asuser "$uid" sudo -u "$console_user" -H \
+                    osascript -e 'quit app "Cloink"' >/dev/null 2>&1 || true
+                wait_for_ui_exit 10 || true
+            fi
+            ;;
+    esac
+
+    if pgrep -x "$UI_PROCESS" >/dev/null 2>&1; then
+        echo "Cloink UI is still running; terminating it."
+        pkill -x "$UI_PROCESS" >/dev/null 2>&1 || true
+        wait_for_ui_exit 3 || pkill -KILL -x "$UI_PROCESS" >/dev/null 2>&1 || true
+    fi
+}
+
+{
+    echo "Starting Cloink preinstall at $(date -u '+%Y-%m-%dT%H:%M:%SZ')."
+
+    quit_ui
+
+    if [ -x "$AGENT" ]; then
+        echo "Stopping the existing Cloink service."
+        "$AGENT" service stop || true
+    elif [ -x "$APP/Contents/MacOS/cloink" ]; then
+        echo "Stopping the existing Cloink service through the app bundle."
+        "$APP/Contents/MacOS/cloink" service stop || true
+    fi
+
+    if pgrep -x cloink >/dev/null 2>&1; then
+        echo "Cloink daemon is still running; terminating it."
+        pkill -x cloink >/dev/null 2>&1 || true
+        sleep 1
+        pkill -KILL -x cloink >/dev/null 2>&1 || true
+    fi
+
+    echo "Cloink preinstall complete."
+    exit 0
+} >>"$LOG_FILE" 2>&1
