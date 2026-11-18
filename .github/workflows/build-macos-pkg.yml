@@ -191,7 +191,7 @@ jobs:
             --ownership recommended \
             "$pkg"
 
-          shasum -a 256 "$pkg" > "$pkg.sha256"
+          (cd dist && shasum -a 256 "$(basename "$pkg")" > "$(basename "$pkg").sha256")
           {
             echo "version=$VERSION"
             echo "source_ref=$SOURCE_REF"
@@ -229,8 +229,7 @@ jobs:
           echo "pkgutil check-signature exit code: $signature_status"
           echo "spctl install assessment exit code: $gatekeeper_status (unsigned packages are expected to be rejected)"
 
-          cd dist
-          shasum -a 256 -c "$(basename "$pkg").sha256"
+          (cd dist && shasum -a 256 -c "$(basename "$pkg").sha256")
 
       - name: Upload unsigned PKG
         uses: actions/upload-artifact@v7
