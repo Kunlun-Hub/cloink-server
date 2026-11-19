@@ -73,5 +73,5 @@ func DaemonAddr() string {
 	if runtime.GOOS == "windows" {
 		return daemonaddr.WindowsPipeAddr
 	}
-	return "unix:///var/run/netbird.sock"
+	return daemonaddr.UnixSocketAddr
 }

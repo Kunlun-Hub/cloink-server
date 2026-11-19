@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	// DefaultDaemonAddr is the default address for the NetBird daemon
-	DefaultDaemonAddr = "unix:///var/run/netbird.sock"
-	// DefaultDaemonAddrWindows is the default address for the NetBird daemon on Windows
+	// DefaultDaemonAddr is the default address for the Cloink daemon
+	DefaultDaemonAddr = daemonaddr.UnixSocketAddr
+	// DefaultDaemonAddrWindows is the default address for the Cloink daemon on Windows
 	DefaultDaemonAddrWindows = daemonaddr.WindowsPipeAddr
 )
 

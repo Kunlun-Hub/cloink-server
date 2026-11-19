@@ -69,6 +69,11 @@ quit_ui() {
         pkill -KILL -x cloink >/dev/null 2>&1 || true
     fi
 
+    if [ -S /var/run/cloink.sock ]; then
+        echo "Removing the stale Cloink daemon socket."
+        rm -f /var/run/cloink.sock
+    fi
+
     echo "Cloink preinstall complete."
     exit 0
 } >>"$LOG_FILE" 2>&1

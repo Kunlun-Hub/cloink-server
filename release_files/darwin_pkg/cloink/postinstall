@@ -49,6 +49,16 @@ mkdir -p "$LOG_DIR" /usr/local/bin
         echo "Cloink daemon executable is missing from $APP."
         exit 1
     fi
+    if [ ! -f "$APP/Contents/Resources/icons.icns" ]; then
+        echo "Cloink app icon is missing from $APP."
+        exit 1
+    fi
+
+    touch "$APP"
+    lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+    if [ -x "$lsregister" ]; then
+        "$lsregister" -f "$APP" || true
+    fi
 
     ln -sfn "$APP/Contents/MacOS/cloink" "$AGENT"
     echo "Installed the cloink command at $AGENT."

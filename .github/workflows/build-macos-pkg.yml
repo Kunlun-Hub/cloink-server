@@ -261,7 +261,6 @@ jobs:
           (cd dist && shasum -a 256 -c "$(basename "$pkg").sha256")
 
       - name: Smoke-test PKG installation
-        continue-on-error: true
         run: |
           set -uo pipefail
           pkg="dist/Cloink_${VERSION}_${ENVIRONMENT_SLUG}_darwin_universal_unsigned.pkg"
@@ -284,7 +283,8 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Cloink service command"
-          sudo /usr/local/bin/cloink service status || true
+          service_status=$(sudo /usr/local/bin/cloink service status 2>&1)
+          echo "$service_status"
           echo "::endgroup::"
 
           echo "::group::Installer logs"
@@ -299,6 +299,28 @@ jobs:
 
           test "$install_status" -eq 0
           test -S /var/run/cloink.sock
+          test -f /Applications/Cloink.app/Contents/Resources/icons.icns
+          echo "$service_status" | grep -F "Running"
+
+          echo "::group::Reinstall over the existing service"
+          sudo installer -pkg "$pkg" -target / -verbose
+          reinstall_status=$?
+          echo "reinstall exit code: $reinstall_status"
+          sleep 8
+          sudo pkgutil --pkg-info io.cloink.client || true
+          sudo ls -l /Library/LaunchDaemons/cloink.plist /usr/local/bin/cloink /var/run/cloink.sock || true
+          sudo launchctl print system/cloink || true
+          sudo /usr/local/bin/cloink service status || true
+          sudo /usr/local/bin/cloink status || true
+          sudo cat /var/log/cloink/client_pre_install.log || true
+          sudo cat /var/log/cloink/client_post_install.log || true
+          sudo cat /var/log/cloink.err.log || true
+          echo "::endgroup::"
+
+          test "$reinstall_status" -eq 0
+          test -S /var/run/cloink.sock
+          test -f /Applications/Cloink.app/Contents/Resources/icons.icns
+          sudo /usr/local/bin/cloink service status | grep -F "Running"
 
       - name: Upload unsigned PKG
         uses: actions/upload-artifact@v7
