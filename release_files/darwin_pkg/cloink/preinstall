@@ -57,6 +57,11 @@ quit_ui() {
         "$APP/Contents/MacOS/cloink" service stop || true
     fi
 
+    if command -v launchctl >/dev/null 2>&1; then
+        echo "Unloading any existing Cloink launchd job."
+        launchctl bootout system/cloink >/dev/null 2>&1 || true
+    fi
+
     if pgrep -x cloink >/dev/null 2>&1; then
         echo "Cloink daemon is still running; terminating it."
         pkill -x cloink >/dev/null 2>&1 || true

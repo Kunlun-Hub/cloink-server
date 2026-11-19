@@ -6,6 +6,35 @@ LOG_DIR=/var/log/cloink
 LOG_FILE=$LOG_DIR/client_post_install.log
 APP=/Applications/Cloink.app
 AGENT=/usr/local/bin/cloink
+PLIST=/Library/LaunchDaemons/cloink.plist
+SOCKET=/var/run/cloink.sock
+
+start_service() {
+    if launchctl print system/cloink >/dev/null 2>&1; then
+        launchctl enable system/cloink >/dev/null 2>&1 || true
+        launchctl kickstart -k system/cloink
+        return $?
+    fi
+
+    if launchctl bootstrap system "$PLIST"; then
+        launchctl enable system/cloink >/dev/null 2>&1 || true
+        launchctl kickstart -k system/cloink
+        return $?
+    fi
+
+    echo "launchctl bootstrap failed; falling back to cloink service start."
+    "$AGENT" service start
+}
+
+write_diagnostics() {
+    echo "Cloink service diagnostics:"
+    ls -l "$PLIST" "$AGENT" "$SOCKET" 2>&1 || true
+    plutil -lint "$PLIST" 2>&1 || true
+    launchctl print system/cloink 2>&1 || true
+    tail -n 100 /var/log/cloink/client.log 2>&1 || true
+    tail -n 100 /var/log/cloink.err.log 2>&1 || true
+    tail -n 100 /var/log/cloink.out.log 2>&1 || true
+}
 
 mkdir -p "$LOG_DIR" /usr/local/bin
 
@@ -24,11 +53,54 @@ mkdir -p "$LOG_DIR" /usr/local/bin
     ln -sfn "$APP/Contents/MacOS/cloink" "$AGENT"
     echo "Installed the cloink command at $AGENT."
 
-    if ! "$AGENT" service install; then
-        echo "Service install did not complete cleanly; attempting to reconfigure the existing service."
-        "$AGENT" service reconfigure || true
+    if [ -f "$PLIST" ]; then
+        echo "Existing launchd configuration found; reconfiguring the service."
+        if ! "$AGENT" service reconfigure; then
+            echo "Service reconfigure failed; retrying a clean service install."
+            launchctl bootout system/cloink >/dev/null 2>&1 || true
+            if ! "$AGENT" service install; then
+                echo "Cloink service installation failed."
+                write_diagnostics
+                exit 1
+            fi
+        fi
+    elif ! "$AGENT" service install; then
+        echo "Cloink service installation failed."
+        write_diagnostics
+        exit 1
     fi
-    "$AGENT" service start || true
+
+    if [ ! -f "$PLIST" ]; then
+        echo "Cloink launchd configuration was not created at $PLIST."
+        write_diagnostics
+        exit 1
+    fi
+
+    chown root:wheel "$PLIST"
+    chmod 0644 "$PLIST"
+    if ! plutil -lint "$PLIST"; then
+        echo "Cloink launchd configuration is invalid."
+        write_diagnostics
+        exit 1
+    fi
+
+    if ! start_service; then
+        echo "Cloink service start command failed."
+        write_diagnostics
+        exit 1
+    fi
+
+    waited=0
+    while [ "$waited" -lt 20 ]; do
+        [ -S "$SOCKET" ] && break
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ ! -S "$SOCKET" ]; then
+        echo "Cloink service did not create $SOCKET within 20 seconds."
+        write_diagnostics
+        exit 1
+    fi
 
     console_user=$(stat -f%Su /dev/console 2>/dev/null)
     case "$console_user" in
