@@ -260,6 +260,46 @@ jobs:
 
           (cd dist && shasum -a 256 -c "$(basename "$pkg").sha256")
 
+      - name: Smoke-test PKG installation
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          pkg="dist/Cloink_${VERSION}_${ENVIRONMENT_SLUG}_darwin_universal_unsigned.pkg"
+
+          echo "::group::Install PKG"
+          sudo installer -pkg "$pkg" -target / -verbose
+          install_status=$?
+          echo "installer exit code: $install_status"
+          echo "::endgroup::"
+
+          sleep 8
+          echo "::group::Package receipt and files"
+          sudo pkgutil --pkg-info io.cloink.client || true
+          sudo ls -l /Library/LaunchDaemons/cloink.plist /usr/local/bin/cloink /var/run/cloink.sock || true
+          echo "::endgroup::"
+
+          echo "::group::launchd state"
+          sudo launchctl print system/cloink || true
+          sudo launchctl list | grep -E '(^|[[:space:]])cloink($|[[:space:]])' || true
+          echo "::endgroup::"
+
+          echo "::group::Cloink service command"
+          sudo /usr/local/bin/cloink service status || true
+          echo "::endgroup::"
+
+          echo "::group::Installer logs"
+          sudo cat /var/log/cloink/client_pre_install.log || true
+          sudo cat /var/log/cloink/client_post_install.log || true
+          echo "::endgroup::"
+
+          echo "::group::LaunchDaemon logs"
+          sudo cat /var/log/cloink.out.log || true
+          sudo cat /var/log/cloink.err.log || true
+          echo "::endgroup::"
+
+          test "$install_status" -eq 0
+          test -S /var/run/cloink.sock
+
       - name: Upload unsigned PKG
         uses: actions/upload-artifact@v7
         with:
