@@ -11,12 +11,18 @@ var (
 )
 
 func TypeOfInstaller(ctx context.Context) Type {
-	cmd := exec.CommandContext(ctx, "pkgutil", "--pkg-info", "io.netbird.client")
-	_, err := cmd.Output()
-	if err != nil && cmd.ProcessState.ExitCode() == 1 {
-		// Not installed using pkg file, thus installed using Homebrew
-
-		return TypeHomebrew
+	for _, identifier := range []string{"io.cloink.client", "io.netbird.client"} {
+		cmd := exec.CommandContext(ctx, "pkgutil", "--pkg-info", identifier)
+		_, err := cmd.Output()
+		if err == nil {
+			return TypePKG
+		}
+		if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 1 {
+			return TypePKG
+		}
 	}
-	return TypePKG
+
+	// Neither Cloink nor NetBird has a package receipt, so this is a Homebrew
+	// installation and cannot be silently replaced with a PKG.
+	return TypeHomebrew
 }
