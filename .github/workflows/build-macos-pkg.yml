@@ -13,12 +13,27 @@ on:
         required: true
         default: "28b6d540aed6f67253c38b7e9d1e95cb21ee1c75"
         type: string
+      environment_slug:
+        description: "Environment name used in artifact filenames (for example cloink or saas)"
+        required: true
+        default: "cloink"
+        type: string
+      management_url:
+        description: "Management URL embedded in the client"
+        required: true
+        default: "https://cloink.4w.ink"
+        type: string
+      release_api_url:
+        description: "Release API URL embedded in the client"
+        required: true
+        default: "https://cloink.4w.ink/api/version-releases/public"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-macos-pkg-${{ inputs.version }}-${{ inputs.source_ref }}
+  group: build-macos-pkg-${{ inputs.environment_slug }}-${{ inputs.version }}-${{ inputs.source_ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +43,9 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       SOURCE_REF: ${{ inputs.source_ref }}
-      MANAGEMENT_URL: "https://cloink.4w.ink"
-      RELEASE_API_URL: "https://cloink.4w.ink/api/version-releases/public"
+      ENVIRONMENT_SLUG: ${{ inputs.environment_slug }}
+      MANAGEMENT_URL: ${{ inputs.management_url }}
+      RELEASE_API_URL: ${{ inputs.release_api_url }}
     steps:
       - name: Validate inputs
         run: |
@@ -40,6 +56,18 @@ jobs:
           fi
           if [ -z "$SOURCE_REF" ]; then
             echo "source_ref cannot be empty" >&2
+            exit 1
+          fi
+          if ! [[ "$ENVIRONMENT_SLUG" =~ ^[a-z0-9][a-z0-9._-]{0,31}$ ]]; then
+            echo "Invalid environment_slug: $ENVIRONMENT_SLUG" >&2
+            exit 1
+          fi
+          if ! [[ "$MANAGEMENT_URL" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "Invalid management_url: $MANAGEMENT_URL" >&2
+            exit 1
+          fi
+          if ! [[ "$RELEASE_API_URL" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "Invalid release_api_url: $RELEASE_API_URL" >&2
             exit 1
           fi
 
@@ -181,7 +209,7 @@ jobs:
       - name: Build PKG
         run: |
           set -euo pipefail
-          pkg="dist/Cloink_${VERSION}_darwin_universal_unsigned.pkg"
+          pkg="dist/Cloink_${VERSION}_${ENVIRONMENT_SLUG}_darwin_universal_unsigned.pkg"
           pkgbuild \
             --root dist/payload \
             --scripts dist/scripts \
@@ -194,6 +222,7 @@ jobs:
           (cd dist && shasum -a 256 "$(basename "$pkg")" > "$(basename "$pkg").sha256")
           {
             echo "version=$VERSION"
+            echo "environment=$ENVIRONMENT_SLUG"
             echo "source_ref=$SOURCE_REF"
             echo "source_commit=$commit"
             echo "source_date=$build_date"
@@ -205,7 +234,7 @@ jobs:
       - name: Verify PKG contents
         run: |
           set -euo pipefail
-          pkg="dist/Cloink_${VERSION}_darwin_universal_unsigned.pkg"
+          pkg="dist/Cloink_${VERSION}_${ENVIRONMENT_SLUG}_darwin_universal_unsigned.pkg"
 
           pkgutil --payload-files "$pkg" > dist/payload-files.txt
           grep -F "Applications/Cloink.app/Contents/MacOS/cloink-ui" dist/payload-files.txt
@@ -234,10 +263,10 @@ jobs:
       - name: Upload unsigned PKG
         uses: actions/upload-artifact@v7
         with:
-          name: Cloink-${{ inputs.version }}-macos-universal-unsigned-pkg
+          name: Cloink-${{ inputs.environment_slug }}-${{ inputs.version }}-macos-universal-unsigned-pkg
           path: |
-            dist/Cloink_*_darwin_universal_unsigned.pkg
-            dist/Cloink_*_darwin_universal_unsigned.pkg.sha256
+            dist/Cloink_*_${{ inputs.environment_slug }}_darwin_universal_unsigned.pkg
+            dist/Cloink_*_${{ inputs.environment_slug }}_darwin_universal_unsigned.pkg.sha256
             dist/build-info.txt
             dist/payload-files.txt
           if-no-files-found: error
